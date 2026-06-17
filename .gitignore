@@ -491,3 +491,8 @@ $RECYCLE.BIN/
 .qwen/
 .reasonix/
 ArkPlot.Novelizer.Tests/bootstrap/current_prompts
+
+# 临时咨询文档和设计文档
+*-consultation.md
+*.consultation.md
+docs/temp/
