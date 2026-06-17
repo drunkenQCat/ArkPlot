@@ -4,23 +4,39 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:ArkPlot.Avalonia.ViewModels"
     xmlns:views="using:ArkPlot.Avalonia.Views"
+    xmlns:models="using:ArkPlot.Avalonia.Models"
     xmlns:sukiUi="using:SukiUI.Controls"
     xmlns:c="using:CalcBinding"
     mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="750"
     x:Class="ArkPlot.Avalonia.Views.TtsWindow"
     x:DataType="vm:TtsViewModel"
     Title="TTS 语音生成"
-    Width="1100" Height="750"
+    Width="1200" Height="800"
     MinWidth="900" MinHeight="600">
 
-  <Grid ColumnDefinitions="320,*">
+  <Window.Styles>
+    <Style Selector="Border.PlayingRow">
+      <Style.Animations>
+        <Animation Duration="0:0:1.2" IterationCount="Infinite" PlaybackDirection="Alternate">
+          <KeyFrame Cue="0%">
+            <Setter Property="Background" Value="#0040C8FF"/>
+          </KeyFrame>
+          <KeyFrame Cue="100%">
+            <Setter Property="Background" Value="#3040C8FF"/>
+          </KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+  </Window.Styles>
+
+  <Grid ColumnDefinitions="400,*">
     <!-- ======================== 左面板 ======================== -->
     <Border Grid.Column="0" BorderBrush="#30FFFFFF" BorderThickness="0,0,1,0">
       <ScrollViewer>
         <DockPanel Margin="12,8">
 
         <!-- 角色立绘 -->
-        <views:PortraitPanel DockPanel.Dock="Top" Margin="0,0,0,8"
+        <views:PortraitPanel DockPanel.Dock="Top" Margin="0,0,0,10"
                              DataContext="{Binding PortraitPanel}"/>
 
         <!-- 小说文件选择 -->
@@ -43,12 +59,6 @@
           </ScrollViewer>
         </Border>
 
-        <!-- 输出目录 -->
-        <TextBlock DockPanel.Dock="Top" Text="输出目录" FontSize="12"
-                   Opacity="0.6" Margin="0,0,0,4"/>
-        <TextBox DockPanel.Dock="Top" Text="{Binding TtsOutputDir}"
-                 Margin="0,0,0,8"/>
-
         <!-- 音色配置 -->
         <TextBlock DockPanel.Dock="Top" Text="音色配置" FontSize="12"
                    Opacity="0.6" Margin="0,4,0,4"/>
@@ -63,10 +73,9 @@
                 <Grid ColumnDefinitions="*,Auto" Margin="4,2">
                   <TextBlock Grid.Column="0" VerticalAlignment="Center">
                     <Run Text="{Binding CharacterName}"/>
-                    <Run Text=" "/>
                     <Run Text="{Binding Gender}" FontSize="11" Foreground="#80FFFFFF"/>
                   </TextBlock>
-                  <ComboBox Grid.Column="1" Width="120"
+                  <ComboBox Grid.Column="1" Width="200"
                             ItemsSource="{Binding AvailableVoices}"
                             SelectedItem="{Binding SelectedVoice}"/>
                 </Grid>
@@ -74,6 +83,12 @@
             </ListBox.ItemTemplate>
           </ListBox>
         </Border>
+
+        <!-- 输出目录 -->
+        <TextBlock DockPanel.Dock="Top" Text="输出目录" FontSize="12"
+                   Opacity="0.6" Margin="0,0,0,4"/>
+        <TextBox DockPanel.Dock="Top" Text="{Binding TtsOutputDir}"
+                 Margin="0,0,0,8"/>
 
         <!-- 进度 -->
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
@@ -138,28 +153,28 @@
                   HorizontalAlignment="Center" Spacing="8" Margin="0,0,0,8">
         <Button Content="{Binding PlayButtonText}"
                 Command="{Binding PlayFromSelectedCommand}"
-                IsEnabled="{c:Binding !IsGenerating}"
                 HorizontalAlignment="Center"
                 Height="36" MinWidth="180" FontSize="14"
                 Classes="Rounded Accent"/>
+        <Button Content="⏮ 上一句"
+                Command="{Binding PlayPrevCommand}"
+                IsEnabled="{Binding IsPlaying}"
+                Height="36" Width="100" FontSize="13"
+                Classes="Rounded"/>
+        <Button Content="下一句 ⏭"
+                Command="{Binding PlayNextCommand}"
+                IsEnabled="{Binding IsPlaying}"
+                Height="36" Width="100" FontSize="13"
+                Classes="Rounded"/>
         <Button Content="■ 停止"
                 Command="{Binding StopPlayCommand}"
                 IsEnabled="{Binding IsPlaying}"
-                Height="36" Width="70" FontSize="14"
+                Height="36" Width="80" FontSize="14"
                 Classes="Rounded"/>
       </StackPanel>
 
-      <!-- 导出按钮 -->
-      <StackPanel DockPanel.Dock="Top" Orientation="Horizontal"
-                  HorizontalAlignment="Center" Spacing="8" Margin="0,0,0,8">
-        <Button Content="导出当前章节 MP3"
-                Command="{Binding ExportCurrentChapterCommand}"/>
-        <Button Content="导出全部章节 MP3"
-                Command="{Binding ExportAllChaptersCommand}"/>
-      </StackPanel>
-
-      <!-- 片段表格 + Gallery -->
-      <Grid RowDefinitions="*,Auto">
+      <!-- 片段表格 + Gallery + 导出按钮 -->
+      <Grid RowDefinitions="*,Auto,Auto">
         <!-- 片段表格 -->
         <DataGrid Grid.Row="0"
                   x:Name="SegmentsDataGrid"
@@ -171,6 +186,7 @@
                   CanUserResizeColumns="True"
                   CanUserSortColumns="False"
                   GridLinesVisibility="Horizontal"
+                  RowHeight="40"
                   Margin="0,0,0,8">
           <DataGrid.ContextMenu>
             <ContextMenu>
@@ -180,10 +196,21 @@
             </ContextMenu>
           </DataGrid.ContextMenu>
           <DataGrid.Columns>
-            <DataGridTextColumn Header="#" Binding="{Binding Index}" Width="40"/>
+            <DataGridTemplateColumn Header="#" Width="40">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate x:DataType="models:SegmentRow">
+                  <Border Classes="PlayingRow" CornerRadius="2">
+                    <TextBlock Text="{Binding Index}"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center"
+                               FontSize="11"/>
+                  </Border>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
             <DataGridTextColumn Header="角色" Binding="{Binding CharacterName}" Width="100"/>
             <DataGridTextColumn Header="类型" Binding="{Binding SegmentType}" Width="50"/>
-            <DataGridTemplateColumn Header="台词" Width="200">
+            <DataGridTemplateColumn Header="台词" Width="*">
               <DataGridTemplateColumn.CellTemplate>
                 <DataTemplate>
                   <TextBlock Text="{Binding NovelText}"
@@ -199,10 +226,11 @@
                 </DataTemplate>
               </DataGridTemplateColumn.CellTemplate>
             </DataGridTemplateColumn>
-            <DataGridTemplateColumn Header="音频" Width="*">
+            <DataGridTemplateColumn Header="音频" Width="300">
               <DataGridTemplateColumn.CellTemplate>
                 <DataTemplate>
-                  <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center" Margin="2,1">
+                  <!-- 右侧 Margin=6 防止 Border 圆角被 DataGrid 单元格裁剪 -->
+                  <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center" Margin="2,1,6,1">
                     <Border Grid.Column="0" IsVisible="{Binding HasAudio}">
                       <views:AudioPlayerControl DataContext="{Binding AudioPlayer}"
                                                 MinWidth="200"/>
@@ -221,6 +249,15 @@
 
         <!-- 场景 Gallery -->
         <views:GalleryPanel Grid.Row="1" DataContext="{Binding GalleryPanel}"/>
+
+        <!-- 导出按钮 -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal"
+                    HorizontalAlignment="Center" Spacing="8" Margin="0,8,0,0">
+          <Button Content="导出当前章节 MP3"
+                  Command="{Binding ExportCurrentChapterCommand}"/>
+          <Button Content="导出全部章节 MP3"
+                  Command="{Binding ExportAllChaptersCommand}"/>
+        </StackPanel>
       </Grid>
     </DockPanel>
   </Grid>
