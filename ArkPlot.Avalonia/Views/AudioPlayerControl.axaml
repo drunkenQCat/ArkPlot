@@ -3,47 +3,107 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:ArkPlot.Avalonia.ViewModels"
-             mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="60"
+             mc:Ignorable="d" d:DesignWidth="300" d:DesignHeight="40"
              x:Class="ArkPlot.Avalonia.Views.AudioPlayerControl"
              x:DataType="vm:AudioPlayerViewModel">
+
   <UserControl.Styles>
-    <Style Selector="Slider">
-      <Setter Property="Height" Value="28"/>
+    <!-- 播放/停止按钮样式 -->
+    <Style Selector="Button.media-btn">
+      <Setter Property="Width" Value="24"/>
+      <Setter Property="Height" Value="24"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
-    <Style Selector="Slider /template/ Track#PART_Track">
-      <Setter Property="Height" Value="4"/>
+
+    <!-- Slider 样式：关键添加 ClipToBounds="False" 防止圆点被切 -->
+    <Style Selector="Slider.player-slider">
+      <Setter Property="MinWidth" Value="0"/>
+      <Setter Property="Height" Value="14"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Margin" Value="4, -4, 0, 0"/>
+      <Setter Property="ClipToBounds" Value="False"/>
+      <Setter Property="Background" Value="#3E3E42"/>
+      <Setter Property="Foreground" Value="#2563EB"/>
     </Style>
-    <Style Selector="Slider /template/ Thumb#PART_Thumb">
+
+    <Style Selector="Slider.player-slider:horizontal /template/ Track#PART_Track">
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- 轨道样式 -->
+    <Style Selector="Slider.player-slider:horizontal /template/ Border#TrackBackground">
+      <Setter Property="Height" Value="3"/>
+      <Setter Property="CornerRadius" Value="1.5"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="Slider.player-slider:horizontal /template/ Border#TrackForeground">
+      <Setter Property="Height" Value="3"/>
+      <Setter Property="CornerRadius" Value="1.5"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- Thumb 样式：圆形白点，添加 ClipToBounds="False" -->
+    <Style Selector="Slider.player-slider:horizontal /template/ Thumb#PART_Thumb">
       <Setter Property="Width" Value="12"/>
       <Setter Property="Height" Value="12"/>
+      <Setter Property="ClipToBounds" Value="False"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Width="10" Height="10"
+                  Background="White"
+                  CornerRadius="5"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  BoxShadow="0 1 3 0 #60000000"/>
+        </ControlTemplate>
+      </Setter>
     </Style>
   </UserControl.Styles>
-  <Border Background="#303030" CornerRadius="6" Padding="10,6">
-    <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
 
-      <Button Grid.Column="0"
-              Content="{Binding PlayButtonText}"
-              Command="{Binding TogglePlayCommand}"
-              Width="28" Height="28"
-              FontSize="14"
-              Padding="0"
-              HorizontalContentAlignment="Center"
-              VerticalContentAlignment="Center"
-              Margin="0,0,8,0"/>
+  <!-- 单行布局：按钮 | 滑块 | 时间 -->
+  <Border Background="#1E1E1C" CornerRadius="6" Padding="8,5" Margin="0,0,4,0">
+    <Grid ColumnDefinitions="Auto,Auto,*,Auto" VerticalAlignment="Center">
 
-      <Slider Grid.Column="1"
+      <!-- 播放按钮 -->
+      <Button Grid.Column="0" Classes="media-btn"
+              Command="{Binding TogglePlayCommand}">
+        <TextBlock Text="{Binding PlayButtonText}"
+                   FontSize="11"
+                   Foreground="White"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"/>
+      </Button>
+
+      <!-- 停止按钮 -->
+      <Button Grid.Column="1" Classes="media-btn"
+              Command="{Binding StopCommand}"
+              Margin="2,0,0,0">
+        <PathIcon Data="M 0,0 H 8 V 8 H 0 Z" Width="8" Height="8" Foreground="#CCCCCC"/>
+      </Button>
+
+      <!-- 进度滑块 -->
+      <Slider Grid.Column="2" Classes="player-slider"
               Minimum="0"
               Maximum="{Binding Duration}"
               Value="{Binding Position, Mode=TwoWay}"
+              HorizontalAlignment="Stretch"
               VerticalAlignment="Center"/>
 
-      <TextBlock Grid.Column="2"
-                 Margin="8,0,0,0"
+      <!-- 时间文本 -->
+      <TextBlock Grid.Column="3"
                  VerticalAlignment="Center"
-                 FontSize="11"
-                 FontFamily="Consolas">
-        <Run Text="{Binding CurrentTimeText}"/>
-        <Run Text=" / "/>
+                 FontSize="10"
+                 Foreground="#888888"
+                 FontFamily="Consolas, Menlo, monospace"
+                 Margin="2,0,0,0">
+        <Run Text="{Binding CurrentTimeText}" Foreground="#E5E5E5"/>
+        <Run Text=" / " Foreground="#444444"/>
         <Run Text="{Binding TotalTimeText}"/>
       </TextBlock>
 
