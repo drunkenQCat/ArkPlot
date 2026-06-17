@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using ArkPlot.Core.Infrastructure;
 using ArkPlot.Core.Model;
 using SqlSugar;
@@ -28,15 +30,56 @@ public class NovelAligner
     /// <summary>
     /// 从小说文件名推断活动名，执行完整对齐。
     /// 文件名格式：{活动名}_novel_{model}.md
+    /// 结果缓存到 {cacheDirOverride ?? 文件目录}/_align_cache/{contentHash}.json
     /// </summary>
+    /// <param name="novelFilePath">小说 md 文件路径。</param>
+    /// <param name="cacheDirOverride">
+    /// 自定义对齐缓存目录。若为 null 则默认使用小说文件所在目录下的 _align_cache。
+    /// GUI 场景通常传 TtsOutputDir/_align_cache 以集中管理缓存。
+    /// </param>
     public async Task<(List<AlignmentEntry> Entries, AlignmentStats Stats)> AlignByFileNameAsync(
-        string novelFilePath)
+        string novelFilePath, string? cacheDirOverride = null)
     {
         var fileName = Path.GetFileNameWithoutExtension(novelFilePath);
         var actName = ExtractActName(fileName);
         var novelText = await File.ReadAllTextAsync(novelFilePath);
 
-        return await AlignAsync(novelText, actName);
+        // 离线缓存：按文件内容哈希缓存对齐结果
+        var cacheDir = cacheDirOverride
+            ?? Path.Combine(Path.GetDirectoryName(novelFilePath) ?? ".", "_align_cache");
+        var contentHash = Convert.ToHexString(
+            MD5.HashData(Encoding.UTF8.GetBytes(novelText))).ToLowerInvariant();
+        var cacheFile = Path.Combine(cacheDir, $"{contentHash}.json");
+
+        if (File.Exists(cacheFile))
+        {
+            try
+            {
+                var json = await File.ReadAllTextAsync(cacheFile);
+                var cached = JsonSerializer.Deserialize<AlignmentCacheEntry>(json);
+                if (cached != null && cached.Entries.Count > 0)
+                    return (cached.Entries, cached.Stats);
+            }
+            catch { /* 缓存损坏，重新对齐 */ }
+        }
+
+        var result = await AlignAsync(novelText, actName);
+
+        // 写入缓存
+        try
+        {
+            Directory.CreateDirectory(cacheDir);
+            var cacheEntry = new AlignmentCacheEntry(result.Entries, result.Stats);
+            var cacheJson = JsonSerializer.Serialize(cacheEntry, new JsonSerializerOptions
+            {
+                WriteIndented = false,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            });
+            await File.WriteAllTextAsync(cacheFile, cacheJson);
+        }
+        catch { /* 缓存写入失败不影响主流程 */ }
+
+        return result;
     }
 
     /// <summary>
@@ -484,4 +527,12 @@ public class NovelAligner
 
         return null;
     }
+
+    /// <summary>
+    /// 对齐缓存条目，用于 JSON 序列化。
+    /// </summary>
+    private record AlignmentCacheEntry(
+        List<AlignmentEntry> Entries,
+        AlignmentStats Stats
+    );
 }

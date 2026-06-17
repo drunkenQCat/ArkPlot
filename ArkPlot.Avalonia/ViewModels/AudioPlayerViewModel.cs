@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -12,6 +13,7 @@ public partial class AudioPlayerViewModel : ViewModelBase, IDisposable
     private readonly Func<string?>? _filePathProvider;
     private bool _updatingFromTimer;
     private bool _fileLoaded;
+    private TaskCompletionSource? _completionTcs;
 
     [ObservableProperty] private bool _isPlaying;
     [ObservableProperty] private double _position;
@@ -36,6 +38,12 @@ public partial class AudioPlayerViewModel : ViewModelBase, IDisposable
         _timer.Tick += TimerTick;
     }
 
+    /// <summary>等待当前播放完成（自然结束或手动停止）。</summary>
+    public Task WaitForCompletionAsync()
+    {
+        return _completionTcs?.Task ?? Task.CompletedTask;
+    }
+
     private static IAudioPlayer CreateDefaultPlayer()
     {
         return new Services.NAudioPlayer();
@@ -52,6 +60,8 @@ public partial class AudioPlayerViewModel : ViewModelBase, IDisposable
 
     public void LoadFile(string path)
     {
+        // 取消上一次等待，防止连播时 stale 回调提前完成新 TCS
+        _completionTcs?.TrySetCanceled();
         Stop();
         _player.LoadFile(path);
         _fileLoaded = true;
@@ -77,12 +87,15 @@ public partial class AudioPlayerViewModel : ViewModelBase, IDisposable
             _player.Pause();
             _timer.Stop();
             IsPlaying = false;
+            // 暂停时不完成 _completionTcs — 让连播循环继续等待恢复
         }
         else
         {
             EnsureFileLoaded();
             if (Position >= Duration && Duration > 0)
                 _player.SeekToSeconds(0);
+            if (_completionTcs == null || _completionTcs.Task.IsCompleted)
+                _completionTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _player.Play();
             _timer.Start();
             IsPlaying = true;
@@ -97,6 +110,7 @@ public partial class AudioPlayerViewModel : ViewModelBase, IDisposable
         IsPlaying = false;
         Position = 0;
         CurrentTimeText = "00:00";
+        _completionTcs?.TrySetResult();
     }
 
     private void TimerTick(object? sender, EventArgs e)
@@ -120,6 +134,10 @@ public partial class AudioPlayerViewModel : ViewModelBase, IDisposable
 
     private void OnPlaybackEnded(object? sender, EventArgs e)
     {
+        // 先完成 TCS（NAudio 线程调用，TrySetResult 线程安全）
+        _completionTcs?.TrySetResult();
+
+        // UI 更新派发到 UI 线程
         Dispatcher.UIThread.Post(() =>
         {
             _timer.Stop();

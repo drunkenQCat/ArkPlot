@@ -59,6 +59,6 @@ public class TtsCacheService
     public int CachedFileCount =>
         Directory.Exists(_cacheDir) ? Directory.GetFiles(_cacheDir, "*.mp3").Length : 0;
 
-    private string GetCachePath(string cacheKey) =>
+    public string GetCachePath(string cacheKey) =>
         Path.Combine(_cacheDir, $"{cacheKey}.mp3");
 }

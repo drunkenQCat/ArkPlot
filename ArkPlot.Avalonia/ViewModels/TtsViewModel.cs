@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -11,6 +12,7 @@ using ArkPlot.Core.Model;
 using ArkPlot.Tts;
 using ArkPlot.Tts.Alignment;
 using ArkPlot.Tts.Engines;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NAudio.Wave;
@@ -44,12 +46,21 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
     // ── 状态 ──
     [ObservableProperty] private bool _isGenerating;
-    [ObservableProperty] private bool _isPlaying;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(PlayPrevCommand))]
+    [NotifyCanExecuteChangedFor(nameof(PlayNextCommand))]
+    private bool _isPlaying;
+    [ObservableProperty] private string _playButtonText = "▶ 从选中行开始连播";
+    private bool _isPaused;  // 暂停状态标志
 
-    /// <summary>播放按钮文本（跟随 IsPlaying 状态切换）。</summary>
-    public string PlayButtonText => IsPlaying ? "⏸ 暂停" : "▶ 从选中行开始连播";
-
-    partial void OnIsPlayingChanged(bool value) => OnPropertyChanged(nameof(PlayButtonText));
+    // 暂停时 IsPlaying=false 但 _isPaused=true，需要区分状态
+    partial void OnIsPlayingChanged(bool value)
+    {
+        if (value)
+            PlayButtonText = "⏸ 暂停";
+        else if (!_isPaused)
+            PlayButtonText = "▶ 从选中行开始连播";
+    }
 
     [ObservableProperty] private double _progressValue;
     [ObservableProperty] private string _progressText = "就绪";
@@ -113,11 +124,13 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
     // ── 内部 ──
     private CancellationTokenSource? _generateCts;
+    private CancellationTokenSource? _audioRefreshCts;
     private CancellationTokenSource? _playCts;
     private List<AlignmentEntry> _allEntries = [];
     private List<BackgroundItem> _backgrounds = [];
     private readonly VoiceManager _voiceManager = new();
     private readonly string _outputBaseDir;
+    private bool _isInitialSelection = true;
 
     public TtsViewModel(string outputBaseDir)
     {
@@ -125,13 +138,16 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         TtsOutputDir = Path.Combine(outputBaseDir, "tts");
 
         ScanNovelFiles();
+    }
 
-        // 窗口打开后自动触发对齐
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(100);
-            await LoadAlignmentAsync();
-        });
+    /// <summary>
+    /// P4: 由 TtsWindow.Opened 事件调用，确保在 UI 线程上初始化。
+    /// 不再使用构造函数中的 fire-and-forget Task.Run。
+    /// </summary>
+    public async Task InitializeAsync()
+    {
+        await Task.Delay(100); // 让窗口先渲染完毕
+        await LoadAlignmentAsync();
     }
 
     // ════════════════════════════════════════════
@@ -151,7 +167,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
         NovelFiles = new ObservableCollection<NovelFileItem>(items);
 
-        // 单选：选中一个时取消其他
+        // 单选：选中一个时取消其他；切换文件时自动触发 alignment
         foreach (var item in items)
         {
             item.PropertyChanged += (_, e) =>
@@ -163,9 +179,15 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                         if (other != item)
                             other.IsSelected = false;
                     }
+
+                    // 切换小说文件时自动重新对齐（跳过初始选中，因为 InitializeAsync 已处理）
+                    if (!_isInitialSelection)
+                        _ = LoadAlignmentAsync(); // async void fire-and-forget from UI thread
                 }
             };
         }
+
+        _isInitialSelection = false;
     }
 
     // ════════════════════════════════════════════
@@ -178,52 +200,72 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         var selectedFiles = NovelFiles.Where(f => f.IsSelected).ToList();
         if (selectedFiles.Count == 0) return;
 
+        var totalSw = Stopwatch.StartNew();
         Log("正在对齐小说文件...");
 
         try
         {
-            _allEntries = [];
-            _backgrounds = [];
-            var allChapters = new List<ChapterItem>();
-
-            foreach (var file in selectedFiles)
+            // P1/P4: 重计算（对齐 + 背景图加载）放到后台线程
+            var ttsOutputDir = TtsOutputDir;
+            var (newEntries, newBackgrounds, allChapters) = await Task.Run(async () =>
             {
-                var aligner = new NovelAligner();
-                var (entries, stats) = await aligner.AlignByFileNameAsync(file.FilePath);
+                var entries = new List<AlignmentEntry>();
+                var backgrounds = new List<BackgroundItem>();
+                var chapters = new List<ChapterItem>();
 
-                Log($"{Path.GetFileName(file.FilePath)}: " +
-                    $"{stats.AlignedDialogs}/{stats.TotalDialogs} 对话已对齐");
-
-                _allEntries.AddRange(entries);
-
-                // 提取章节
-                var chapterTitles = entries
-                    .Select(e => e.ChapterTitle)
-                    .Where(t => !string.IsNullOrEmpty(t))
-                    .Distinct()
-                    .ToList();
-
-                foreach (var title in chapterTitles)
+                foreach (var file in selectedFiles)
                 {
-                    if (!allChapters.Any(c => c.Title == title))
-                        allChapters.Add(new ChapterItem(title, allChapters.Count));
+                    var sw = Stopwatch.StartNew();
+                    var aligner = new NovelAligner();
+                    var alignCacheDir = Path.Combine(ttsOutputDir, "_align_cache");
+                    var (fileEntries, stats) = await aligner.AlignByFileNameAsync(file.FilePath, alignCacheDir);
+                    sw.Stop();
+                    Log($"[perf] AlignByFileNameAsync({Path.GetFileName(file.FilePath)}): {sw.ElapsedMilliseconds}ms");
+
+                    Log($"{Path.GetFileName(file.FilePath)}: " +
+                        $"{stats.AlignedDialogs}/{stats.TotalDialogs} 对话已对齐");
+
+                    entries.AddRange(fileEntries);
+
+                    var chapterTitles = fileEntries
+                        .Select(e => e.ChapterTitle)
+                        .Where(t => !string.IsNullOrEmpty(t))
+                        .Distinct()
+                        .ToList();
+
+                    foreach (var title in chapterTitles)
+                    {
+                        if (!chapters.Any(c => c.Title == title))
+                            chapters.Add(new ChapterItem(title, chapters.Count));
+                    }
+
+                    sw.Restart();
+                    var fileBackgrounds = await LoadBackgroundsAsync(fileEntries);
+                    sw.Stop();
+                    Log($"[perf] LoadBackgroundsAsync: {sw.ElapsedMilliseconds}ms");
+
+                    backgrounds.AddRange(fileBackgrounds);
                 }
 
-                // 提取背景图
-                await LoadBackgroundsAsync(entries);
-            }
+                return (entries, backgrounds, chapters);
+            });
+
+            // 回到 UI 线程：只做最终的集合赋值
+            _allEntries = newEntries;
+            _backgrounds = newBackgrounds;
 
             Chapters = new ObservableCollection<ChapterItem>(allChapters);
             if (Chapters.Count > 0)
             {
                 SelectedChapter = Chapters[0];
-                LoadSegmentsForChapter();
+                await LoadSegmentsForChapterAsync();
             }
 
-            // 填充音色配置
             BuildVoiceConfigs();
 
-            Log($"加载完成: {allChapters.Count} 章节, {_allEntries.Count} 片段");
+            totalSw.Stop();
+            Log($"[perf] TOTAL LoadAlignmentAsync: {totalSw.ElapsedMilliseconds}ms | " +
+                $"{allChapters.Count} 章节, {_allEntries.Count} 片段");
         }
         catch (Exception ex)
         {
@@ -231,8 +273,13 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private async Task LoadBackgroundsAsync(List<AlignmentEntry> entries)
+    /// <summary>
+    /// 加载背景图数据。返回结果列表，不直接修改 _backgrounds。
+    /// P2: 所有 DB 查询使用 Select 投影，只取需要的列，避免 SELECT *。
+    /// </summary>
+    private async Task<List<BackgroundItem>> LoadBackgroundsAsync(List<AlignmentEntry> entries)
     {
+        var result = new List<BackgroundItem>();
         try
         {
             var db = DbFactory.GetClient();
@@ -243,24 +290,28 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                 .Distinct()
                 .ToList();
 
+            // P2: 投影只取 Id 和 Title
             var plots = chapterTitles.Count > 0
                 ? await db.Queryable<Plot>()
                     .Where(p => chapterTitles.Contains(p.Title))
+                    .Select(p => new { p.Id, p.Title })
                     .ToListAsync()
                 : [];
 
             var plotIdToTitle = plots.ToDictionary(p => p.Id, p => p.Title ?? "");
             var plotIds = plots.Select(p => p.Id).ToList();
 
+            // P2: 投影只取 PlotId, Bg, Index, CharacterCode（避免加载 OriginalText/MdText/Dialog 等大 TEXT 列）
             var allPlotEntries = plotIds.Count > 0
                 ? await db.Queryable<FormattedTextEntry>()
                     .Where(e => plotIds.Contains(e.PlotId) && !string.IsNullOrEmpty(e.Bg))
                     .OrderBy(e => e.PlotId)
                     .OrderBy(e => e.Index)
+                    .Select(e => new { e.PlotId, e.Bg, e.Index, e.CharacterCode })
                     .ToListAsync()
                 : [];
 
-            var bgAnchors = new List<FormattedTextEntry>();
+            var bgAnchors = new List<BgAnchorDto>();
             foreach (var group in allPlotEntries.GroupBy(e => e.PlotId))
             {
                 string? lastBg = null;
@@ -270,47 +321,46 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                         continue;
                     if (e.Bg == lastBg)
                         continue;
-                    bgAnchors.Add(e);
+                    bgAnchors.Add(new BgAnchorDto(e.PlotId, e.Bg, e.Index, e.CharacterCode));
                     lastBg = e.Bg;
                 }
             }
 
-            #region debug-point gallery-bg-load
-            Log($"[诊断] Gallery 背景加载: _backgrounds(before)={_backgrounds.Count}, chapters={chapterTitles.Count}, plots={plotIds.Count}, entries(withBg)={allPlotEntries.Count}, anchors={bgAnchors.Count}");
-            #endregion
+            Log($"[诊断] Gallery 背景加载: chapters={chapterTitles.Count}, plots={plotIds.Count}, entries(withBg)={allPlotEntries.Count}, anchors={bgAnchors.Count}");
 
-            var picDescs = await db.Queryable<PicDescription>().ToListAsync();
+            // P2: 投影只取 DedupKey 和 PicDesc（避免加载 ImageUrl/Source/时间戳等）
+            var picDescs = await db.Queryable<PicDescription>()
+                .Select(p => new { p.DedupKey, p.PicDesc })
+                .ToListAsync();
             var picDescMap = picDescs.ToDictionary(p => p.DedupKey ?? "", p => p.PicDesc ?? "");
 
-            // 关联到对齐结果
-            foreach (var cs in bgAnchors
-                         .OrderBy(e => e.PlotId)
-                         .ThenBy(e => e.Index))
+            foreach (var anchor in bgAnchors.OrderBy(a => a.PlotId).ThenBy(a => a.Index))
             {
                 var picDesc = "";
-                if (!string.IsNullOrEmpty(cs.CharacterCode) &&
-                    picDescMap.TryGetValue(cs.CharacterCode, out var desc))
+                if (!string.IsNullOrEmpty(anchor.CharacterCode) &&
+                    picDescMap.TryGetValue(anchor.CharacterCode, out var desc))
                     picDesc = desc;
 
-                // 关联到对齐结果
-                _backgrounds.Add(new BackgroundItem(
-                    cs.Bg,
+                result.Add(new BackgroundItem(
+                    anchor.Bg,
                     picDesc,
-                    cs.Index,
+                    anchor.Index,
                     [],
-                    cs.PlotId,
-                    plotIdToTitle.GetValueOrDefault(cs.PlotId, "")));
+                    anchor.PlotId,
+                    plotIdToTitle.GetValueOrDefault(anchor.PlotId, "")));
             }
 
-            #region debug-point gallery-bg-load-done
-            Log($"[诊断] Gallery 背景加载: _backgrounds(after)={_backgrounds.Count}");
-            #endregion
+            Log($"[诊断] Gallery 背景加载: result={result.Count}");
         }
         catch (Exception ex)
         {
             Log($"背景图加载失败: {ex.Message}");
         }
+        return result;
     }
+
+    /// <summary>背景锚点轻量 DTO，避免加载 FormattedTextEntry 全表列。</summary>
+    private record BgAnchorDto(long PlotId, string Bg, int Index, string? CharacterCode);
 
     private void BuildVoiceConfigs()
     {
@@ -353,48 +403,71 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
     partial void OnSelectedChapterChanged(ChapterItem? value)
     {
-        LoadSegmentsForChapter();
+        _ = LoadSegmentsForChapterAsync();
     }
 
     partial void OnSearchTextChanged(string value)
     {
-        LoadSegmentsForChapter();
+        _ = LoadSegmentsForChapterAsync();
     }
 
-    private void LoadSegmentsForChapter()
+    /// <summary>
+    /// P1: 将 SegmentRow 对象创建移到 Task.Run 后台线程，
+    /// 只有最终的 ObservableCollection 赋值留在 UI 线程。
+    /// </summary>
+    private async Task LoadSegmentsForChapterAsync()
     {
         if (SelectedChapter == null) return;
 
-        var entries = _allEntries
-            .Where(e => e.ChapterTitle == SelectedChapter.Title);
+        var chapterTitle = SelectedChapter.Title;
+        var searchText = SearchText;
+        var allEntries = _allEntries;
 
-        if (!string.IsNullOrWhiteSpace(SearchText))
+        // 后台线程：LINQ 过滤 + 创建 SegmentRow 对象
+        var rows = await Task.Run(() =>
         {
-            var search = SearchText.Trim();
-            entries = entries.Where(e =>
-                (e.NovelText?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (e.CharacterName?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false));
-        }
+            var sw = Stopwatch.StartNew();
+            var entries = allEntries.Where(e => e.ChapterTitle == chapterTitle);
 
-        var rows = entries.Select((e, i) => new SegmentRow
-        {
-            Index = i + 1,
-            CharacterName = e.IsDialog ? (e.CharacterName ?? "?") : "(旁白)",
-            SegmentType = e.IsDialog ? "对话" : "旁白",
-            NovelText = e.NovelText ?? "",
-            CharacterCode = e.CharacterCode,
-            Gender = e.Gender,
-            ChapterTitle = e.ChapterTitle,
-            EntryIndex = e.EntryIndex,
-            HasAudio = false,
-            AudioOpacity = 0.3,
-            AudioStatus = "— — — — —"
-        }).ToList();
+            if (!string.IsNullOrWhiteSpace(searchText))
+            {
+                var search = searchText.Trim();
+                entries = entries.Where(e =>
+                    (e.NovelText?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (e.CharacterName?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
 
+            var result = entries.Select((e, i) => new SegmentRow
+            {
+                Index = i + 1,
+                CharacterName = e.IsDialog ? (e.CharacterName ?? "?") : "(旁白)",
+                SegmentType = e.IsDialog ? "对话" : "旁白",
+                NovelText = e.NovelText ?? "",
+                CharacterCode = e.CharacterCode,
+                Gender = e.Gender,
+                ChapterTitle = e.ChapterTitle,
+                EntryIndex = e.EntryIndex,
+                HasAudio = false,
+                AudioOpacity = 0.3,
+                AudioStatus = "— — — — —"
+            }).ToList();
+
+            sw.Stop();
+            Log($"[perf] LoadSegments: {result.Count} rows={sw.ElapsedMilliseconds}ms (background)");
+            return result;
+        });
+
+        // UI 线程：赋值 + 触发音频扫描 + 订阅事件
         FilteredSegments = new ObservableCollection<SegmentRow>(rows);
-
-        // 扫描已有音频文件，标记可播放的行
-        RefreshAudioStatus();
+        
+        // 订阅所有音频条的播放事件（互斥）
+        // 注意：AudioPlayer 是懒加载的，这里会触发初始化
+        foreach (var seg in rows)
+        {
+            SubscribeAudioPlayerEvents(seg);
+        }
+        
+        _ = RefreshAudioStatusAsync();
     }
 
     [RelayCommand]
@@ -440,11 +513,6 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
             using var pipeline = new TtsPipeline(engine, _voiceManager, cache);
 
-            var chapterSafe = SelectedChapter != null
-                ? sanitized(SelectedChapter.Title) : "unknown";
-            var chapterIdx = SelectedChapter?.Index ?? 0;
-            var fileNamePrefix = $"{chapterSafe}_{chapterIdx:D2}";
-
             var segments = new List<TtsSegment>();
             var segmentIndices = new List<int>();
 
@@ -472,7 +540,6 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                 ProgressValue = (double)completed / total * 100;
                 ProgressText = $"进度: {completed}/{total}";
 
-                // 直接更新对应行的音频状态
                 if (tuple.Index >= 0 && tuple.Index < FilteredSegments.Count)
                 {
                     var row = FilteredSegments[tuple.Index];
@@ -480,18 +547,13 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                     row.AudioFilePath = tuple.FilePath;
                     row.AudioOpacity = 1.0;
                     row.AudioStatus = "▂▃▅▆▇▅▃";
-
-                    try
-                    {
-                        using var reader = new AudioFileReader(tuple.FilePath);
-                        row.DurationText = reader.TotalTime.TotalSeconds.ToString("F1") + "s";
-                    }
-                    catch { row.DurationText = ""; }
+                    // AudioFileReader 延迟到播放时读取时长
+                    row.DurationText = "";
                 }
             });
 
             var result = await pipeline.SynthesizeSegmentsAsync(
-                segments, segmentIndices, TtsOutputDir, fileNamePrefix, 1000, ct, progress, fileProgress);
+                segments, segmentIndices, TtsOutputDir, 1000, ct, progress, fileProgress);
 
             Log($"✅ 完成: {result.Count} 个片段已生成");
             ProgressValue = 100;
@@ -554,12 +616,6 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
             using var pipeline = new TtsPipeline(engine, _voiceManager, cache);
 
-            // 计算文件名前缀：{章节安全名}_{章节索引:D2}
-            var chapterSafe = SelectedChapter != null
-                ? sanitized(SelectedChapter.Title) : "unknown";
-            var chapterIdx = SelectedChapter?.Index ?? 0;
-            var fileNamePrefix = $"{chapterSafe}_{chapterIdx:D2}";
-
             var segments = new List<TtsSegment>();
             var segmentIndices = new List<int>();
             var rowByIndex = new Dictionary<int, SegmentRow>();
@@ -582,7 +638,6 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
             var fileProgress = new Progress<(int Index, string FilePath)>(tuple =>
             {
-                // Index 是 segments 列表中的位置（0-based）
                 if (tuple.Index >= 0 && tuple.Index < segmentIndices.Count
                     && rowByIndex.TryGetValue(segmentIndices[tuple.Index], out var row))
                 {
@@ -590,18 +645,12 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                     row.AudioFilePath = tuple.FilePath;
                     row.AudioOpacity = 1.0;
                     row.AudioStatus = "▂▃▅▆▇▅▃";
-
-                    try
-                    {
-                        using var reader = new AudioFileReader(tuple.FilePath);
-                        row.DurationText = reader.TotalTime.TotalSeconds.ToString("F1") + "s";
-                    }
-                    catch { row.DurationText = ""; }
+                    row.DurationText = "";
                 }
             });
 
             var result = await pipeline.SynthesizeSegmentsAsync(
-                segments, segmentIndices, TtsOutputDir, fileNamePrefix, 1000, ct, progress, fileProgress);
+                segments, segmentIndices, TtsOutputDir, 1000, ct, progress, fileProgress);
 
             Log($"✅ 完成: {result.Count}/{rows.Count} 个片段已生成");
         }
@@ -624,17 +673,49 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     // 播放
     // ════════════════════════════════════════════
 
-    [RelayCommand]
-    private async Task PlayFromSelectedAsync()
+    private SegmentRow? _activeSegment;  // 当前活跃（播放中或暂停中）的段落
+    private List<SegmentRow>? _playbackSegments;  // 连播列表
+    private int _playbackIndex = -1;  // 当前在连播列表中的位置
+    private int _playbackGeneration;  // 代际计数器，用于解决上一句/下一句的竞态条件
+
+    /// <summary>订阅音频条的播放事件，实现互斥。</summary>
+    private void SubscribeAudioPlayerEvents(SegmentRow seg)
     {
-        // 如果正在播放，暂停
-        if (IsPlaying)
+        seg.AudioPlayer.PropertyChanged += (s, e) =>
         {
-            _playCts?.Cancel();
-            IsPlaying = false;
+            if (e.PropertyName == nameof(AudioPlayerViewModel.IsPlaying))
+            {
+                // 当这个音频条开始播放时，停止之前的活跃段落（O(1)）
+                if (seg.AudioPlayer.IsPlaying)
+                {
+                    SetActiveSegment(seg);
+                }
+            }
+        };
+    }
+
+    [RelayCommand]
+    private void PlayFromSelected()
+    {
+        // 如果有暂停的段落 → 恢复它
+        if (_activeSegment is { } active && active.IsPlaying && _isPaused)
+        {
+            active.AudioPlayer.TogglePlayCommand.Execute(null);
+            _isPaused = false;
+            PlayButtonText = "⏸ 暂停";
             return;
         }
 
+        // 如果有播放中的段落 → 暂停它
+        if (_activeSegment is { } playing && playing.IsPlaying && !_isPaused)
+        {
+            playing.AudioPlayer.TogglePlayCommand.Execute(null);
+            _isPaused = true;
+            PlayButtonText = "▶ 继续";
+            return;
+        }
+
+        // 否则：开始新的连播
         if (SelectedSegment == null)
         {
             Log("⚠️ 请先选择一行");
@@ -650,22 +731,46 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        // 停止所有其他段落
+        StopAllSegments();
+
+        _ = PlayLoopAsync(segments);
+    }
+
+    private async Task PlayLoopAsync(List<SegmentRow> segments)
+    {
+        // 递增代际计数器，使旧的 finally 块失效
+        var generation = ++_playbackGeneration;
+        
         IsPlaying = true;
+        _isPaused = false;
+        PlayButtonText = "⏸ 暂停";
         _playCts = new CancellationTokenSource();
         var ct = _playCts.Token;
 
+        // 保存连播列表和起始索引（用于上一句/下一句）
+        _playbackSegments = segments;
+        _playbackIndex = 0;
+
         try
         {
-            foreach (var seg in segments)
+            for (int i = 0; i < segments.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
 
+                var seg = segments[i];
+                _playbackIndex = i;
+
+                // 设置当前活跃段落（自动停止之前的）
+                SetActiveSegment(seg);
+
                 seg.IsPlaying = true;
-                SelectedSegment = seg; // OnSelectedSegmentChanged 自动更新组件
+                SelectedSegment = seg;
 
                 await PlayAudioFile(seg.AudioFilePath, ct);
 
                 seg.IsPlaying = false;
+                _activeSegment = null;
             }
         }
         catch (OperationCanceledException)
@@ -674,22 +779,136 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         }
         finally
         {
-            IsPlaying = false;
-            foreach (var seg in FilteredSegments)
-                seg.IsPlaying = false;
-            _playCts = null;
+            // 只有当这是当前代际时才执行清理
+            // 上一句/下一句会启动新循环（generation+1），旧循环的 finally 跳过清理
+            if (generation == _playbackGeneration)
+            {
+                IsPlaying = false;
+                _isPaused = false;
+                _activeSegment = null;
+                _playbackSegments = null;
+                _playbackIndex = -1;
+                foreach (var seg in FilteredSegments)
+                    seg.IsPlaying = false;
+                _playCts = null;
+            }
         }
     }
 
     [RelayCommand]
     private void StopPlay()
     {
-        foreach (var seg in FilteredSegments.Where(s => s.IsPlaying))
-        {
-            seg.AudioPlayer.StopCommand.Execute(null);
-            seg.IsPlaying = false;
-        }
+        // 递增代际使旧循环的 finally 失效，然后手动清理
+        _playbackGeneration++;
+        StopAllSegments();
         _playCts?.Cancel();
+        IsPlaying = false;
+        _playbackSegments = null;
+        _playbackIndex = -1;
+    }
+
+    /// <summary>上一句（只在连播中可用）</summary>
+    /// <remarks>故意使用 async void：RelayCommand 需要 void 签名以保持按钮可用，
+    /// 内部通过 SwitchToSegmentAsync 实现异步播放链。</remarks>
+#pragma warning disable MVVMTK0039
+    [RelayCommand(CanExecute = nameof(IsPlaying))]
+    private async void PlayPrev()
+    {
+        if (_playbackSegments == null || _playbackIndex <= 0) return;
+
+        _playbackIndex--;
+        await SwitchToSegmentAsync(_playbackIndex);
+    }
+
+    /// <summary>下一句（只在连播中可用）</summary>
+    [RelayCommand(CanExecute = nameof(IsPlaying))]
+    private async void PlayNext()
+    {
+        if (_playbackSegments == null || _playbackIndex >= _playbackSegments.Count - 1) return;
+
+        _playbackIndex++;
+        await SwitchToSegmentAsync(_playbackIndex);
+    }
+#pragma warning restore MVVMTK0039
+
+    /// <summary>切换到指定段落播放（停止当前的，开始新的）</summary>
+    private async Task SwitchToSegmentAsync(int index)
+    {
+        if (_playbackSegments == null || index < 0 || index >= _playbackSegments.Count) return;
+
+        // 递增代际计数器，使旧 PlayLoopAsync 的 finally 失效
+        _playbackGeneration++;
+
+        // 取消当前播放（只取消 PlayAudioFile 的 WaitAsync）
+        _playCts?.Cancel();
+        _playCts?.Dispose();
+        _playCts = new CancellationTokenSource();
+        var ct = _playCts.Token;
+
+        var seg = _playbackSegments[index];
+
+        // 停止之前的段落
+        SetActiveSegment(seg);
+        seg.IsPlaying = true;
+        SelectedSegment = seg;
+
+        try
+        {
+            await PlayAudioFile(seg.AudioFilePath, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // 被取消了（用户又点了切换）
+        }
+
+        seg.IsPlaying = false;
+
+        // 如果没被取消，自动播下一句
+        if (!ct.IsCancellationRequested && _playbackSegments != null && index < _playbackSegments.Count - 1)
+        {
+            _playbackIndex = index + 1;
+            await SwitchToSegmentAsync(_playbackIndex);
+        }
+        else if (!ct.IsCancellationRequested)
+        {
+            // 最后一句播完，停止
+            IsPlaying = false;
+            _playbackSegments = null;
+            _playbackIndex = -1;
+        }
+    }
+
+    /// <summary>停止所有段落并重置位置。</summary>
+    private void StopAllSegments()
+    {
+        // 只需要停止当前活跃的段落（如果有的话）
+        if (_activeSegment != null)
+        {
+            if (_activeSegment.HasAudio)
+            {
+                _activeSegment.AudioPlayer.StopCommand.Execute(null);
+            }
+            _activeSegment.IsPlaying = false;
+        }
+        _activeSegment = null;
+        _isPaused = false;
+    }
+
+    /// <summary>设置当前活跃段落（自动停止之前的活跃段落）。</summary>
+    private void SetActiveSegment(SegmentRow seg)
+    {
+        // 停止之前的活跃段落（O(1) 复杂度）
+        if (_activeSegment != null && _activeSegment != seg)
+        {
+            if (_activeSegment.HasAudio)
+            {
+                _activeSegment.AudioPlayer.StopCommand.Execute(null);
+            }
+            _activeSegment.IsPlaying = false;
+        }
+        
+        // 设置新的活跃段落
+        _activeSegment = seg;
     }
 
     private async Task PlayAudioFile(string filePath, CancellationToken ct)
@@ -704,13 +923,22 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         try
         {
             player.LoadFile(filePath);
+
+            // #4: AudioFileReader 延迟读取时长（只在播放时才读）
+            if (string.IsNullOrEmpty(seg.DurationText))
+            {
+                try
+                {
+                    using var reader = new AudioFileReader(filePath);
+                    seg.DurationText = reader.TotalTime.TotalSeconds.ToString("F1") + "s";
+                }
+                catch { seg.DurationText = ""; }
+            }
+
             player.TogglePlayCommand.Execute(null);
 
-            while (player.IsPlaying)
-            {
-                ct.ThrowIfCancellationRequested();
-                await Task.Delay(50, ct);
-            }
+            // 等待播放完成（自然结束或手动停止），同时支持取消
+            await player.WaitForCompletionAsync().WaitAsync(ct);
         }
         catch (OperationCanceledException)
         {
@@ -914,71 +1142,70 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         LogText += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
     }
 
-    /// <summary>扫描输出目录和缓存目录，标记已有音频的片段。</summary>
-    private void RefreshAudioStatus()
+    /// <summary>
+    /// 异步扫描缓存目录，通过内容哈希匹配音频文件并标记可播放的片段。
+    /// 支持取消（快速切换文件时取消旧刷新）和批量 UI 更新（一次 Dispatcher.Post）。
+    /// </summary>
+    private async Task RefreshAudioStatusAsync()
     {
-        if (!Directory.Exists(TtsOutputDir)) return;
-
-        var mp3Files = Directory.Exists(TtsOutputDir)
-            ? Directory.GetFiles(TtsOutputDir, "*.mp3")
-            : [];
         var cacheDir = Path.Combine(TtsOutputDir, "_tts_cache");
+        if (!Directory.Exists(cacheDir)) return;
 
-        // 预计算章节前缀用于段级文件匹配
-        var chapterSafe = SelectedChapter != null
-            ? sanitized(SelectedChapter.Title) : "";
-        var chapterIdx = SelectedChapter?.Index ?? 0;
-        var chapterPrefix = $"{chapterSafe}_{chapterIdx:D2}";
+        // 取消上一次刷新，防止快速切换时旧结果覆盖新数据
+        _audioRefreshCts?.Cancel();
+        _audioRefreshCts?.Dispose();
+        _audioRefreshCts = new CancellationTokenSource();
+        var ct = _audioRefreshCts.Token;
 
-        foreach (var seg in FilteredSegments)
+        var swMatch = Stopwatch.StartNew();
+        var segments = FilteredSegments.ToList();
+
+        // ── 后台：预加载缓存 + 哈希匹配 ──
+        var matches = await Task.Run(() =>
         {
-            string? match = null;
+            ct.ThrowIfCancellationRequested();
+            var sw = Stopwatch.StartNew();
 
-            // 1. 优先匹配段级文件：{chapterPrefix}_{segIndex:D3}_*.mp3
-            var segPattern = $"{chapterPrefix}_{seg.Index:D3}_";
-            match = mp3Files.FirstOrDefault(f =>
-                Path.GetFileName(f).StartsWith(segPattern, StringComparison.OrdinalIgnoreCase));
+            var cacheFileNames = Directory.EnumerateFiles(cacheDir, "*.mp3")
+                .Select(f => Path.GetFileName(f).ToLowerInvariant())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            // 2. 检查缓存目录（缓存命中的文件以哈希命名）
-            if (match == null && Directory.Exists(cacheDir))
+            sw.Stop();
+            Log($"[perf] RefreshAudioStatus preload: {sw.ElapsedMilliseconds}ms, cache={cacheFileNames.Count} files");
+
+            ct.ThrowIfCancellationRequested();
+
+            var result = new List<(SegmentRow Seg, string FilePath)>();
+
+            foreach (var seg in segments)
             {
+                ct.ThrowIfCancellationRequested();
+
                 var isDialog = seg.SegmentType != "旁白";
                 var voice = isDialog
                     ? _voiceManager.GetVoiceForCharacter(seg.CharacterName, seg.Gender)
                     : _voiceManager.GetNarratorVoice();
                 var sanitizedText = TextSanitizer.Sanitize(seg.NovelText);
-                if (!string.IsNullOrWhiteSpace(sanitizedText))
-                {
-                    var cacheKey = TtsCacheService.GetCacheKey(sanitizedText, voice);
-                    var cacheFile = Path.Combine(cacheDir, $"{cacheKey}.mp3");
-                    if (File.Exists(cacheFile))
-                        match = cacheFile;
-                }
+                if (string.IsNullOrWhiteSpace(sanitizedText)) continue;
+
+                var cacheKey = TtsCacheService.GetCacheKey(sanitizedText, voice);
+                var cacheFileName = $"{cacheKey}.mp3".ToLowerInvariant();
+                if (cacheFileNames.Contains(cacheFileName))
+                    result.Add((seg, Path.Combine(cacheDir, cacheFileName)));
             }
 
-            // 3. 回退到章节级匹配（旧的合并 MP3）
-            if (match == null)
-            {
-                var chapterMatch = sanitized(seg.ChapterTitle);
-                match = mp3Files.FirstOrDefault(f =>
-                    Path.GetFileName(f).Contains(chapterMatch, StringComparison.OrdinalIgnoreCase));
-            }
+            return result;
+        }, ct);
 
-            if (match != null)
-            {
-                seg.HasAudio = true;
-                seg.AudioFilePath = match;
-                seg.AudioOpacity = 1.0;
-                seg.AudioStatus = "▂▃▅▆▇▅▃";
+        // ── UI 线程：一次批量更新（P3: 使用 UpdateAudioState 单次通知） ──
+        Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var (seg, filePath) in matches)
+                seg.UpdateAudioState(filePath);
+        });
 
-                try
-                {
-                    using var reader = new AudioFileReader(match);
-                    seg.DurationText = reader.TotalTime.TotalSeconds.ToString("F1") + "s";
-                }
-                catch { seg.DurationText = ""; }
-            }
-        }
+        swMatch.Stop();
+        Log($"[perf] RefreshAudioStatus: matched={matches.Count}, total={swMatch.ElapsedMilliseconds}ms");
     }
 
     private static string sanitized(string text)
@@ -1061,6 +1288,8 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     {
         _generateCts?.Cancel();
         _generateCts?.Dispose();
+        _audioRefreshCts?.Cancel();
+        _audioRefreshCts?.Dispose();
         _playCts?.Cancel();
         _playCts?.Dispose();
         foreach (var seg in FilteredSegments)

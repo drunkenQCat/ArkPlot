@@ -35,7 +35,7 @@ public static partial class DialogExtractor
 
     /// <summary>
     /// 从一段正文中提取旁白/对话交替的片段。
-    /// 识别中文引号 "" 内的内容作为对话。
+    /// 识别中文弯引号 "" 和 ASCII 直引号 "" 内的内容作为对话。
     /// </summary>
     public static List<NovelSegment> ExtractSegments(string text)
     {
@@ -44,8 +44,30 @@ public static partial class DialogExtractor
 
         while (pos < text.Length)
         {
-            int openIdx = text.IndexOf('\u201C', pos); // "
-            if (openIdx < 0)
+            // 找最近的开引号（弯引号 " 或直引号 "）
+            int curveOpen = text.IndexOf('\u201C', pos); // "
+            int straightOpen = text.IndexOf('"', pos);   // "
+
+            int openIdx;
+            char closeChar;
+
+            if (curveOpen < 0 && straightOpen < 0)
+            {
+                AddNarration(segments, text[pos..]);
+                break;
+            }
+
+            if (curveOpen >= 0 && (straightOpen < 0 || curveOpen < straightOpen))
+            {
+                openIdx = curveOpen;
+                closeChar = '\u201D'; // "
+            }
+            else if (straightOpen >= 0 && (curveOpen < 0 || straightOpen < curveOpen))
+            {
+                openIdx = straightOpen;
+                closeChar = '"'; // "
+            }
+            else
             {
                 AddNarration(segments, text[pos..]);
                 break;
@@ -54,7 +76,7 @@ public static partial class DialogExtractor
             if (openIdx > pos)
                 AddNarration(segments, text[pos..openIdx]);
 
-            int closeIdx = text.IndexOf('\u201D', openIdx + 1); // "
+            int closeIdx = text.IndexOf(closeChar, openIdx + 1);
             if (closeIdx < 0)
             {
                 AddNarration(segments, text[openIdx..]);
@@ -73,6 +95,7 @@ public static partial class DialogExtractor
 
     /// <summary>
     /// 提取文本中所有引号内的对话（纯字符串列表，不含分段信息）。
+    /// 支持中文弯引号和 ASCII 直引号。
     /// </summary>
     public static List<string> ExtractDialogs(string text)
     {
@@ -80,7 +103,8 @@ public static partial class DialogExtractor
         var matches = QuotedDialogRegex().Matches(text);
         foreach (Match match in matches)
         {
-            var dialog = match.Groups[1].Value.Trim();
+            // Group 1 = 弯引号内容, Group 2 = 直引号内容
+            var dialog = (match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value).Trim();
             if (!string.IsNullOrWhiteSpace(dialog))
                 dialogs.Add(dialog);
         }
@@ -108,7 +132,7 @@ public static partial class DialogExtractor
     [GeneratedRegex(@"^#+\s+", RegexOptions.Multiline)]
     private static partial Regex ChapterSplitRegex();
 
-    [GeneratedRegex(@"\u201C([^\u201D]*)\u201D")]
+    [GeneratedRegex(@"(?:\u201C([^\u201D]*)\u201D|""([^""]*)"")")]
     private static partial Regex QuotedDialogRegex();
 
     [GeneratedRegex(@"\s+")]

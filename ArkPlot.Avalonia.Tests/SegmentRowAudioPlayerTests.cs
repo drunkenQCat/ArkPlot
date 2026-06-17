@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using ArkPlot.Avalonia.Models;
 using ArkPlot.Avalonia.ViewModels;
 using ArkPlot.Avalonia.Views;
@@ -341,6 +342,96 @@ public class SegmentRowAudioPlayerTests
         Assert.Equal(125.5, vm.Duration);
         Assert.Equal("02:05", vm.TotalTimeText);
         Assert.False(vm.IsPlaying); // 但未播放
+
+        vm.Dispose();
+    }
+
+    [AvaloniaFact]
+    public async Task WaitForCompletion_NotPlaying_ReturnsCompleted()
+    {
+        var mock = new MockAudioPlayer { FakeLength = 60 };
+        var vm = new AudioPlayerViewModel(mock);
+
+        // 未播放时 WaitForCompletionAsync 应立即返回
+        var task = vm.WaitForCompletionAsync();
+        Assert.True(task.IsCompleted);
+
+        vm.Dispose();
+    }
+
+    [AvaloniaFact]
+    public async Task WaitForCompletion_Stop_CompletesTask()
+    {
+        var mock = new MockAudioPlayer { FakeLength = 60 };
+        var vm = new AudioPlayerViewModel(mock);
+        vm.LoadFile("test.mp3");
+        vm.TogglePlayCommand.Execute(null);
+        Assert.True(vm.IsPlaying);
+
+        var completionTask = vm.WaitForCompletionAsync();
+        Assert.False(completionTask.IsCompleted); // 播放中，未完成
+
+        vm.StopCommand.Execute(null); // 手动停止
+        await completionTask; // 应该完成
+        Assert.True(completionTask.IsCompleted);
+
+        vm.Dispose();
+    }
+
+    [AvaloniaFact]
+    public async Task WaitForCompletion_LoadFile_CancelsPreviousTask()
+    {
+        var mock = new MockAudioPlayer { FakeLength = 60 };
+        var vm = new AudioPlayerViewModel(mock);
+        vm.LoadFile("first.mp3");
+        vm.TogglePlayCommand.Execute(null);
+
+        var firstTask = vm.WaitForCompletionAsync();
+        Assert.False(firstTask.IsCompleted);
+
+        // 加载新文件 → 取消上一次的等待
+        vm.LoadFile("second.mp3");
+        Assert.True(firstTask.IsCanceled);
+
+        vm.Dispose();
+    }
+
+    [AvaloniaFact]
+    public async Task SequentialPlayback_TwoFiles_FirstWaitsForCompletion()
+    {
+        // 模拟连播：播放 A → 等完成 → 播放 B → 等完成
+        var mock = new MockAudioPlayer { FakeLength = 10 };
+        var vm = new AudioPlayerViewModel(mock);
+        var playLog = new List<string>();
+
+        // 播放第一个文件
+        vm.LoadFile("first.mp3");
+        vm.TogglePlayCommand.Execute(null);
+        playLog.Add("first_started");
+
+        var task1 = vm.WaitForCompletionAsync();
+
+        // 模拟第一个文件播放结束（NAudio 线程触发 PlaybackEnded）
+        mock.RaisePlaybackEnded();
+        await task1;
+        playLog.Add("first_ended");
+
+        // 播放第二个文件
+        vm.LoadFile("second.mp3");
+        vm.TogglePlayCommand.Execute(null);
+        playLog.Add("second_started");
+
+        var task2 = vm.WaitForCompletionAsync();
+        mock.RaisePlaybackEnded();
+        await task2;
+        playLog.Add("second_ended");
+
+        // 验证顺序：first_started → first_ended → second_started → second_ended
+        Assert.Equal(4, playLog.Count);
+        Assert.Equal("first_started", playLog[0]);
+        Assert.Equal("first_ended", playLog[1]);
+        Assert.Equal("second_started", playLog[2]);
+        Assert.Equal("second_ended", playLog[3]);
 
         vm.Dispose();
     }

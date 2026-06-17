@@ -230,18 +230,16 @@ public class TtsPipeline : IDisposable
     /// 返回每个片段的输出文件路径列表。
     /// </summary>
     /// <param name="segments">待合成的片段列表。</param>
-    /// <param name="segmentIndices">每个片段对应的行号（1-based），用于文件命名。若为 null 则使用 1,2,3...。</param>
+    /// <param name="segmentIndices">每个片段对应的行号（1-based），用于 fileProgress 回调索引。若为 null 则使用 1,2,3...。</param>
     /// <param name="outputDir">输出目录。</param>
-    /// <param name="fileNamePrefix">文件名前缀（如 "孤星_01"），用于 RefreshAudioStatus 反向匹配。</param>
     /// <param name="delayMs">请求间隔毫秒。</param>
     /// <param name="ct">取消令牌。</param>
     /// <param name="progress">进度回调。</param>
-    /// <param name="fileProgress">逐文件完成回调：(segmentIndex_0based, filePath)。缓存命中时 filePath 为缓存路径。</param>
+    /// <param name="fileProgress">逐文件完成回调：(segmentIndex_0based, filePath)。filePath 始终为缓存路径。</param>
     public async Task<List<string>> SynthesizeSegmentsAsync(
         List<TtsSegment> segments,
         List<int>? segmentIndices,
         string outputDir,
-        string fileNamePrefix = "",
         int delayMs = 1000,
         CancellationToken ct = default,
         IProgress<string>? progress = null,
@@ -266,15 +264,10 @@ public class TtsPipeline : IDisposable
                 await Task.Delay(delayMs, ct);
             isFirst = false;
 
-            // 缓存查询
+            // 缓存查询 — 输出路径统一为缓存目录下的哈希文件名
             var cacheKey = TtsCacheService.GetCacheKey(text, seg.Voice, _rate, _volume);
             var (hit, cachedPath) = _cache.TryGetCachedAudio(cacheKey);
-
-            var segIndex = segmentIndices != null && i < segmentIndices.Count
-                ? segmentIndices[i] : i + 1;
-            var safeName = SanitizeFileName(seg.Label).Replace(" ", "_");
-            var prefix = string.IsNullOrEmpty(fileNamePrefix) ? "" : $"{fileNamePrefix}_";
-            var outputPath = Path.Combine(outputDir, $"{prefix}{segIndex:D3}_{safeName}.mp3");
+            var cachePath = _cache.GetCachePath(cacheKey);
 
             if (hit)
             {
@@ -286,26 +279,26 @@ public class TtsPipeline : IDisposable
 
             try
             {
-                await _engine.SynthesizeAsync(text, seg.Voice, outputPath, _rate, _volume, ct);
+                await _engine.SynthesizeAsync(text, seg.Voice, cachePath, _rate, _volume, ct);
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
                 var msg = ex.Message.Length > 80 ? ex.Message[..80] : ex.Message;
                 progress?.Report($"  [{i + 1}/{segments.Count}] ⚠️ 失败（{ex.GetType().Name}: {msg}）");
+                try { if (File.Exists(cachePath)) File.Delete(cachePath); } catch { }
                 continue;
             }
 
-            if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
+            if (!File.Exists(cachePath) || new FileInfo(cachePath).Length == 0)
             {
                 progress?.Report($"  [{i + 1}/{segments.Count}] ⚠️ 跳过（空文件）");
+                try { if (File.Exists(cachePath)) File.Delete(cachePath); } catch { }
                 continue;
             }
 
-            try { _cache.SaveToCache(cacheKey, outputPath); } catch { }
-
-            outputFiles.Add(outputPath);
-            fileProgress?.Report((i, outputPath));
+            outputFiles.Add(cachePath);
+            fileProgress?.Report((i, cachePath));
             progress?.Report($"  [{i + 1}/{segments.Count}] 🎤 {seg.Voice.Replace("Neural", "")} | {seg.Label}");
         }
 

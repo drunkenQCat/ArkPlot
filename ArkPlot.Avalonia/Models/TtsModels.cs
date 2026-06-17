@@ -79,12 +79,8 @@ public partial class SegmentRow : ObservableObject, IDisposable
     public AudioPlayerViewModel AudioPlayer => _audioPlayer ??= new AudioPlayerViewModel(
         filePathProvider: () => AudioFilePath);
 
-    partial void OnAudioFilePathChanged(string value)
-    {
-        if (string.IsNullOrEmpty(value) || !System.IO.File.Exists(value)) return;
-        try { AudioPlayer.LoadFile(value); }
-        catch { /* 非音频文件或格式不支持，静默跳过 */ }
-    }
+    // P0: 已移除 OnAudioFilePathChanged — 不再在 setter 中触发 NAudio I/O
+    // LoadFile 延迟到用户点击播放时由 TtsViewModel.PlayAudioFile 调用
 
     [ObservableProperty] private bool _hasAudio;
     [ObservableProperty] private string _audioFilePath = "";
@@ -92,6 +88,23 @@ public partial class SegmentRow : ObservableObject, IDisposable
     [ObservableProperty] private double _audioOpacity = 0.3;
     [ObservableProperty] private string _audioStatus = "— — — — —";
     [ObservableProperty] private bool _isPlaying;
+
+    /// <summary>
+    /// P3: 批量更新音频状态，合并为一次 PropertyChanged 通知。
+    /// 避免 500 行 × 5 属性 = 2500 个 PropertyChanged 事件风暴。
+    /// 故意直接操作字段（绕过 [ObservableProperty] setter）以跳过逐个通知。
+    /// </summary>
+#pragma warning disable MVVMTK0034
+    public void UpdateAudioState(string filePath)
+    {
+        _audioFilePath = filePath;
+        _audioStatus = "▂▃▅▆▇▅▃";
+        _audioOpacity = 1.0;
+        _durationText = "";
+        _hasAudio = true;
+        OnPropertyChanged(string.Empty);
+    }
+#pragma warning restore MVVMTK0034
 
     [RelayCommand]
     public void PlaySingle()
