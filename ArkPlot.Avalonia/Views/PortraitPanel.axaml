@@ -4,34 +4,65 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:ArkPlot.Avalonia.ViewModels"
              xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
+             xmlns:converters="using:ArkPlot.Avalonia.Converters"
              mc:Ignorable="d" d:DesignWidth="296" d:DesignHeight="526"
              x:Class="ArkPlot.Avalonia.Views.PortraitPanel"
              x:DataType="vm:PortraitPanelViewModel">
-  <Border Width="296" Height="526" CornerRadius="8" ClipToBounds="True"
-          Background="#404040">
-    <Grid>
-      <!-- 立绘图片 -->
-      <Image asyncImageLoader:ImageLoader.Source="{Binding PortraitUrl}"
-             Stretch="UniformToFill"
-             HorizontalAlignment="Center"
-             VerticalAlignment="Center"
-             IsVisible="{Binding HasPortrait}">
-        <Image.OpacityMask>
-          <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Color="#00000000" Offset="0"/>
-            <GradientStop Color="#FF000000" Offset="0.15"/>
-            <GradientStop Color="#FF000000" Offset="0.85"/>
-            <GradientStop Color="#00000000" Offset="1"/>
-          </LinearGradientBrush>
-        </Image.OpacityMask>
-      </Image>
 
-      <!-- 角色名 -->
-      <TextBlock Text="{Binding SpeakerName}"
-                 VerticalAlignment="Bottom" HorizontalAlignment="Center"
-                 FontSize="14" FontWeight="SemiBold"
-                 Margin="0,0,0,8" Opacity="0.8"
-                 IsVisible="{Binding HasPortrait}"/>
-    </Grid>
-  </Border>
+  <UserControl.Resources>
+    <converters:VerticalTextConverter x:Key="VerticalText"/>
+  </UserControl.Resources>
+
+  <!-- 根 Panel 不裁切，允许子元素突破 -->
+  <Panel Width="296" Height="472" ClipToBounds="False">
+    <!-- 卡片容器 — 固定尺寸，带阴影 -->
+    <Border x:Name="CardBorder"
+            CornerRadius="16"
+            Background="#787d87"
+            Width="279"
+            Height="315"
+            BoxShadow="0 8 5 6 #93979f, 0 2 8 8 #93979f"/>
+
+    <!-- 立绘图片 — 固定大高度 + 底部对齐，自然向上溢出 -->
+    <Image x:Name="PortraitImage"
+           asyncImageLoader:ImageLoader.Source="{Binding PortraitUrl}"
+           Stretch="UniformToFill"
+           HorizontalAlignment="Center"
+           VerticalAlignment="Bottom"
+           Height="444"
+		   Margin="0,20,20,10"
+           IsVisible="{Binding HasPortrait}"
+           >
+      <Image.RenderTransform>
+        <TranslateTransform X="-40"/>
+      </Image.RenderTransform>
+      <Image.Effect>
+        <DropShadowEffect Color="#000000"
+                          BlurRadius="16"
+                          OffsetX="0"
+                          OffsetY="5"
+                          Opacity="0.6"/>
+      </Image.Effect>
+    </Image>
+
+    <!-- 角色名竖排 - 右下角装饰元素 -->
+    <Panel HorizontalAlignment="Right"
+           VerticalAlignment="Center"
+           Margin="0,20,20,0">
+      <TextBlock Text="{Binding SpeakerName, Converter={StaticResource VerticalText}}"
+                 FontSize="22" FontWeight="SemiBold"
+                 Foreground="#CCFFFFFF"
+                 TextAlignment="Center"
+                 LineHeight="26"
+                 IsVisible="{Binding HasPortrait}">
+        <TextBlock.Effect>
+          <DropShadowEffect Color="#88FFFFFF"
+                            BlurRadius="6"
+                            OffsetX="0"
+                            OffsetY="0"
+                            Opacity="1.0"/>
+        </TextBlock.Effect>
+      </TextBlock>
+    </Panel>
+  </Panel>
 </UserControl>

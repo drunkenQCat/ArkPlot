@@ -7,81 +7,94 @@
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="220"
              x:Class="ArkPlot.Avalonia.Views.GalleryPanel"
              x:DataType="vm:GalleryPanelViewModel">
+
+  <UserControl.Resources>
+    <!-- 左侧渐隐: 右 100% → 左 0% -->
+    <LinearGradientBrush x:Key="LeftFadeMask" StartPoint="100%,0%" EndPoint="0%,0%">
+      <GradientStop Color="#FF000000" Offset="0.0"/>
+      <GradientStop Color="#00000000" Offset="1.0"/>
+    </LinearGradientBrush>
+
+    <!-- 右侧渐隐: 左 0% → 右 100% -->
+    <LinearGradientBrush x:Key="RightFadeMask" StartPoint="0%,0%" EndPoint="100%,0%">
+      <GradientStop Color="#00000000" Offset="0.0"/>
+      <GradientStop Color="#FF000000" Offset="1.0"/>
+    </LinearGradientBrush>
+  </UserControl.Resources>
+
   <Border Height="220" BorderBrush="#20FFFFFF"
-          BorderThickness="1" CornerRadius="8" ClipToBounds="True"
-          Background="#404040">
-    <Grid ColumnDefinitions="*,8*,*" Margin="0,4">
-      <!-- 左图 10% 裁剪 (默认灰色) -->
-      <Border Grid.Column="0" CornerRadius="4" ClipToBounds="True"
-              Margin="4,0,0,0" Opacity="0.5">
-        <Grid>
+          BorderThickness="1" CornerRadius="12" ClipToBounds="True"
+          Background="#2A2A2A">
+    <Panel>
+      <!-- 上文 -->
+      <StackPanel VerticalAlignment="Top" Margin="16,8,16,0" ZIndex="10">
+        <TextBlock Text="{Binding UpperContext1}" FontSize="11"
+                   Foreground="#80FFFFFF" TextTrimming="CharacterEllipsis"/>
+        <TextBlock Text="{Binding UpperContext2}" FontSize="12"
+                   Foreground="#A0FFFFFF" TextTrimming="CharacterEllipsis"/>
+      </StackPanel>
+
+      <!-- 下文 -->
+      <StackPanel VerticalAlignment="Bottom" Margin="16,0,16,8" ZIndex="10">
+        <TextBlock Text="{Binding LowerContext1}" FontSize="12"
+                   Foreground="#A0FFFFFF" TextTrimming="CharacterEllipsis"/>
+        <TextBlock Text="{Binding LowerContext2}" FontSize="11"
+                   Foreground="#80FFFFFF" TextTrimming="CharacterEllipsis"/>
+      </StackPanel>
+
+      <!-- 左图 (Prev) - 绝对定位，露出 50px -->
+      <Border Width="60" HorizontalAlignment="Left" VerticalAlignment="Center"
+              Margin="0,0,-10,0" CornerRadius="6" ClipToBounds="True"
+              OpacityMask="{StaticResource LeftFadeMask}"
+              IsVisible="{Binding HasPrevBackground}">
+        <Panel>
           <Border Background="#383838"/>
           <Image asyncImageLoader:ImageLoader.Source="{Binding PrevBackground}"
                  Stretch="UniformToFill"
-                 HorizontalAlignment="Center"
-                 IsVisible="{Binding HasPrevBackground}"/>
-        </Grid>
+                 RenderTransformOrigin="0.5,0.5">
+            <Image.RenderTransform>
+              <ScaleTransform ScaleX="0.85" ScaleY="0.85"/>
+            </Image.RenderTransform>
+          </Image>
+        </Panel>
       </Border>
 
-      <!-- 中心 100% -->
-      <Grid Grid.Column="1" Margin="8,0">
-        <Grid.RowDefinitions>
-          <RowDefinition Height="Auto"/>
-          <RowDefinition Height="*"/>
-          <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+      <!-- 右图 (Next) - 绝对定位，露出 50px -->
+      <Border Width="60" HorizontalAlignment="Right" VerticalAlignment="Center"
+              Margin="-10,0,0,0" CornerRadius="6" ClipToBounds="True"
+              OpacityMask="{StaticResource RightFadeMask}"
+              IsVisible="{Binding HasNextBackground}">
+        <Panel>
+          <Border Background="#383838"/>
+          <Image asyncImageLoader:ImageLoader.Source="{Binding NextBackground}"
+                 Stretch="UniformToFill"
+                 RenderTransformOrigin="0.5,0.5">
+            <Image.RenderTransform>
+              <ScaleTransform ScaleX="0.85" ScaleY="0.85"/>
+            </Image.RenderTransform>
+          </Image>
+        </Panel>
+      </Border>
 
-        <!-- 上文 -->
-        <StackPanel Grid.Row="0" Margin="0,0,0,4">
-          <TextBlock Text="{Binding UpperContext1}" FontSize="11"
-                     Opacity="0.3" TextTrimming="CharacterEllipsis"/>
-          <TextBlock Text="{Binding UpperContext2}" FontSize="12"
-                     Opacity="0.5" TextTrimming="CharacterEllipsis"/>
-        </StackPanel>
+      <!-- 当前图 (Current) - 居中悬浮卡片 -->
+      <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+              Width="720" Height="200" Margin="0,-4,0,-4"
+              CornerRadius="8" ClipToBounds="True"
+              BorderBrush="#60FFFFFF" BorderThickness="1">
+        <Panel Background="#3A3A3A">
+          <Image asyncImageLoader:ImageLoader.Source="{Binding CurrentBackground}"
+                 Stretch="UniformToFill"
+                 IsVisible="{Binding HasCurrentBackground}"/>
+        </Panel>
+      </Border>
 
-        <!-- 中心背景图 (默认灰色) -->
-        <Border Grid.Row="1" CornerRadius="4" ClipToBounds="True">
-          <Grid>
-            <Border Background="#505050"/>
-            <Image asyncImageLoader:ImageLoader.Source="{Binding CurrentBackground}"
-                   Stretch="Uniform"
-                   IsVisible="{Binding HasCurrentBackground}">
-              <Image.OpacityMask>
-                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
-                  <GradientStop Color="#FF000000" Offset="0.05"/>
-                  <GradientStop Color="#FF000000" Offset="0.95"/>
-                  <GradientStop Color="#00000000" Offset="1"/>
-                </LinearGradientBrush>
-              </Image.OpacityMask>
-            </Image>
-          </Grid>
-        </Border>
-        <!-- PicDesc tooltip -->
+      <!-- PicDesc tooltip (附加到当前图) -->
+      <Border IsHitTestVisible="False">
         <ToolTip.Tip>
           <TextBlock Text="{Binding CurrentPicDescription}"
                      MaxWidth="300" TextWrapping="Wrap"/>
         </ToolTip.Tip>
-
-        <!-- 下文 -->
-        <StackPanel Grid.Row="2" Margin="0,4,0,0">
-          <TextBlock Text="{Binding LowerContext1}" FontSize="12"
-                     Opacity="0.5" TextTrimming="CharacterEllipsis"/>
-          <TextBlock Text="{Binding LowerContext2}" FontSize="11"
-                     Opacity="0.3" TextTrimming="CharacterEllipsis"/>
-        </StackPanel>
-      </Grid>
-
-      <!-- 右图 10% 裁剪 (默认灰色) -->
-      <Border Grid.Column="2" CornerRadius="4" ClipToBounds="True"
-              Margin="0,0,4,0" Opacity="0.5">
-        <Grid>
-          <Border Background="#484848"/>
-          <Image asyncImageLoader:ImageLoader.Source="{Binding NextBackground}"
-                 Stretch="UniformToFill"
-                 HorizontalAlignment="Center"
-                 IsVisible="{Binding HasNextBackground}"/>
-        </Grid>
       </Border>
-    </Grid>
+    </Panel>
   </Border>
 </UserControl>
