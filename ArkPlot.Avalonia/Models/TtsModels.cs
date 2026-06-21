@@ -97,6 +97,15 @@ public partial class SegmentRow : ObservableObject, IDisposable
     /// <summary>对应的 FormattedTextEntry.Index，用于 Gallery 联动。</summary>
     public int EntryIndex { get; set; } = -1;
 
+    /// <summary>是否为场景占位行（背景图切换处）。</summary>
+    public bool IsScenePlaceholder { get; set; }
+
+    /// <summary>场景描述（PicDesc）。</summary>
+    public string SceneDescription { get; set; } = "";
+
+    /// <summary>场景背景图 URL。</summary>
+    public string SceneBackground { get; set; } = "";
+
     /// <summary>行级音频播放器（懒初始化，有音频时才创建）。</summary>
     private AudioPlayerViewModel? _audioPlayer;
     public AudioPlayerViewModel AudioPlayer =>

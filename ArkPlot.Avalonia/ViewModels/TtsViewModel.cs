@@ -85,7 +85,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
     // ── 子组件 ViewModel ──
     public PortraitPanelViewModel PortraitPanel { get; } = new();
-    public GalleryPanelViewModel GalleryPanel { get; } = new();
+    public GalleryPanelViewModel GalleryPanel { get; }
     public VoiceConfigPanelViewModel VoiceConfigPanel { get; }
 
     // ── 事件监听：DataGrid 选中行变化 ──
@@ -168,6 +168,75 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         });
     }
 
+    private void JumpToGalleryEntryIndex(int entryIndex)
+    {
+        if (entryIndex < 0)
+            return;
+
+        // 精确匹配
+        var entry = _allEntries.FirstOrDefault(e => e.EntryIndex == entryIndex);
+
+        // 找不到精确匹配时，找同一章节里 EntryIndex 最接近且 >= entryIndex 的对白
+        if (entry == null || entry.EntryIndex < 0)
+        {
+            // 先确定目标章节：从 _backgrounds 找到 entryIndex 对应的章节
+            var bg = _backgrounds.FirstOrDefault(b => b.EntryIndex == entryIndex);
+            var targetChapter = bg?.ChapterTitle ?? "";
+
+            if (!string.IsNullOrEmpty(targetChapter))
+            {
+                // 在该章节里找 EntryIndex >= entryIndex 的最近对白
+                entry = _allEntries
+                    .Where(e => e.ChapterTitle == targetChapter && e.EntryIndex >= entryIndex)
+                    .OrderBy(e => e.EntryIndex)
+                    .FirstOrDefault();
+
+                // 如果往后找不到，往前找最近的
+                entry ??= _allEntries
+                    .Where(e => e.ChapterTitle == targetChapter && e.EntryIndex >= 0)
+                    .OrderByDescending(e => e.EntryIndex)
+                    .FirstOrDefault();
+            }
+        }
+
+        if (entry == null || string.IsNullOrEmpty(entry.ChapterTitle))
+        {
+            Log($"⚠ 未找到 EntryIndex={entryIndex} 对应的片段");
+            return;
+        }
+
+        // 切换到对应章节
+        var chapter = Chapters.FirstOrDefault(c => c.Title == entry.ChapterTitle);
+        if (chapter == null)
+        {
+            Log($"⚠ 未找到章节: {entry.ChapterTitle}");
+            return;
+        }
+
+        var targetEntryIndex = entry.EntryIndex;
+        SelectedChapter = chapter;
+
+        // 等待 LoadSegmentsForChapterAsync 完成后选中对应片段
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(150);
+            Dispatcher.UIThread.Post(() =>
+            {
+                var target = FilteredSegments
+                    .FirstOrDefault(s => s.EntryIndex == targetEntryIndex)
+                    ?? FilteredSegments
+                        .Where(s => s.EntryIndex >= 0)
+                        .OrderBy(s => Math.Abs(s.EntryIndex - targetEntryIndex))
+                        .FirstOrDefault();
+                if (target != null)
+                {
+                    SelectedSegment = target;
+                    Log($"↪ 跳转到背景场景: {entry.ChapterTitle} #{target.Index}");
+                }
+            });
+        });
+    }
+
     // ── 日志 ──
     [ObservableProperty]
     private string _logText = "";
@@ -216,6 +285,8 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             UpdatePortraitForVoiceConfig,
             JumpToVoiceConfigAppearance
         );
+
+        GalleryPanel = new GalleryPanelViewModel(JumpToGalleryEntryIndex);
 
         ScanNovelFiles();
     }
@@ -554,6 +625,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         var chapterTitle = SelectedChapter.Title;
         var searchText = SearchText;
         var allEntries = _allEntries;
+        var backgrounds = _backgrounds;
 
         // 后台线程：LINQ 过滤 + 创建 SegmentRow 对象
         var rows = await Task.Run(() =>
@@ -592,6 +664,44 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                         }
                 )
                 .ToList();
+
+            // 插入场景占位行：在当前章节的背景图切换处
+            var chapterBgs = backgrounds
+                .Where(b => string.Equals(b.ChapterTitle, chapterTitle, StringComparison.Ordinal))
+                .Where(b => !string.IsNullOrEmpty(b.PicDescription)
+                    || (!string.IsNullOrEmpty(b.ImageUrl)
+                        && !string.Equals(b.ImageUrl, "https://media.prts.wiki/8/8a/Avg_bg_bg_black.png", StringComparison.Ordinal)))
+                .OrderBy(b => b.EntryIndex)
+                .ToList();
+
+            if (chapterBgs.Count > 0)
+            {
+                var insertPoints = new List<(int InsertAt, BackgroundItem Bg)>();
+                foreach (var bg in chapterBgs)
+                {
+                    var idx = result.FindIndex(r => r.EntryIndex >= bg.EntryIndex && !r.IsScenePlaceholder);
+                    if (idx >= 0)
+                        insertPoints.Add((idx, bg));
+                }
+
+                // 从后往前插入，避免索引偏移
+                foreach (var (insertAt, bg) in insertPoints.OrderByDescending(p => p.InsertAt))
+                {
+                    result.Insert(insertAt, new SegmentRow
+                    {
+                        IsScenePlaceholder = true,
+                        SceneDescription = bg.PicDescription ?? "",
+                        SceneBackground = bg.ImageUrl ?? "",
+                        EntryIndex = bg.EntryIndex,
+                        ChapterTitle = chapterTitle,
+                        SegmentType = "场景",
+                    });
+                }
+            }
+
+            // 重新编号
+            for (int i = 0; i < result.Count; i++)
+                result[i].Index = i + 1;
 
             sw.Stop();
             Log(
@@ -1208,21 +1318,25 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
         // 更新 GalleryPanel
         string? prevBg = null;
+        int prevBgEntryIndex = -1;
         for (int i = bgIdx - 1; i >= 0; i--)
         {
             if (!IsBlackBg(chapterBgs[i].ImageUrl))
             {
                 prevBg = chapterBgs[i].ImageUrl;
+                prevBgEntryIndex = chapterBgs[i].EntryIndex;
                 break;
             }
         }
 
         string? nextBg = null;
+        int nextBgEntryIndex = -1;
         for (int i = bgIdx + 1; i < chapterBgs.Count; i++)
         {
             if (!IsBlackBg(chapterBgs[i].ImageUrl))
             {
                 nextBg = chapterBgs[i].ImageUrl;
+                nextBgEntryIndex = chapterBgs[i].EntryIndex;
                 break;
             }
         }
@@ -1239,6 +1353,8 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             bg.ImageUrl,
             prevBg,
             nextBg,
+            prevBgEntryIndex,
+            nextBgEntryIndex,
             bg.PicDescription ?? "",
             upper1,
             upper2,

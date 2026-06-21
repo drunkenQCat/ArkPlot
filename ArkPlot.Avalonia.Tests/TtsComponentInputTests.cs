@@ -245,6 +245,7 @@ public class TtsComponentInputTests : System.IDisposable
             "https://example.com/bg.png",
             "https://example.com/prev.png",
             "https://example.com/next.png",
+            10, 20,
             "测试背景描述",
             "上文1", "上文2", "下文1", "下文2");
 

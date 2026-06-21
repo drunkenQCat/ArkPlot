@@ -7,6 +7,7 @@
     xmlns:models="using:ArkPlot.Avalonia.Models"
     xmlns:sukiUi="using:SukiUI.Controls"
     xmlns:c="using:CalcBinding"
+    xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
     mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="750"
     x:Class="ArkPlot.Avalonia.Views.TtsWindow"
     x:DataType="vm:TtsViewModel"
@@ -219,21 +220,63 @@
             <DataGridTemplateColumn Header="#" Width="40">
               <DataGridTemplateColumn.CellTemplate>
                 <DataTemplate x:DataType="models:SegmentRow">
-                  <Border Classes="PlayingRow" CornerRadius="2">
-                    <TextBlock Text="{Binding Index}"
-                               VerticalAlignment="Center"
-                               HorizontalAlignment="Center"
-                               FontSize="11"/>
-                  </Border>
+                  <Grid>
+                    <!-- 普通行 -->
+                    <Border Classes="PlayingRow" CornerRadius="2"
+                            IsVisible="{Binding !IsScenePlaceholder}">
+                      <TextBlock Text="{Binding Index}"
+                                 VerticalAlignment="Center"
+                                 HorizontalAlignment="Center"
+                                 FontSize="11"/>
+                    </Border>
+                    <!-- 场景占位行：跨列场景卡片 -->
+                    <Border IsVisible="{Binding IsScenePlaceholder}"
+                            CornerRadius="4" ClipToBounds="False"
+                            Margin="-2,-2,-690,-2"
+                            Background="#30FFFFFF">
+                      <Grid ColumnDefinitions="Auto,*" Margin="4,2">
+                        <Border Grid.Column="0" Width="80" Height="36"
+                                CornerRadius="4" ClipToBounds="True"
+                                Margin="0,0,8,0">
+                          <Image asyncImageLoader:ImageLoader.Source="{Binding SceneBackground}"
+                                 Stretch="UniformToFill"
+                                 IsVisible="{Binding SceneBackground, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        </Border>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding SceneDescription}"
+                                   TextWrapping="Wrap"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center"
+                                   FontSize="11" Foreground="#A0FFFFFF"
+                                   MaxLines="2"/>
+                      </Grid>
+                    </Border>
+                  </Grid>
                 </DataTemplate>
               </DataGridTemplateColumn.CellTemplate>
             </DataGridTemplateColumn>
-            <DataGridTextColumn Header="角色" Binding="{Binding CharacterName}" Width="100"/>
-            <DataGridTextColumn Header="类型" Binding="{Binding SegmentType}" Width="50"/>
+            <DataGridTemplateColumn Header="角色" Width="100">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate x:DataType="models:SegmentRow">
+                  <TextBlock Text="{Binding CharacterName}"
+                             IsVisible="{Binding !IsScenePlaceholder}"/>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
+            <DataGridTemplateColumn Header="类型" Width="50">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate x:DataType="models:SegmentRow">
+                  <TextBlock Text="{Binding SegmentType}"
+                             IsVisible="{Binding !IsScenePlaceholder}"
+                             Opacity="0.6"/>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
             <DataGridTemplateColumn Header="台词" Width="*">
               <DataGridTemplateColumn.CellTemplate>
-                <DataTemplate>
+                <DataTemplate x:DataType="models:SegmentRow">
                   <TextBlock Text="{Binding NovelText}"
+                             IsVisible="{Binding !IsScenePlaceholder}"
                              TextTrimming="CharacterEllipsis"
                              VerticalAlignment="Center"
                              Margin="4,0">
@@ -248,9 +291,10 @@
             </DataGridTemplateColumn>
             <DataGridTemplateColumn Header="音频" Width="300">
               <DataGridTemplateColumn.CellTemplate>
-                <DataTemplate>
-                  <!-- 右侧 Margin=6 防止 Border 圆角被 DataGrid 单元格裁剪 -->
-                  <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center" Margin="2,1,6,1">
+                <DataTemplate x:DataType="models:SegmentRow">
+                  <!-- 普通行：音频控件 -->
+                  <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center" Margin="2,1,6,1"
+                        IsVisible="{Binding !IsScenePlaceholder}">
                     <Border Grid.Column="0" IsVisible="{Binding HasAudio}">
                       <controls:AudioPlayerControl DataContext="{Binding AudioPlayer}"
                                                 MinWidth="200"/>
