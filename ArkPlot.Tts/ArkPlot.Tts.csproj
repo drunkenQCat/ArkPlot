@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ArkPlot.Core\ArkPlot.Core.csproj" />
+    <ProjectReference Include="..\libs\MiniMax\src\libs\MiniMax\MiniMax.csproj" />
   </ItemGroup>
 
   <ItemGroup>

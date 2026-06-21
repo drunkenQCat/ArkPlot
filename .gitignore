@@ -496,3 +496,4 @@ ArkPlot.Novelizer.Tests/bootstrap/current_prompts
 *-consultation.md
 *.consultation.md
 docs/temp/
+tmp_artifact/

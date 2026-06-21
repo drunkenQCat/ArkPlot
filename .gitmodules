@@ -1,3 +1,6 @@
 [submodule "typst-arknights-simulator"]
 	path = typst-template
 	url = https://github.com/drunkenQCat/typst-arknights-simulator.git
+[submodule "libs/MiniMax"]
+	path = libs/MiniMax
+	url = https://github.com/drunkenQCat/MiniMax.Net.git

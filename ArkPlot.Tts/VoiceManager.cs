@@ -9,21 +9,48 @@ namespace ArkPlot.Tts;
 /// <summary>
 /// 音色分配管理器。
 /// 根据角色名 + 性别确定音色，支持 SQLite 持久化保证跨运行一致。
+/// 支持 EdgeTTS 和 MiniMax 双音色池。
 /// </summary>
 public class VoiceManager
 {
     private readonly ConcurrentDictionary<string, string> _cache = new();
     private readonly SqlSugarClient? _db;
+    private readonly TtsEngineType _engineType;
     private bool _tableReady;
 
     /// <summary>
     /// 创建 VoiceManager。
     /// </summary>
     /// <param name="db">可选的 SqlSugarClient，提供时启用 DB 持久化。</param>
-    public VoiceManager(SqlSugarClient? db = null)
+    /// <param name="engineType">TTS 引擎类型，默认 EdgeTTS。</param>
+    public VoiceManager(SqlSugarClient? db = null, TtsEngineType engineType = TtsEngineType.EdgeTts)
     {
         _db = db;
+        _engineType = engineType;
     }
+
+    /// <summary>当前引擎类型。</summary>
+    public TtsEngineType EngineType => _engineType;
+
+    /// <summary>当前女声音色池。</summary>
+    private string[] FemalePool => _engineType == TtsEngineType.MiniMax
+        ? MiniMaxVoicePool.Female
+        : VoicePool.Female;
+
+    /// <summary>当前男声音色池。</summary>
+    private string[] MalePool => _engineType == TtsEngineType.MiniMax
+        ? MiniMaxVoicePool.Male
+        : VoicePool.Male;
+
+    /// <summary>当前旁白专用音色。</summary>
+    private string NarratorVoice => _engineType == TtsEngineType.MiniMax
+        ? MiniMaxVoicePool.Narrator
+        : VoicePool.Narrator;
+
+    /// <summary>当前用于 fallback 的男声。</summary>
+    private string FallbackMaleVoice => _engineType == TtsEngineType.MiniMax
+        ? MiniMaxVoicePool.Male[0]
+        : VoicePool.Male[0];
 
     /// <summary>
     /// 根据角色名获取音色。
@@ -32,7 +59,7 @@ public class VoiceManager
     public string GetVoiceForCharacter(string characterName, string? gender = null)
     {
         if (string.IsNullOrWhiteSpace(characterName))
-            return VoicePool.Narrator;
+            return NarratorVoice;
 
         var cacheKey = gender != null ? $"{characterName}|{gender}" : characterName;
 
@@ -50,7 +77,7 @@ public class VoiceManager
                 ? gender.Contains("女")
                 : hash % 2 == 0;
 
-            var pool = isFemale ? VoicePool.Female : VoicePool.Male;
+            var pool = isFemale ? FemalePool : MalePool;
             var index = Math.Abs(hash) % pool.Length;
             var voice = pool[index];
 
@@ -62,10 +89,10 @@ public class VoiceManager
     }
 
     /// <summary>获取旁白专用音色。</summary>
-    public string GetNarratorVoice() => VoicePool.Narrator;
+    public string GetNarratorVoice() => NarratorVoice;
 
     /// <summary>获取性别无法识别时的 fallback 音色。</summary>
-    public string GetFallbackVoice() => VoicePool.Male[0];
+    public string GetFallbackVoice() => FallbackMaleVoice;
 
     /// <summary>
     /// 根据性别获取音色（固定选第一个，稳定可预测）。
@@ -73,9 +100,9 @@ public class VoiceManager
     public string GetVoiceForGender(string? gender)
     {
         if (string.IsNullOrWhiteSpace(gender))
-            return VoicePool.Narrator;
+            return NarratorVoice;
 
-        var pool = gender.Contains("女") ? VoicePool.Female : VoicePool.Male;
+        var pool = gender.Contains("女") ? FemalePool : MalePool;
         return pool[0];
     }
 
