@@ -30,10 +30,6 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private string _ttsOutputDir = "";
 
-    // ── 音色配置 ──
-    [ObservableProperty]
-    private ObservableCollection<VoiceConfigItem> _voiceConfigs = [];
-
     // ── 章节 ──
     [ObservableProperty]
     private ObservableCollection<ChapterItem> _chapters = [];
@@ -53,10 +49,6 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
     /// <summary>DataGrid 多选时同步的选中行集合（由 View code-behind 更新）。</summary>
     public ObservableCollection<SegmentRow> SelectedSegmentRows { get; } = [];
-
-    // ── 音色配置选中项 ──
-    [ObservableProperty]
-    private VoiceConfigItem? _selectedVoiceConfig;
 
     // ── 状态 ──
     [ObservableProperty]
@@ -92,6 +84,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     // ── 子组件 ViewModel ──
     public PortraitPanelViewModel PortraitPanel { get; } = new();
     public GalleryPanelViewModel GalleryPanel { get; } = new();
+    public VoiceConfigPanelViewModel VoiceConfigPanel { get; }
 
     // ── 事件监听：DataGrid 选中行变化 ──
     partial void OnSelectedSegmentChanged(SegmentRow? value)
@@ -100,14 +93,6 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             return;
         Log($"[诊断] 选中行 #{value.Index}: {value.CharacterName}, EntryIndex={value.EntryIndex}");
         UpdateComponentsForSegment(value);
-    }
-
-    // ── 事件监听：音色配置选中变化 ──
-    partial void OnSelectedVoiceConfigChanged(VoiceConfigItem? value)
-    {
-        if (value == null)
-            return;
-        UpdatePortraitForVoiceConfig(value);
     }
 
     private void UpdateComponentsForSegment(SegmentRow seg)
@@ -160,7 +145,6 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     private List<AlignmentEntry> _allEntries = [];
     private List<BackgroundItem> _backgrounds = [];
     private readonly VoiceManagerUnified _voiceManagerUnified;
-    private readonly VoiceManager _voiceManager; // 保留给 TtsPipeline
     private readonly ITtsEngine _ttsEngine;
     private readonly string _outputBaseDir;
     private bool _isInitialSelection = true;
@@ -178,8 +162,14 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             ttsSettings.DefaultNarratorVoice,
             DbFactory.GetClient()
         );
-        _voiceManager = new VoiceManager(DbFactory.GetClient()); // TtsPipeline 需要旧接口
         _ttsEngine = new RoutedTtsEngine(ttsSettings, _voiceManagerUnified);
+
+        VoiceConfigPanel = new VoiceConfigPanelViewModel(
+            _voiceManagerUnified,
+            Log,
+            RefreshAudioStatusAsync,
+            UpdatePortraitForVoiceConfig
+        );
 
         ScanNovelFiles();
     }
@@ -313,7 +303,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                 SelectedChapter = Chapters[0];
                 await LoadSegmentsForChapterAsync();
             }
-            BuildVoiceConfigs();
+            VoiceConfigPanel.UpdateEntries(_allEntries);
 
             totalSw.Stop();
             Log(
@@ -323,7 +313,9 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            Log($"❌ 对齐失败: {ex.Message}");
+            Log($"❌ 对齐失败: {ex.GetType().Name}: {ex.Message}");
+            if (ex.InnerException != null)
+                Log($"  Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
         }
     }
 
@@ -430,78 +422,6 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
     /// <summary>背景锚点轻量 DTO，避免加载 FormattedTextEntry 全表列。</summary>
     private record BgAnchorDto(long PlotId, string Bg, int Index, string? CharacterCode);
-
-    private void BuildVoiceConfigs()
-    {
-        var configs = new List<VoiceConfigItem>();
-
-        // 从统一音色池获取所有可用音色
-        var allVoiceIds = _voiceManagerUnified
-            .Pool.Select(v => v.Entry.VoiceId)
-            .Distinct()
-            .ToList();
-
-        // 旁白
-        var narratorVoice = _voiceManagerUnified.GetNarratorAssignment().VoiceId;
-        configs.Add(new VoiceConfigItem("(旁白)", "—", narratorVoice, allVoiceIds, null));
-
-        // 收集所有角色
-        var characters = _allEntries
-            .Where(e => e.IsDialog && !string.IsNullOrEmpty(e.CharacterName))
-            .GroupBy(e => NormalizeCharacterName(e.CharacterName)!)
-            .Select(g => new
-            {
-                Name = g.Key,
-                Gender = g.Select(e => e.Gender).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))
-                    ?? "?",
-                Code = g.Select(e => e.CharacterCode)
-                    .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)),
-            })
-            .OrderByDescending(c =>
-                _allEntries.Count(e => NormalizeCharacterName(e.CharacterName) == c.Name)
-            )
-            .ToList();
-
-        foreach (var ch in characters)
-        {
-            var voice = _voiceManagerUnified.GetVoiceForCharacter(ch.Name, ch.Gender).VoiceId;
-            configs.Add(new VoiceConfigItem(ch.Name, ch.Gender, voice, allVoiceIds, ch.Code));
-        }
-
-        VoiceConfigs = new ObservableCollection<VoiceConfigItem>(configs);
-    }
-
-    /// <summary>
-    /// 重新随机分配所有角色的音色（从统一音色池）。
-    /// </summary>
-    [RelayCommand]
-    private void RandomizeVoices()
-    {
-        if (VoiceConfigs == null || VoiceConfigs.Count == 0)
-            return;
-
-        var rng = new Random();
-        var randomized = 0;
-        foreach (var config in VoiceConfigs)
-        {
-            if (config.CharacterName == "(旁白)")
-            {
-                // 旁白保持默认
-                continue;
-            }
-
-            var candidateVoices = GetRandomizableVoicePool(config.Gender);
-            if (candidateVoices.Count == 0)
-                continue;
-
-            var randomVoice = candidateVoices[rng.Next(candidateVoices.Count)];
-            config.SelectedVoice = randomVoice;
-            randomized++;
-        }
-
-        Log($"🎲 已按性别重新随机分配 {randomized} 个角色的音色");
-        Log("💡 当前分配会立刻用于生成；如需下次继续沿用，请点击“保存音色配置”。");
-    }
 
     // ════════════════════════════════════════════
     // 章节 + 搜索
@@ -632,7 +552,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
             var cache = new TtsCacheService(cacheDir);
 
-            using var pipeline = new TtsPipeline(_ttsEngine, _voiceManager, cache);
+            using var pipeline = new TtsPipeline(_ttsEngine, new VoiceManager(DbFactory.GetClient()), cache);
 
             var segments = new List<TtsSegment>();
             var segmentIndices = new List<int>();
@@ -640,7 +560,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             foreach (var row in FilteredSegments)
             {
                 var isDialog = row.SegmentType != "旁白";
-                var voice = ResolveVoiceSelection(row.CharacterName, row.Gender, isDialog);
+                var voice = VoiceConfigPanel.ResolveVoiceSelection(row.CharacterName, row.Gender, isDialog);
                 segments.Add(
                     new TtsSegment(
                         row.NovelText,
@@ -746,7 +666,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
             var cache = new TtsCacheService(cacheDir);
 
-            using var pipeline = new TtsPipeline(_ttsEngine, _voiceManager, cache);
+            using var pipeline = new TtsPipeline(_ttsEngine, new VoiceManager(DbFactory.GetClient()), cache);
 
             var segments = new List<TtsSegment>();
             var segmentIndices = new List<int>();
@@ -755,7 +675,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             foreach (var row in rows)
             {
                 var isDialog = row.SegmentType != "旁白";
-                var voice = ResolveVoiceSelection(row.CharacterName, row.Gender, isDialog);
+                var voice = VoiceConfigPanel.ResolveVoiceSelection(row.CharacterName, row.Gender, isDialog);
                 var seg = new TtsSegment(
                     row.NovelText,
                     voice,
@@ -1372,7 +1292,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                         ct.ThrowIfCancellationRequested();
 
                         var isDialog = seg.SegmentType != "旁白";
-                        var voice = ResolveVoiceSelection(seg.CharacterName, seg.Gender, isDialog);
+                        var voice = VoiceConfigPanel.ResolveVoiceSelection(seg.CharacterName, seg.Gender, isDialog);
                         var sanitizedText = TextSanitizer.Sanitize(seg.NovelText);
                         if (string.IsNullOrWhiteSpace(sanitizedText))
                             continue;
@@ -1406,134 +1326,10 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         }
     }
 
-    [RelayCommand]
-    private async Task SaveVoiceConfigsAsync()
-    {
-        if (VoiceConfigs == null || VoiceConfigs.Count == 0)
-        {
-            Log("⚠️ 当前没有可保存的音色配置");
-            return;
-        }
-
-        var savedCount = 0;
-        foreach (var config in VoiceConfigs)
-        {
-            if (string.IsNullOrWhiteSpace(config.SelectedVoice))
-                continue;
-
-            if (config.CharacterName == "(旁白)")
-            {
-                PersistNarratorVoice(config.SelectedVoice);
-                continue;
-            }
-
-            _voiceManagerUnified.SetVoiceForCharacter(
-                config.CharacterName,
-                config.Gender,
-                config.SelectedVoice
-            );
-            _voiceManager.SetVoiceForCharacter(
-                config.CharacterName,
-                config.Gender,
-                config.SelectedVoice
-            );
-            savedCount++;
-        }
-
-        await RefreshAudioStatusAsync();
-        Log($"💾 已保存 {savedCount} 个角色的音色配置");
-    }
-
     private static string sanitized(string text)
     {
         var invalid = Path.GetInvalidFileNameChars();
         return string.Concat(text.Where(c => !invalid.Contains(c)));
-    }
-
-    private string ResolveVoiceSelection(string? characterName, string? gender, bool isDialog)
-    {
-        if (!isDialog || string.IsNullOrWhiteSpace(characterName) || characterName == "(旁白)")
-        {
-            return VoiceConfigs.FirstOrDefault(c => c.CharacterName == "(旁白)")?.SelectedVoice
-                ?? _voiceManagerUnified.GetNarratorAssignment().VoiceId;
-        }
-
-        var normalizedCharacterName = NormalizeCharacterName(characterName);
-        var configured = VoiceConfigs
-            .FirstOrDefault(c =>
-                string.Equals(
-                    NormalizeCharacterName(c.CharacterName),
-                    normalizedCharacterName,
-                    StringComparison.Ordinal
-                )
-            )
-            ?.SelectedVoice;
-        if (!string.IsNullOrWhiteSpace(configured))
-            return configured;
-
-        return _voiceManagerUnified.GetVoiceForCharacter(normalizedCharacterName, gender).VoiceId;
-    }
-
-    private List<string> GetRandomizableVoicePool(string? gender)
-    {
-        var narratorVoice = _voiceManagerUnified.GetNarratorAssignment().VoiceId;
-        var basePool = _voiceManagerUnified
-            .Pool.Where(v =>
-                !string.Equals(v.Entry.VoiceId, narratorVoice, StringComparison.Ordinal)
-            )
-            .Select(v => v.Entry)
-            .ToList();
-
-        var genderPool = basePool
-            .Where(v => IsGenderMatch(v.Gender, gender))
-            .Select(v => v.VoiceId)
-            .Distinct()
-            .ToList();
-
-        if (genderPool.Count > 0)
-            return genderPool;
-
-        return basePool.Select(v => v.VoiceId).Distinct().ToList();
-    }
-
-    private static bool IsGenderMatch(string? voiceGender, string? targetGender)
-    {
-        if (IsFemaleGender(targetGender))
-            return IsFemaleGender(voiceGender);
-        if (IsMaleGender(targetGender))
-            return IsMaleGender(voiceGender);
-        return true;
-    }
-
-    private static bool IsFemaleGender(string? gender)
-    {
-        if (string.IsNullOrWhiteSpace(gender))
-            return false;
-
-        var normalized = gender.Trim().ToLowerInvariant();
-        return normalized.Contains('女') || normalized is "female" or "f";
-    }
-
-    private static bool IsMaleGender(string? gender)
-    {
-        if (string.IsNullOrWhiteSpace(gender))
-            return false;
-
-        var normalized = gender.Trim().ToLowerInvariant();
-        return normalized.Contains('男') || normalized is "male" or "m";
-    }
-
-    private static void PersistNarratorVoice(string narratorVoice)
-    {
-        if (string.IsNullOrWhiteSpace(narratorVoice))
-            return;
-
-        var settings = AppSettings.Load();
-        var tts = (settings.Tts ?? TtsSettings.CreateDefaults()) with
-        {
-            DefaultNarratorVoice = narratorVoice,
-        };
-        (settings with { Tts = tts }).Save();
     }
 
     /// <summary>从 _allEntries 获取当前选中角色的立绘 URL。</summary>
@@ -1620,14 +1416,6 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         var normalized = characterCode.Trim().ToLowerInvariant();
         var hashIndex = normalized.IndexOf('#');
         return hashIndex >= 0 ? normalized[..hashIndex] : normalized;
-    }
-
-    private static string NormalizeCharacterName(string? characterName)
-    {
-        if (string.IsNullOrWhiteSpace(characterName))
-            return string.Empty;
-
-        return new string(characterName.Where(c => !char.IsWhiteSpace(c)).ToArray());
     }
 
     public void Dispose()

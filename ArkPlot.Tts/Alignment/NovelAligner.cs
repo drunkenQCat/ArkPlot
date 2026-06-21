@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -15,7 +16,7 @@ namespace ArkPlot.Tts.Alignment;
 /// </summary>
 public class NovelAligner
 {
-    private const int CurrentAlignmentCacheVersion = 2;
+    private const int CurrentAlignmentCacheVersion = 3;
     private readonly SqlSugarClient _db;
     private readonly GenderOverrideProvider? _genderOverrides;
 
@@ -146,7 +147,7 @@ public class NovelAligner
             {
                 if (IsCharacterSlotEntry(entry))
                 {
-                    lastCharSlot = IsEffectiveCharSlot(entry) ? entry : lastCharSlot;
+                    lastCharSlot = IsEffectiveCharSlot(entry) ? entry : null;
                     continue;
                 }
 
@@ -179,7 +180,7 @@ public class NovelAligner
         if (!entry.CommandSet.ContainsKey("name"))
             return false;
         var focus = entry.CommandSet.TryGetValue("focus", out var f) ? f : null;
-        return focus != "none";
+        return focus != "none" && focus != "-1";
     }
 
     internal static Dictionary<(long PlotId, int Index), string?> BuildCharCodeAtEntry(
@@ -195,8 +196,7 @@ public class NovelAligner
             {
                 if (IsCharacterSlotEntry(entry))
                 {
-                    var code = IsEffectiveCharSlot(entry) ? ExtractCodeFromCharSlot(entry) : null;
-                    if (code != null) lastCharSlotCode = code;
+                    lastCharSlotCode = IsEffectiveCharSlot(entry) ? ExtractCodeFromCharSlot(entry) : null;
                     continue;
                 }
 
@@ -242,6 +242,8 @@ public class NovelAligner
 
         foreach (var novelChapter in novelChapters)
         {
+            try
+            {
             var plot = plots.FirstOrDefault(p =>
                 p.Title.Contains(novelChapter.Title) || novelChapter.Title.Contains(p.Title));
             if (plot == null) continue;
@@ -259,7 +261,13 @@ public class NovelAligner
             // Phase 2: 构建对齐映射（novel dialog idx → DB entry idx）
             var alignmentMap = new Dictionary<int, int>();
             foreach (var (ni, di) in anchors)
+            {
+                if (di < 0 || di >= plotEntries.Count)
+                    throw new IndexOutOfRangeException(
+                        $"Anchor DbIdx out of range: di={di}, plotEntries.Count={plotEntries.Count}, " +
+                        $"chapter='{novelChapter.Title}', plot='{plot.Title}', plotId={plot.Id}");
                 alignmentMap[ni] = di;
+            }
 
             // Phase 3: 锚点间的窗口匹配
             var anchorBounds = new List<(int Ni, int Di)> { (-1, -1) };
@@ -292,6 +300,11 @@ public class NovelAligner
                     for (int j = searchStart; j <= searchEnd; j++)
                     {
                         int dbIdx = prevDi + 1 + j;
+                        if (dbIdx < 0 || dbIdx >= plotEntries.Count)
+                            throw new IndexOutOfRangeException(
+                                $"Window dbIdx out of range: dbIdx={dbIdx}, plotEntries.Count={plotEntries.Count}, " +
+                                $"j={j}, prevDi={prevDi}, nextDi={nextDi}, dGap={dGap}, " +
+                                $"chapter='{novelChapter.Title}', plot='{plot.Title}', plotId={plot.Id}");
                         var dbNorm = NormalizeLoose(plotEntries[dbIdx].Dialog ?? "");
                         if (string.IsNullOrEmpty(dbNorm)) continue;
 
@@ -324,6 +337,10 @@ public class NovelAligner
 
                 if (alignmentMap.TryGetValue(dialogIdx, out int dbEntryIdx))
                 {
+                    if (dbEntryIdx < 0 || dbEntryIdx >= plotEntries.Count)
+                        throw new IndexOutOfRangeException(
+                            $"Phase4 dbEntryIdx out of range: dbEntryIdx={dbEntryIdx}, plotEntries.Count={plotEntries.Count}, " +
+                            $"dialogIdx={dialogIdx}, chapter='{novelChapter.Title}', plot='{plot.Title}', plotId={plot.Id}");
                     alignedDialogs++;
                     results.Add(MakeAlignedDialogEntry(
                         segment, plotEntries[dbEntryIdx], plot.Id, novelChapter.Title,
@@ -335,6 +352,12 @@ public class NovelAligner
                 }
 
                 dialogIdx++;
+            }
+            }
+            catch (IndexOutOfRangeException ex)
+            {
+                throw new InvalidOperationException(
+                    $"AlignChapters failed at chapter '{novelChapter.Title}': {ex.Message}", ex);
             }
         }
 

@@ -4,6 +4,7 @@ using System.IO;
 using ArkPlot.Avalonia.ViewModels;
 using ArkPlot.Avalonia.ViewModels.Test;
 using ArkPlot.Avalonia.Views;
+using ArkPlot.Avalonia.Views.Controls;
 using ArkPlot.Avalonia.Views.Test;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;

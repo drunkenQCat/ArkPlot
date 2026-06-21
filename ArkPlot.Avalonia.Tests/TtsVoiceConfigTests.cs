@@ -39,41 +39,37 @@ public class TtsVoiceConfigTests : IDisposable
     [Fact]
     public void RandomizeVoices_UsesGenderSpecificPools()
     {
-        var vm = new TtsViewModel(_tempDir)
+        var vm = new TtsViewModel(_tempDir);
+        vm.VoiceConfigPanel.VoiceConfigs = new ObservableCollection<VoiceConfigItem>
         {
-            VoiceConfigs = new ObservableCollection<VoiceConfigItem>
-            {
-                new("(旁白)", "—", VoicePool.Narrator, [VoicePool.Narrator]),
-                new("阿米娅", "女", VoicePool.Male[0], [.. VoicePool.Female, .. VoicePool.Male]),
-                new("博士", "男", VoicePool.Female[0], [.. VoicePool.Female, .. VoicePool.Male])
-            }
+            new("(旁白)", "—", VoicePool.Narrator, [VoicePool.Narrator]),
+            new("阿米娅", "女", VoicePool.Male[0], [.. VoicePool.Female, .. VoicePool.Male]),
+            new("博士", "男", VoicePool.Female[0], [.. VoicePool.Female, .. VoicePool.Male])
         };
 
-        vm.RandomizeVoicesCommand.Execute(null);
+        vm.VoiceConfigPanel.RandomizeVoicesCommand.Execute(null);
 
-        Assert.Equal(VoicePool.Narrator, vm.VoiceConfigs[0].SelectedVoice);
-        Assert.True(VoicePool.IsFemaleVoice(vm.VoiceConfigs[1].SelectedVoice));
-        Assert.True(VoicePool.IsMaleVoice(vm.VoiceConfigs[2].SelectedVoice));
+        Assert.Equal(VoicePool.Narrator, vm.VoiceConfigPanel.VoiceConfigs[0].SelectedVoice);
+        Assert.True(VoicePool.IsFemaleVoice(vm.VoiceConfigPanel.VoiceConfigs[1].SelectedVoice));
+        Assert.True(VoicePool.IsMaleVoice(vm.VoiceConfigPanel.VoiceConfigs[2].SelectedVoice));
     }
 
     [Fact]
     public async Task SaveVoiceConfigs_PersistsSelectionsAndKeepsSingleRowPerCharacter()
     {
         var narratorVoice = VoicePool.Female[0];
-        var vm = new TtsViewModel(_tempDir)
+        var vm = new TtsViewModel(_tempDir);
+        vm.VoiceConfigPanel.VoiceConfigs = new ObservableCollection<VoiceConfigItem>
         {
-            VoiceConfigs = new ObservableCollection<VoiceConfigItem>
-            {
-                new("(旁白)", "—", narratorVoice, [VoicePool.Narrator, .. VoicePool.Female]),
-                new("阿米娅", "女", VoicePool.Female[1], [.. VoicePool.Female, .. VoicePool.Male]),
-                new("博士", "男", VoicePool.Male[1], [.. VoicePool.Female, .. VoicePool.Male])
-            }
+            new("(旁白)", "—", narratorVoice, [VoicePool.Narrator, .. VoicePool.Female]),
+            new("阿米娅", "女", VoicePool.Female[1], [.. VoicePool.Female, .. VoicePool.Male]),
+            new("博士", "男", VoicePool.Male[1], [.. VoicePool.Female, .. VoicePool.Male])
         };
 
-        await vm.SaveVoiceConfigsCommand.ExecuteAsync(null);
+        await vm.VoiceConfigPanel.SaveVoiceConfigsCommand.ExecuteAsync(null);
 
-        vm.VoiceConfigs[1].SelectedVoice = VoicePool.Female[2];
-        await vm.SaveVoiceConfigsCommand.ExecuteAsync(null);
+        vm.VoiceConfigPanel.VoiceConfigs[1].SelectedVoice = VoicePool.Female[2];
+        await vm.VoiceConfigPanel.SaveVoiceConfigsCommand.ExecuteAsync(null);
 
         var db = DbFactory.GetClient();
         var maps = db.Queryable<CharacterVoiceMap>()

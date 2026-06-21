@@ -3,7 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:ArkPlot.Avalonia.ViewModels.Test"
-             xmlns:views="using:ArkPlot.Avalonia.Views"
+             xmlns:controls="using:ArkPlot.Avalonia.Views.Controls"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="400"
              x:Class="ArkPlot.Avalonia.Views.Test.PortraitTestPanel"
              x:DataType="vm:PortraitTestViewModel">
@@ -11,7 +11,7 @@
     <!-- 左侧：组件展示 -->
     <Border Grid.Column="0" BorderBrush="#30FFFFFF" BorderThickness="1"
             CornerRadius="8" Margin="0,0,8,0">
-      <views:PortraitPanel DataContext="{Binding Panel}"
+      <controls:PortraitPanel DataContext="{Binding Panel}"
                            Margin="8"/>
     </Border>
 

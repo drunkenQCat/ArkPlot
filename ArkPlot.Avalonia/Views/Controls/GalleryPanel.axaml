@@ -5,7 +5,7 @@
              xmlns:vm="using:ArkPlot.Avalonia.ViewModels"
              xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="220"
-             x:Class="ArkPlot.Avalonia.Views.GalleryPanel"
+             x:Class="ArkPlot.Avalonia.Views.Controls.GalleryPanel"
              x:DataType="vm:GalleryPanelViewModel">
 
   <UserControl.Resources>

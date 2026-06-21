@@ -6,7 +6,7 @@
              xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
              xmlns:converters="using:ArkPlot.Avalonia.Converters"
              mc:Ignorable="d" d:DesignWidth="296" d:DesignHeight="526"
-             x:Class="ArkPlot.Avalonia.Views.PortraitPanel"
+             x:Class="ArkPlot.Avalonia.Views.Controls.PortraitPanel"
              x:DataType="vm:PortraitPanelViewModel">
 
   <UserControl.Resources>

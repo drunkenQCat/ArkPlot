@@ -218,6 +218,112 @@ public class NovelAlignerTests
         Assert.Equal("avg_npc_535_1", charCodeAtEntry[(71, 413)]);
     }
 
+    [Fact]
+    public void IsEffectiveCharSlot_FocusMinusOne_IsIneffective()
+    {
+        var entry = new FormattedTextEntry
+        {
+            Type = "character",
+            CommandSet = new StringDict
+            {
+                ["name"] = "avg_npc_522_1#6$1",
+                ["focus"] = "-1",
+                ["type"] = "character"
+            }
+        };
+        Assert.False(NovelAligner.IsEffectiveCharSlot(entry));
+    }
+
+    [Fact]
+    public void BuildNameToCodeMap_FocusMinusOne_DoesNotInheritStaleCode()
+    {
+        // Scenario: 斐尔迪南(focus=-1) → 霍尔海雅 dialog
+        // focus=-1 is a "clear portrait" instruction, not a real character presence.
+        // 霍尔海雅 should NOT inherit 斐尔迪南's code.
+        var allEntriesByPlot = new Dictionary<long, List<FormattedTextEntry>>
+        {
+            [72] =
+            [
+                new FormattedTextEntry
+                {
+                    PlotId = 72, Index = 428, Type = "dialog",
+                    CharacterName = "塞雷娅", Dialog = "好的",
+                    CommandSet = new StringDict()
+                },
+                new FormattedTextEntry
+                {
+                    PlotId = 72, Index = 429, Type = "character",
+                    CommandSet = new StringDict
+                    {
+                        ["name"] = "avg_npc_522_1#6$1",
+                        ["focus"] = "-1",
+                        ["type"] = "character"
+                    }
+                },
+                new FormattedTextEntry
+                {
+                    PlotId = 72, Index = 430, Type = "dialog",
+                    CharacterName = "霍尔海雅", Dialog = "嗯......今天莱茵生命的十科会议上",
+                    CommandSet = new StringDict()
+                }
+            ]
+        };
+
+        var nameToCode = NovelAligner.BuildNameToCodeMap(allEntriesByPlot);
+
+        Assert.False(nameToCode.ContainsKey("霍尔海雅"),
+            "霍尔海雅 should NOT be mapped to 斐尔迪南's code via focus=-1 charslot");
+    }
+
+    [Fact]
+    public void BuildCharCodeAtEntry_FocusMinusOne_ClearsLastSlotCode()
+    {
+        var allEntriesByPlot = new Dictionary<long, List<FormattedTextEntry>>
+        {
+            [78] =
+            [
+                new FormattedTextEntry
+                {
+                    PlotId = 78, Index = 85, Type = "character",
+                    CommandSet = new StringDict
+                    {
+                        ["name"] = "avg_npc_532_1#8$1",
+                        ["focus"] = "",
+                        ["type"] = "character"
+                    }
+                },
+                new FormattedTextEntry
+                {
+                    PlotId = 78, Index = 86, Type = "dialog",
+                    CharacterName = "塞雷娅", Dialog = "好的",
+                },
+                new FormattedTextEntry
+                {
+                    PlotId = 78, Index = 87, Type = "character",
+                    CommandSet = new StringDict
+                    {
+                        ["name"] = "avg_npc_536_1#11$1",
+                        ["focus"] = "-1",
+                        ["type"] = "character"
+                    }
+                },
+                new FormattedTextEntry
+                {
+                    PlotId = 78, Index = 88, Type = "dialog",
+                    CharacterName = "霍尔海雅", Dialog = "还剩下半杯啊",
+                }
+            ]
+        };
+
+        var nameToCode = NovelAligner.BuildNameToCodeMap(allEntriesByPlot);
+        var charCodeAtEntry = NovelAligner.BuildCharCodeAtEntry(allEntriesByPlot, nameToCode);
+
+        // 塞雷娅 should get avg_npc_532_1 from effective charslot at 85
+        Assert.Equal("avg_npc_532_1", charCodeAtEntry[(78, 86)]);
+        // 霍尔海雅 at 88 should NOT inherit avg_npc_536_1 from focus=-1 charslot at 87
+        Assert.Null(charCodeAtEntry[(78, 88)]);
+    }
+
     // ── helpers ──
 
     private static FormattedTextEntry MakeDialog(int index, string? characterName, string dialog)

@@ -16,6 +16,7 @@ public class VoiceManagerUnified
 {
     private readonly ConcurrentDictionary<string, VoiceAssignment> _cache = new();
     private readonly SqlSugarClient? _db;
+    private readonly object _dbLock = new();
     private readonly List<(VoiceEntry Entry, EngineType Engine, Guid? CustomEngineId)> _pool;
     private readonly string[] _femaleVoices;
     private readonly string[] _maleVoices;
@@ -193,31 +194,48 @@ public class VoiceManagerUnified
     private void EnsureTableReady()
     {
         if (_db == null || _tableReady) return;
-        _db.CodeFirst.SetStringDefaultLength(200).InitTables(typeof(CharacterVoiceMap));
-        _tableReady = true;
+        lock (_dbLock)
+        {
+            if (_tableReady) return;
+            try
+            {
+                _db.CodeFirst.SetStringDefaultLength(200).InitTables(typeof(CharacterVoiceMap));
+                _tableReady = true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[diag] EnsureTableReady failed: {ex.Message} | " +
+                    $"conn={_db.CurrentConnectionConfig?.ConnectionString}");
+                throw;
+            }
+        }
     }
 
     private VoiceAssignment? LoadFromDb(string characterName)
     {
         if (_db == null) return null;
         characterName = NormalizeCharacterName(characterName);
-        string? voiceId;
-        try
+        lock (_dbLock)
         {
-            var entity = _db.Queryable<CharacterVoiceMap>()
-                .Where(it => it.CharacterName == characterName)
-                .OrderByDescending(it => it.AssignedAt)
-                .OrderByDescending(it => it.Id)
-                .First();
-            voiceId = entity?.Voice;
-        }
-        catch
-        {
-            return null;
-        }
+            string? voiceId;
+            try
+            {
+                var entity = _db.Queryable<CharacterVoiceMap>()
+                    .Where(it => it.CharacterName == characterName)
+                    .OrderByDescending(it => it.AssignedAt)
+                    .OrderByDescending(it => it.Id)
+                    .First();
+                voiceId = entity?.Voice;
+            }
+            catch
+            {
+                return null;
+            }
 
-        if (string.IsNullOrEmpty(voiceId)) return null;
-        return FindAssignment(voiceId);
+            if (string.IsNullOrEmpty(voiceId)) return null;
+            return FindAssignment(voiceId);
+        }
     }
 
     /// <summary>
@@ -231,29 +249,31 @@ public class VoiceManagerUnified
     {
         if (_db == null) return;
         characterName = NormalizeCharacterName(characterName);
-
-        var existing = _db.Queryable<CharacterVoiceMap>()
-            .Where(it => it.CharacterName == characterName)
-            .OrderByDescending(it => it.AssignedAt)
-            .OrderByDescending(it => it.Id)
-            .First();
-
-        if (existing == null)
+        lock (_dbLock)
         {
-            _db.Insertable(new CharacterVoiceMap
-            {
-                CharacterName = characterName,
-                Gender = gender,
-                Voice = voiceId,
-                AssignedAt = DateTime.UtcNow
-            }).ExecuteCommand();
-            return;
-        }
+            var existing = _db.Queryable<CharacterVoiceMap>()
+                .Where(it => it.CharacterName == characterName)
+                .OrderByDescending(it => it.AssignedAt)
+                .OrderByDescending(it => it.Id)
+                .First();
 
-        existing.Gender = gender;
-        existing.Voice = voiceId;
-        existing.AssignedAt = DateTime.UtcNow;
-        _db.Updateable(existing).ExecuteCommand();
+            if (existing == null)
+            {
+                _db.Insertable(new CharacterVoiceMap
+                {
+                    CharacterName = characterName,
+                    Gender = gender,
+                    Voice = voiceId,
+                    AssignedAt = DateTime.UtcNow
+                }).ExecuteCommand();
+                return;
+            }
+
+            existing.Gender = gender;
+            existing.Voice = voiceId;
+            existing.AssignedAt = DateTime.UtcNow;
+            _db.Updateable(existing).ExecuteCommand();
+        }
     }
 
     private static string BuildCacheKey(string characterName, string? gender) =>
