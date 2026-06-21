@@ -179,6 +179,45 @@ public class NovelAlignerTests
         Assert.Equal(1, anchors[0].NovelIdx);
     }
 
+    [Fact]
+    public void BuildCharCodeAtEntry_RecognizesCharacterTypeAsCharSlot()
+    {
+        var allEntriesByPlot = new Dictionary<long, List<FormattedTextEntry>>
+        {
+            [71] =
+            [
+                new FormattedTextEntry
+                {
+                    PlotId = 71,
+                    Index = 412,
+                    Type = "character",
+                    CharacterCode = "avg_npc_535_1",
+                    CommandSet = new StringDict
+                    {
+                        ["name"] = "avg_npc_535_1#1$1",
+                        ["name2"] = "avg_npc_534_1#1$1",
+                        ["focus"] = "1",
+                        ["type"] = "character"
+                    }
+                },
+                new FormattedTextEntry
+                {
+                    PlotId = 71,
+                    Index = 413,
+                    Type = "",
+                    CharacterName = "桑尼",
+                    Dialog = "嗯？"
+                }
+            ]
+        };
+
+        var nameToCode = NovelAligner.BuildNameToCodeMap(allEntriesByPlot);
+        var charCodeAtEntry = NovelAligner.BuildCharCodeAtEntry(allEntriesByPlot, nameToCode);
+
+        Assert.Equal("avg_npc_535_1", nameToCode["桑尼"]);
+        Assert.Equal("avg_npc_535_1", charCodeAtEntry[(71, 413)]);
+    }
+
     // ── helpers ──
 
     private static FormattedTextEntry MakeDialog(int index, string? characterName, string dialog)

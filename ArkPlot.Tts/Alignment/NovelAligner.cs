@@ -15,6 +15,7 @@ namespace ArkPlot.Tts.Alignment;
 /// </summary>
 public class NovelAligner
 {
+    private const int CurrentAlignmentCacheVersion = 2;
     private readonly SqlSugarClient _db;
     private readonly GenderOverrideProvider? _genderOverrides;
 
@@ -57,7 +58,9 @@ public class NovelAligner
             {
                 var json = await File.ReadAllTextAsync(cacheFile);
                 var cached = JsonSerializer.Deserialize<AlignmentCacheEntry>(json);
-                if (cached != null && cached.Entries.Count > 0)
+                if (cached != null
+                    && cached.Version == CurrentAlignmentCacheVersion
+                    && cached.Entries.Count > 0)
                     return (cached.Entries, cached.Stats);
             }
             catch { /* 缓存损坏，重新对齐 */ }
@@ -69,7 +72,7 @@ public class NovelAligner
         try
         {
             Directory.CreateDirectory(cacheDir);
-            var cacheEntry = new AlignmentCacheEntry(result.Entries, result.Stats);
+            var cacheEntry = new AlignmentCacheEntry(CurrentAlignmentCacheVersion, result.Entries, result.Stats);
             var cacheJson = JsonSerializer.Serialize(cacheEntry, new JsonSerializerOptions
             {
                 WriteIndented = false,
@@ -141,7 +144,7 @@ public class NovelAligner
             FormattedTextEntry? lastCharSlot = null;
             foreach (var entry in entries)
             {
-                if (entry.Type == "charslot")
+                if (IsCharacterSlotEntry(entry))
                 {
                     lastCharSlot = IsEffectiveCharSlot(entry) ? entry : lastCharSlot;
                     continue;
@@ -161,6 +164,12 @@ public class NovelAligner
         }
 
         return nameToCode;
+    }
+
+    internal static bool IsCharacterSlotEntry(FormattedTextEntry entry)
+    {
+        return string.Equals(entry.Type, "charslot", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(entry.Type, "character", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static bool IsEffectiveCharSlot(FormattedTextEntry entry)
@@ -184,7 +193,7 @@ public class NovelAligner
             string? lastCharSlotCode = null;
             foreach (var entry in entries)
             {
-                if (entry.Type == "charslot")
+                if (IsCharacterSlotEntry(entry))
                 {
                     var code = IsEffectiveCharSlot(entry) ? ExtractCodeFromCharSlot(entry) : null;
                     if (code != null) lastCharSlotCode = code;
@@ -532,6 +541,7 @@ public class NovelAligner
     /// 对齐缓存条目，用于 JSON 序列化。
     /// </summary>
     private record AlignmentCacheEntry(
+        int Version,
         List<AlignmentEntry> Entries,
         AlignmentStats Stats
     );

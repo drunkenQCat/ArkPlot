@@ -65,6 +65,25 @@ public class VoiceManagerDbTests : IDisposable
         Assert.Equal(v1, v2);
     }
 
+    [Fact]
+    public void GetVoiceForCharacter_NormalizesWhitespaceVariants()
+    {
+        var db = DbFactory.GetClient();
+        var vm1 = new VoiceManager(db);
+        var voice1 = vm1.GetVoiceForCharacter("桑 尼");
+
+        var vm2 = new VoiceManager(db);
+        var voice2 = vm2.GetVoiceForCharacter("桑尼");
+
+        var maps = db.Queryable<Model.CharacterVoiceMap>()
+            .OrderBy(m => m.Id)
+            .ToList();
+
+        Assert.Equal(voice1, voice2);
+        Assert.Single(maps);
+        Assert.Equal("桑尼", maps[0].CharacterName);
+    }
+
     public void Dispose()
     {
         DbFactory.Reset();
