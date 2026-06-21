@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ArkPlot.Core.Interfaces;
 using ArkPlot.Core.Model;
 using ArkPlot.Tts.Alignment;
 
@@ -14,6 +15,7 @@ public class TtsPipeline : IDisposable
     private readonly ITtsEngine _engine;
     private readonly VoiceManager _voices;
     private readonly TtsCacheService _cache;
+    private readonly ILoudnessNormalizer? _normalizer;
     private readonly string _rate;
     private readonly string _volume;
     private readonly string _tempDir;
@@ -23,11 +25,13 @@ public class TtsPipeline : IDisposable
         VoiceManager voices,
         TtsCacheService cache,
         string rate = "+0%",
-        string volume = "+0%")
+        string volume = "+0%",
+        ILoudnessNormalizer? normalizer = null)
     {
         _engine = engine;
         _voices = voices;
         _cache = cache;
+        _normalizer = normalizer;
         _rate = rate;
         _volume = volume;
         _tempDir = Path.Combine(Path.GetTempPath(), $"arkplot_pipeline_{Guid.NewGuid():N}");
@@ -176,7 +180,7 @@ public class TtsPipeline : IDisposable
                 }
 
                 // 合成
-                var synthFile = Path.Combine(_tempDir, $"seg_{i:D4}.mp3");
+                var synthFile = Path.Combine(_tempDir, $"seg_{i:D4}_raw.mp3");
                 try
                 {
                     await _engine.SynthesizeAsync(text, seg.Voice, synthFile, _rate, _volume, ct);
@@ -197,10 +201,27 @@ public class TtsPipeline : IDisposable
                     continue;
                 }
 
-                // 写入缓存
-                try { _cache.SaveToCache(cacheKey, synthFile); } catch { /* 缓存写入失败不影响 */ }
+                // 响度均衡（如有 normalizer）
+                var finalFile = synthFile;
+                if (_normalizer != null)
+                {
+                    var normalizedFile = Path.Combine(_tempDir, $"seg_{i:D4}.mp3");
+                    try
+                    {
+                        await _normalizer.NormalizeAsync(synthFile, normalizedFile, ct);
+                        finalFile = normalizedFile;
+                        try { File.Delete(synthFile); } catch { }
+                    }
+                    catch (Exception ex)
+                    {
+                        progress?.Report($"  [{i + 1}/{segments.Count}] ⚠️ 归一化失败，使用原始音频（{ex.Message[..Math.Min(40, ex.Message.Length)]}）");
+                    }
+                }
 
-                tempFiles.Add(synthFile);
+                // 写入缓存
+                try { _cache.SaveToCache(cacheKey, finalFile); } catch { /* 缓存写入失败不影响 */ }
+
+                tempFiles.Add(finalFile);
                 synthesized++;
                 progress?.Report($"  [{i + 1}/{segments.Count}] 🎤 {seg.Voice.Replace("Neural", "")} | {seg.Label}");
             }
@@ -277,25 +298,48 @@ public class TtsPipeline : IDisposable
                 continue;
             }
 
+            // 合成到临时文件
+            var synthFile = Path.Combine(_tempDir, $"synth_{i:D4}.mp3");
             try
             {
-                await _engine.SynthesizeAsync(text, seg.Voice, cachePath, _rate, _volume, ct);
+                await _engine.SynthesizeAsync(text, seg.Voice, synthFile, _rate, _volume, ct);
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
                 var msg = ex.Message.Length > 80 ? ex.Message[..80] : ex.Message;
                 progress?.Report($"  [{i + 1}/{segments.Count}] ⚠️ 失败（{ex.GetType().Name}: {msg}）");
-                try { if (File.Exists(cachePath)) File.Delete(cachePath); } catch { }
                 continue;
             }
 
-            if (!File.Exists(cachePath) || new FileInfo(cachePath).Length == 0)
+            if (!File.Exists(synthFile) || new FileInfo(synthFile).Length == 0)
             {
                 progress?.Report($"  [{i + 1}/{segments.Count}] ⚠️ 跳过（空文件）");
-                try { if (File.Exists(cachePath)) File.Delete(cachePath); } catch { }
                 continue;
             }
+
+            // 响度均衡（如有 normalizer）
+            if (_normalizer != null)
+            {
+                try
+                {
+                    await _normalizer.NormalizeAsync(synthFile, cachePath, ct);
+                }
+                catch (Exception ex)
+                {
+                    progress?.Report($"  [{i + 1}/{segments.Count}] ⚠️ 归一化失败，使用原始音频（{ex.GetType().Name}: {ex.Message[..Math.Min(60, ex.Message.Length)]}）");
+                    // 归一化失败，直接使用原始合成文件
+                    File.Move(synthFile, cachePath, overwrite: true);
+                }
+            }
+            else
+            {
+                // 无 normalizer，直接移动到缓存位置
+                File.Move(synthFile, cachePath, overwrite: true);
+            }
+
+            // 清理临时文件
+            try { if (File.Exists(synthFile)) File.Delete(synthFile); } catch { }
 
             outputFiles.Add(cachePath);
             fileProgress?.Report((i, cachePath));

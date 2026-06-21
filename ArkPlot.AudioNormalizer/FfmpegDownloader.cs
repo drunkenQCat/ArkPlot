@@ -10,18 +10,20 @@ namespace ArkPlot.AudioNormalizer;
 
 /// <summary>
 /// ffmpeg 运行时下载器。
-/// 根据平台自动选择下载源，支持进度回调。
+/// 根据平台自动选择下载源，支持进度回调和日志。
 /// </summary>
 public class FfmpegDownloader
 {
     private const string DefaultVersion = "7.0.2";
 
     private readonly HttpClient _httpClient;
+    private readonly Action<string>? _onLog;
 
-    public FfmpegDownloader(HttpClient? httpClient = null)
+    public FfmpegDownloader(HttpClient? httpClient = null, Action<string>? onLog = null)
     {
         _httpClient = httpClient ?? new HttpClient();
         _httpClient.Timeout = TimeSpan.FromMinutes(10);
+        _onLog = onLog;
     }
 
     /// <summary>
@@ -38,6 +40,8 @@ public class FfmpegDownloader
         var downloadUrl = GetDownloadUrl(rid);
         var archiveFormat = GetArchiveFormat(rid);
 
+        _onLog?.Invoke($"[FfmpegDownloader] 平台: {rid}, 下载源: {downloadUrl}");
+
         var cacheDir = FfmpegResolver.GetCacheDirectory();
         var versionDir = Path.Combine(cacheDir, DefaultVersion, rid);
 
@@ -50,6 +54,7 @@ public class FfmpegDownloader
         // 如果已存在则直接返回
         if (File.Exists(ffmpegPath))
         {
+            _onLog?.Invoke($"[FfmpegDownloader] 已缓存: {ffmpegPath}");
             progress?.Report(1.0);
             return ffmpegPath;
         }
@@ -57,10 +62,12 @@ public class FfmpegDownloader
         try
         {
             // 1. 下载归档文件
+            _onLog?.Invoke($"[FfmpegDownloader] 开始下载...");
             progress?.Report(0.0);
             await DownloadFileAsync(downloadUrl, archivePath, progress, cancellationToken);
 
             // 2. 解压
+            _onLog?.Invoke($"[FfmpegDownloader] 解压中...");
             progress?.Report(0.9);
             await ExtractArchiveAsync(archivePath, versionDir, archiveFormat, cancellationToken);
 
@@ -83,11 +90,13 @@ public class FfmpegDownloader
                 SetExecutablePermission(ffmpegPath);
             }
 
+            _onLog?.Invoke($"[FfmpegDownloader] 安装完成: {ffmpegPath}");
             progress?.Report(1.0);
             return ffmpegPath;
         }
-        catch
+        catch (Exception ex)
         {
+            _onLog?.Invoke($"[FfmpegDownloader] 下载失败: {ex.Message}");
             // 清理失败的下载
             try { if (File.Exists(archivePath)) File.Delete(archivePath); } catch { }
             throw;
@@ -99,7 +108,7 @@ public class FfmpegDownloader
     /// </summary>
     public bool NeedsDownload()
     {
-        return FfmpegResolver.FindFfmpeg() == null;
+        return FfmpegResolver.FindFfmpeg(_onLog) == null;
     }
 
     /// <summary>
@@ -149,10 +158,12 @@ public class FfmpegDownloader
         IProgress<double>? progress,
         CancellationToken cancellationToken)
     {
+        _onLog?.Invoke($"[FfmpegDownloader] GET {url}");
         using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         var totalBytes = response.Content.Headers.ContentLength ?? -1;
+        _onLog?.Invoke($"[FfmpegDownloader] 文件大小: {(totalBytes > 0 ? $"{totalBytes / 1024.0 / 1024.0:F1} MB" : "未知")}");
         var downloadedBytes = 0L;
 
         await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -160,6 +171,7 @@ public class FfmpegDownloader
 
         var buffer = new byte[8192];
         int bytesRead;
+        var lastReportedPercent = -1;
 
         while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
         {
@@ -170,6 +182,14 @@ public class FfmpegDownloader
             {
                 var downloadProgress = (double)downloadedBytes / totalBytes * 0.9; // 下载占 0~0.9
                 progress?.Report(downloadProgress);
+
+                // 每 10% 输出一次日志
+                var percent = (int)(downloadProgress * 100);
+                if (percent / 10 != lastReportedPercent / 10)
+                {
+                    lastReportedPercent = percent;
+                    _onLog?.Invoke($"[FfmpegDownloader] 下载进度: {percent}%");
+                }
             }
         }
     }

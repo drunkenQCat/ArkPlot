@@ -20,21 +20,26 @@ public static class FfmpegResolver
     /// 2. 用户缓存版（~/.arkplot/ffmpeg/）
     /// 3. 系统 PATH
     /// </summary>
+    /// <param name="onLog">可选日志回调。</param>
     /// <returns>ffmpeg 路径，未找到返回 null</returns>
-    public static string? FindFfmpeg()
+    public static string? FindFfmpeg(Action<string>? onLog = null)
     {
         // 1. 捆绑版（与 DLL/EXE 同目录）
         var bundled = Path.Combine(AppContext.BaseDirectory, FfmpegExecutable);
         if (File.Exists(bundled))
+        {
+            onLog?.Invoke($"[FfmpegResolver] 找到捆绑版: {bundled}");
             return bundled;
+        }
 
         // 2. 用户缓存版（~/.arkplot/ffmpeg/<version>/<rid>/ffmpeg）
-        var cached = FindInCache();
+        var cached = FindInCache(onLog);
         if (cached != null)
             return cached;
 
         // 3. 系统 PATH
-        return FindInPath();
+        var pathResult = FindInPath(onLog);
+        return pathResult;
     }
 
     /// <summary>
@@ -50,26 +55,35 @@ public static class FfmpegResolver
     /// 在缓存目录中查找 ffmpeg。
     /// 返回最新安装的版本。
     /// </summary>
-    private static string? FindInCache()
+    private static string? FindInCache(Action<string>? onLog = null)
     {
         var cacheDir = GetCacheDirectory();
         if (!Directory.Exists(cacheDir))
+        {
+            onLog?.Invoke($"[FfmpegResolver] 缓存目录不存在: {cacheDir}");
             return null;
+        }
 
         // 递归查找 ffmpeg 可执行文件
         try
         {
             var candidates = Directory.GetFiles(cacheDir, FfmpegExecutable, SearchOption.AllDirectories);
             if (candidates.Length == 0)
+            {
+                onLog?.Invoke($"[FfmpegResolver] 缓存目录中未找到 ffmpeg");
                 return null;
+            }
 
             // 返回最新写入的版本
-            return candidates
+            var result = candidates
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .First();
+            onLog?.Invoke($"[FfmpegResolver] 找到缓存版: {result}");
+            return result;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            onLog?.Invoke($"[FfmpegResolver] 读取缓存目录失败: {ex.Message}");
             return null;
         }
     }
@@ -77,11 +91,14 @@ public static class FfmpegResolver
     /// <summary>
     /// 在系统 PATH 中查找 ffmpeg。
     /// </summary>
-    private static string? FindInPath()
+    private static string? FindInPath(Action<string>? onLog = null)
     {
         var pathEnv = Environment.GetEnvironmentVariable("PATH");
         if (string.IsNullOrEmpty(pathEnv))
+        {
+            onLog?.Invoke("[FfmpegResolver] PATH 环境变量为空");
             return null;
+        }
 
         var separator = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ';' : ':';
         var paths = pathEnv.Split(separator, StringSplitOptions.RemoveEmptyEntries);
@@ -90,9 +107,13 @@ public static class FfmpegResolver
         {
             var candidate = Path.Combine(dir, FfmpegExecutable);
             if (File.Exists(candidate))
+            {
+                onLog?.Invoke($"[FfmpegResolver] 在 PATH 中找到: {candidate}");
                 return candidate;
+            }
         }
 
+        onLog?.Invoke("[FfmpegResolver] 未找到 ffmpeg");
         return null;
     }
 

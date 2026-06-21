@@ -6,8 +6,10 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using ArkPlot.AudioNormalizer;
 using ArkPlot.Avalonia.Models;
 using ArkPlot.Core.Infrastructure;
+using ArkPlot.Core.Interfaces;
 using ArkPlot.Core.Model;
 using ArkPlot.Tts;
 using ArkPlot.Tts.Alignment;
@@ -148,6 +150,17 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     private readonly ITtsEngine _ttsEngine;
     private readonly string _outputBaseDir;
     private bool _isInitialSelection = true;
+    private ILoudnessNormalizer? _normalizer;
+
+    // ── ffmpeg 通知条 ──
+    [ObservableProperty]
+    private bool _showFfmpegNotice;
+
+    [ObservableProperty]
+    private string _ffmpegNoticeText = "";
+
+    [ObservableProperty]
+    private bool _isDownloadingFfmpeg;
 
     public TtsViewModel(string outputBaseDir)
     {
@@ -181,7 +194,66 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     public async Task InitializeAsync()
     {
         await Task.Delay(100); // 让窗口先渲染完毕
+        await CheckFfmpegAsync();
         await LoadAlignmentAsync();
+    }
+
+    /// <summary>
+    /// 检测 ffmpeg 是否可用，不可用时显示通知条。
+    /// </summary>
+    private async Task CheckFfmpegAsync()
+    {
+        await Task.Run(() =>
+        {
+            var ffmpegPath = FfmpegResolver.FindFfmpeg();
+            if (ffmpegPath != null)
+            {
+                _normalizer = new LoudnessNormalizer(ffmpegPath, onLog: Log);
+                Log($"[AudioNormalizer] ffmpeg 已就绪: {Path.GetFileName(ffmpegPath)}");
+            }
+            else
+            {
+                ShowFfmpegNotice = true;
+                FfmpegNoticeText = "响度均衡需要 ffmpeg，当前未安装";
+                Log("[AudioNormalizer] ffmpeg 未找到，响度均衡已禁用。点击通知条下载。");
+            }
+        });
+    }
+
+    [RelayCommand]
+    private async Task DownloadFfmpegAsync()
+    {
+        IsDownloadingFfmpeg = true;
+        FfmpegNoticeText = "正在下载 ffmpeg...";
+
+        try
+        {
+            var progress = new Progress<double>(p =>
+            {
+                FfmpegNoticeText = $"正在下载 ffmpeg... {p:P0}";
+            });
+
+            var normalizer = await LoudnessNormalizer.CreateAsync(progress, onLog: Log);
+            _normalizer = normalizer;
+
+            ShowFfmpegNotice = false;
+            Log("[AudioNormalizer] ffmpeg 下载安装完成，响度均衡已启用");
+        }
+        catch (Exception ex)
+        {
+            FfmpegNoticeText = $"下载失败: {ex.Message}";
+            Log($"[AudioNormalizer] ffmpeg 下载失败: {ex.Message}");
+        }
+        finally
+        {
+            IsDownloadingFfmpeg = false;
+        }
+    }
+
+    [RelayCommand]
+    private void DismissFfmpegNotice()
+    {
+        ShowFfmpegNotice = false;
     }
 
     // ════════════════════════════════════════════
@@ -552,7 +624,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
             var cache = new TtsCacheService(cacheDir);
 
-            using var pipeline = new TtsPipeline(_ttsEngine, new VoiceManager(DbFactory.GetClient()), cache);
+            using var pipeline = new TtsPipeline(_ttsEngine, new VoiceManager(DbFactory.GetClient()), cache, normalizer: _normalizer);
 
             var segments = new List<TtsSegment>();
             var segmentIndices = new List<int>();
@@ -666,7 +738,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
             var cache = new TtsCacheService(cacheDir);
 
-            using var pipeline = new TtsPipeline(_ttsEngine, new VoiceManager(DbFactory.GetClient()), cache);
+            using var pipeline = new TtsPipeline(_ttsEngine, new VoiceManager(DbFactory.GetClient()), cache, normalizer: _normalizer);
 
             var segments = new List<TtsSegment>();
             var segmentIndices = new List<int>();

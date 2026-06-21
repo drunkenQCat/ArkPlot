@@ -35,6 +35,30 @@
       <ScrollViewer>
         <DockPanel Margin="12,8">
 
+        <!-- ffmpeg 通知条 -->
+        <Border DockPanel.Dock="Top" IsVisible="{Binding ShowFfmpegNotice}"
+                Background="#2080C0FF" BorderBrush="#4080C0FF"
+                BorderThickness="1" CornerRadius="6"
+                Margin="0,0,0,10" Padding="10,8">
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Content="✕"
+                    Command="{Binding DismissFfmpegNoticeCommand}"
+                    Background="Transparent" BorderThickness="0"
+                    Padding="6,2" FontSize="11"
+                    IsEnabled="{c:Binding !IsDownloadingFfmpeg}"
+                    VerticalAlignment="Center" Margin="8,0,0,0"/>
+            <Button DockPanel.Dock="Right" Content="下载"
+                    Command="{Binding DownloadFfmpegCommand}"
+                    IsEnabled="{c:Binding !IsDownloadingFfmpeg}"
+                    Classes="Rounded Accent"
+                    VerticalAlignment="Center" Margin="8,0,0,0"
+                    Padding="12,4" FontSize="12"/>
+            <TextBlock Text="{Binding FfmpegNoticeText}"
+                       VerticalAlignment="Center" FontSize="12"
+                       TextWrapping="Wrap"/>
+          </DockPanel>
+        </Border>
+
         <!-- 角色立绘 -->
         <controls:PortraitPanel DockPanel.Dock="Top" Margin="0,0,0,10"
                              DataContext="{Binding PortraitPanel}"/>
