@@ -4,10 +4,11 @@ using ArkPlot.Avalonia.ViewModels;
 using System;
 using System.ComponentModel;
 using System.Linq;
+using SukiUI.Controls;
 
 namespace ArkPlot.Avalonia.Views;
 
-public partial class TtsWindow : Window
+public partial class TtsWindow : SukiWindow
 {
     public TtsWindow()
     {

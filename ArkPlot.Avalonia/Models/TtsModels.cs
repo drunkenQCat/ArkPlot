@@ -1,9 +1,7 @@
 using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.IO;
-using System.Linq;
 using ArkPlot.Avalonia.ViewModels;
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -15,7 +13,8 @@ public partial class NovelFileItem : ObservableObject
     public string FilePath { get; }
     public string FileName { get; }
 
-    [ObservableProperty] private bool _isSelected;
+    [ObservableProperty]
+    private bool _isSelected;
 
     public NovelFileItem(string filePath)
     {
@@ -29,14 +28,28 @@ public partial class VoiceConfigItem : ObservableObject
 {
     public string CharacterName { get; }
     public string Gender { get; }
+
+    public IBrush GenderColor =>
+        Gender switch
+        {
+            "男" => Brushes.DeepSkyBlue,
+            "女" => Brushes.HotPink,
+            _ => Brushes.DarkGoldenrod,
+        };
     public string? CharacterCode { get; }
 
-    [ObservableProperty] private string _selectedVoice;
+    [ObservableProperty]
+    private string _selectedVoice;
 
     public List<string> AvailableVoices { get; }
 
-    public VoiceConfigItem(string characterName, string gender, string selectedVoice,
-        List<string> availableVoices, string? characterCode = null)
+    public VoiceConfigItem(
+        string characterName,
+        string gender,
+        string selectedVoice,
+        List<string> availableVoices,
+        string? characterCode = null
+    )
     {
         CharacterName = characterName;
         Gender = gender;
@@ -76,18 +89,29 @@ public partial class SegmentRow : ObservableObject, IDisposable
 
     /// <summary>行级音频播放器（懒初始化，有音频时才创建）。</summary>
     private AudioPlayerViewModel? _audioPlayer;
-    public AudioPlayerViewModel AudioPlayer => _audioPlayer ??= new AudioPlayerViewModel(
-        filePathProvider: () => AudioFilePath);
+    public AudioPlayerViewModel AudioPlayer =>
+        _audioPlayer ??= new AudioPlayerViewModel(filePathProvider: () => AudioFilePath);
 
     // P0: 已移除 OnAudioFilePathChanged — 不再在 setter 中触发 NAudio I/O
     // LoadFile 延迟到用户点击播放时由 TtsViewModel.PlayAudioFile 调用
 
-    [ObservableProperty] private bool _hasAudio;
-    [ObservableProperty] private string _audioFilePath = "";
-    [ObservableProperty] private string _durationText = "";
-    [ObservableProperty] private double _audioOpacity = 0.3;
-    [ObservableProperty] private string _audioStatus = "— — — — —";
-    [ObservableProperty] private bool _isPlaying;
+    [ObservableProperty]
+    private bool _hasAudio;
+
+    [ObservableProperty]
+    private string _audioFilePath = "";
+
+    [ObservableProperty]
+    private string _durationText = "";
+
+    [ObservableProperty]
+    private double _audioOpacity = 0.3;
+
+    [ObservableProperty]
+    private string _audioStatus = "— — — — —";
+
+    [ObservableProperty]
+    private bool _isPlaying;
 
     /// <summary>
     /// P3: 批量更新音频状态，合并为一次 PropertyChanged 通知。

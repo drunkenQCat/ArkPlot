@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using ArkPlot.Tts.Models;
 
 namespace ArkPlot.Avalonia.Models;
 
@@ -21,7 +22,11 @@ public record ProviderConfig(
 /// 读写程序运行目录的 settings.json，不存在时自动生成默认值。
 /// 结构可扩展，未来可新增 section。
 /// </summary>
-public record AppSettings(NovelizerSettings Novelizer, VisionSettings? Vision = null)
+public record AppSettings(
+    NovelizerSettings Novelizer,
+    VisionSettings? Vision = null,
+    TtsSettings? Tts = null
+)
 {
     private static readonly string FilePath = Path.Combine(
         AppContext.BaseDirectory,
@@ -105,7 +110,11 @@ public record AppSettings(NovelizerSettings Novelizer, VisionSettings? Vision = 
 
     private static AppSettings CreateDefaults()
     {
-        return new AppSettings(NovelizerSettings.CreateDefaults(), VisionSettings.CreateDefaults());
+        return new AppSettings(
+            Novelizer: NovelizerSettings.CreateDefaults(),
+            Vision: VisionSettings.CreateDefaults(),
+            Tts: TtsSettings.CreateDefaults()
+        );
     }
 }
 
@@ -326,3 +335,4 @@ public record VisionSettings(
         );
     }
 }
+
