@@ -42,6 +42,7 @@
     <ProjectReference Include="..\ArkPlot.Novelizer\ArkPlot.Novelizer.csproj" />
     <ProjectReference Include="..\ArkPlot.Tts\ArkPlot.Tts.csproj" />
     <ProjectReference Include="..\ArkPlot.Vision\ArkPlot.Vision.csproj" />
+    <ProjectReference Include="..\ArkPlot.AudioNormalizer\ArkPlot.AudioNormalizer.csproj" />
     <!-- <ProjectReference Include="C:\TechProjects\About_MyRepos\HandyControl\src\Avalonia\HandyControl_Avalonia\HandyControl_Avalonia.csproj" /> -->
   </ItemGroup>
   <Target Name="CopyFilesAfterBuild" AfterTargets="Build">

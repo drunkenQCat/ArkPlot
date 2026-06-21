@@ -10,4 +10,8 @@
     <PackageReference Include="xFFmpeg.NET" Version="7.4.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\ArkPlot.Core\ArkPlot.Core.csproj" />
+  </ItemGroup>
+
 </Project>
