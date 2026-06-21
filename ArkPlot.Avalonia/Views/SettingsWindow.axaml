@@ -8,7 +8,7 @@
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
         x:Class="ArkPlot.Avalonia.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
-        Title="设置" Height="700" Width="600">
+        Title="设置" Height="750" Width="600">
     <Window.DataContext>
         <vm:SettingsViewModel />
     </Window.DataContext>
@@ -243,7 +243,203 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- Tab 4: 数据管理 -->
+            <!-- Tab 4: TTS 配置 -->
+            <TabItem Header="TTS配置">
+                <Grid ColumnDefinitions="*,220" Margin="16">
+                    <!-- 左栏：引擎配置 -->
+                    <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,12,0">
+                        <StackPanel Spacing="16">
+
+                            <!-- EdgeTTS -->
+                            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="EdgeTTS" FontWeight="Bold" FontSize="14"/>
+                                    <CheckBox Content="启用（免费，无需配置）"
+                                              IsChecked="{Binding TtsEdgeTtsEnabled}"/>
+                                    <TextBlock Text="{Binding TtsEdgeTtsSummary}" Foreground="Gray" FontSize="12"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- MiniMax -->
+                            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="MiniMax" FontWeight="Bold" FontSize="14"/>
+                                    <CheckBox Content="启用"
+                                              IsChecked="{Binding TtsMiniMaxEnabled}"/>
+                                    <StackPanel Spacing="6" IsVisible="{Binding TtsMiniMaxEnabled}">
+                                        <TextBlock Text="API Key" FontSize="12"/>
+                                        <TextBox Text="{Binding TtsMiniMaxApiKey}"
+                                                 PasswordChar="•"
+                                                 Watermark="sk-xxx 或留空使用环境变量"/>
+                                        <TextBlock Text="Base URL" FontSize="12"/>
+                                        <ComboBox ItemsSource="{Binding MiniMaxBaseUrlOptions}"
+                                                  SelectedItem="{Binding TtsMiniMaxBaseUrl}"
+                                                  Width="320"
+                                                  HorizontalAlignment="Left"/>
+                                        <TextBlock Text="模型" FontSize="12"/>
+                                        <ComboBox ItemsSource="{Binding MiniMaxModelOptions}"
+                                                  SelectedItem="{Binding TtsMiniMaxModel}"
+                                                  Width="320"
+                                                  HorizontalAlignment="Left"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                                            <TextBlock Text="{Binding TtsMiniMaxVoiceCount, StringFormat='音色 {0} 种'}"
+                                                       VerticalAlignment="Center"/>
+                                            <Button Content="管理音色..."
+                                                    Command="{Binding OpenMiniMaxVoiceManagerCommand}"
+                                                    CommandParameter="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType={x:Type Window}}}"
+                                                    Classes="Flat"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 自定义引擎 -->
+                            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="自定义引擎" FontWeight="Bold" FontSize="14"/>
+
+                                    <!-- 引擎列表 -->
+                                    <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" CornerRadius="2">
+                                        <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
+                                            <StackPanel>
+                                                <!-- 表头 -->
+                                                <Grid ColumnDefinitions="*,*,80,80" Margin="8,4">
+                                                    <TextBlock Text="名称" FontWeight="SemiBold" FontSize="11"/>
+                                                    <TextBlock Grid.Column="1" Text="地址" FontWeight="SemiBold" FontSize="11"/>
+                                                    <TextBlock Grid.Column="2" Text="音色" FontWeight="SemiBold" FontSize="11"/>
+                                                    <TextBlock Grid.Column="3" Text="状态" FontWeight="SemiBold" FontSize="11"/>
+                                                </Grid>
+                                                <!-- 数据行 -->
+                                                <ItemsControl ItemsSource="{Binding TtsCustomEngineList}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="0,1,0,0" Padding="8,6">
+                                                                <Grid ColumnDefinitions="*,*,80,80">
+                                                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                                    <TextBlock Grid.Column="1" Text="{Binding BaseUrl}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Foreground="Gray" FontSize="11"/>
+                                                                    <TextBlock Grid.Column="2" Text="{Binding Voices.Length, StringFormat='{}{0} 种'}" VerticalAlignment="Center" FontSize="11"/>
+                                                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                                                        <Button Content="编辑" Classes="Flat" FontSize="11" Padding="4,2"
+                                                                                Command="{Binding $parent[TabItem].((vm:SettingsViewModel)DataContext).EditTtsCustomEngineCommand}"
+                                                                                CommandParameter="{Binding}"/>
+                                                                        <Button Content="删除" Classes="Flat" FontSize="11" Padding="4,2"
+                                                                                Command="{Binding $parent[TabItem].((vm:SettingsViewModel)DataContext).DeleteTtsCustomEngineCommand}"
+                                                                                CommandParameter="{Binding}"/>
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Border>
+
+                                    <Button Content="＋ 添加引擎"
+                                            Command="{Binding AddTtsCustomEngineCommand}"
+                                            Classes="Flat"
+                                            HorizontalAlignment="Right"/>
+
+                                    <!-- 编辑面板（内联展开） -->
+                                    <Border BorderBrush="{DynamicResource SystemAccentColor}" BorderThickness="1" CornerRadius="4" Padding="12"
+                                            IsVisible="{Binding TtsEditingEngineVisible}">
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="{Binding TtsEditingEngineTitle}" FontWeight="SemiBold" FontSize="13"/>
+                                            <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0,4,0,0">
+                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="名称" VerticalAlignment="Center" FontSize="12"/>
+                                                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TtsEditingEngineName}" Watermark="我的本地TTS"/>
+                                                <TextBlock Grid.Row="1" Grid.Column="0" Text="地址" VerticalAlignment="Center" FontSize="12"/>
+                                                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding TtsEditingEngineUrl}" Watermark="http://localhost:5144"/>
+                                                <TextBlock Grid.Row="2" Grid.Column="0" Text="API Key" VerticalAlignment="Center" FontSize="12"/>
+                                                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding TtsEditingEngineKey}" PasswordChar="•" Watermark="(可选)"/>
+                                                <TextBlock Grid.Row="3" Grid.Column="0" Text="模型" VerticalAlignment="Center" FontSize="12"/>
+                                                <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding TtsEditingEngineModel}" Watermark="(可选)"/>
+                                                <TextBlock Grid.Row="4" Grid.Column="0" Text="音色" VerticalAlignment="Center" FontSize="12"/>
+                                                <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding TtsEditingEngineVoiceCount, StringFormat='{}{0} 种'}"
+                                                               VerticalAlignment="Center"/>
+                                                    <Button Content="管理音色..."
+                                                            Command="{Binding OpenEditingEngineVoiceManagerCommand}"
+                                                            CommandParameter="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType={x:Type Window}}}"
+                                                            Classes="Flat"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,8,0,0">
+                                                <Button Content="保存引擎" Command="{Binding SaveEditingEngineCommand}" Classes="Accent" Padding="16,6"/>
+                                                <Button Content="取消" Command="{Binding CancelEditingEngineCommand}" Padding="16,6"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 默认音色 -->
+                            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="默认音色" FontWeight="Bold" FontSize="14"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="旁白" VerticalAlignment="Center" FontSize="12"/>
+                                        <ComboBox ItemsSource="{Binding TtsAllVoices}"
+                                                  SelectedItem="{Binding TtsDefaultNarratorVoice}"
+                                                  Width="400">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                                        <TextBlock Text="{Binding Entry.DisplayName}"/>
+                                                        <TextBlock Text="·" Foreground="Gray"/>
+                                                        <TextBlock Text="{Binding Entry.VoiceId}" Foreground="Gray" FontSize="11"/>
+                                                        <TextBlock Text="(" Foreground="Gray" FontSize="11"/>
+                                                        <TextBlock Text="{Binding Engine}" Foreground="Gray" FontSize="11"/>
+                                                        <TextBlock Text=")" Foreground="Gray" FontSize="11"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 保存按钮 -->
+                            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,8,0,0">
+                                <Button Content="保存所有设置"
+                                        Command="{Binding SaveTtsSettingsCommand}"
+                                        Padding="20,8"
+                                        Classes="Accent"/>
+                                <TextBlock Text="{Binding TtsSaveFeedbackText}"
+                                           VerticalAlignment="Center"
+                                           Foreground="Green"/>
+                            </StackPanel>
+
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- 右栏：音色池（实时） -->
+                    <Border Grid.Column="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" CornerRadius="4" Padding="12" VerticalAlignment="Top">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="音色池（实时）" FontWeight="Bold" FontSize="14"/>
+                            <ItemsControl ItemsSource="{Binding TtsPoolBreakdown}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="{Binding EngineName}" FontSize="12"/>
+                                            <TextBlock Text="●" FontSize="8" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding Count, StringFormat='{}{0} 种'}" FontSize="12" Foreground="Gray"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="0,1,0,0" Margin="0,4" Padding="0,4,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding TtsPoolTotalText}" FontWeight="SemiBold" FontSize="12"/>
+                                    <TextBlock Text="{Binding TtsPoolGenderText}" Foreground="Gray" FontSize="11"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- Tab 5: 数据管理 -->
             <TabItem Header="数据管理">
                 <StackPanel Margin="16" Spacing="16">
                     <TextBlock Text="数据源同步" FontWeight="Bold" FontSize="16"/>

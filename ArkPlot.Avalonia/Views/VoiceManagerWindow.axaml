@@ -1,0 +1,73 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ArkPlot.Avalonia.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="500"
+        x:Class="ArkPlot.Avalonia.VoiceManagerWindow"
+        x:Name="Root"
+        x:DataType="vm:VoiceManagerViewModel"
+        Title="{Binding Title}"
+        Width="700" Height="500"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <DockPanel Margin="16">
+        <!-- 底部按钮 -->
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+            <TextBlock Text="{Binding FetchStatus}" VerticalAlignment="Center" Foreground="Gray" Margin="0,0,16,0"/>
+            <Button Content="保存" Command="{Binding SaveCommand}" Width="80" Classes="Accent"/>
+            <Button Content="取消" Command="{Binding CancelCommand}" Width="80"/>
+        </StackPanel>
+
+        <!-- 工具栏 -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+            <Button Content="获取音色" Command="{Binding FetchVoicesCommand}" IsEnabled="{Binding CanFetchVoices}"/>
+            <Button Content="＋ 添加一行" Command="{Binding AddRowCommand}"/>
+        </StackPanel>
+
+        <!-- DataGrid -->
+        <DataGrid ItemsSource="{Binding Voices}"
+                  AutoGenerateColumns="False"
+                  CanUserResizeColumns="True"
+                  GridLinesVisibility="Horizontal"
+                  IsReadOnly="False">
+            <DataGrid.Columns>
+                <DataGridCheckBoxColumn Header="选中"
+                                        Binding="{Binding IsSelected}"
+                                        Width="60"/>
+                <DataGridTextColumn Header="Voice ID"
+                                    Binding="{Binding VoiceId}"
+                                    Width="250"/>
+                <DataGridTextColumn Header="显示名"
+                                    Binding="{Binding DisplayName}"
+                                    Width="150"/>
+                <DataGridTemplateColumn Header="性别" Width="120">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <ComboBox ItemsSource="{Binding #Root.DataContext.GenderOptions}"
+                                      SelectedValueBinding="{Binding .}"
+                                      SelectedValue="{Binding Gender}"
+                                      BorderThickness="0"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Locale"
+                                    Binding="{Binding Locale}"
+                                    Width="80"/>
+                <DataGridTemplateColumn Header="" Width="60">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="×"
+                                    Command="{Binding $parent[Window].((vm:VoiceManagerViewModel)DataContext).RemoveRowCommand}"
+                                    CommandParameter="{Binding}"
+                                    Classes="Flat"
+                                    Foreground="Red"
+                                    Padding="4,2"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</Window>
