@@ -136,6 +136,38 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private void JumpToVoiceConfigAppearance(VoiceConfigItem config)
+    {
+        if (string.IsNullOrEmpty(config.FirstAppearanceChapter))
+            return;
+
+        // 找到对应章节并切换
+        var chapter = Chapters.FirstOrDefault(c => c.Title == config.FirstAppearanceChapter);
+        if (chapter == null)
+        {
+            Log($"⚠ 未找到章节: {config.FirstAppearanceChapter}");
+            return;
+        }
+
+        SelectedChapter = chapter;
+
+        // 在 FilteredSegments 中找到该角色的第一个片段并选中
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(100); // 等待 LoadSegmentsForChapterAsync 完成
+            Dispatcher.UIThread.Post(() =>
+            {
+                var target = FilteredSegments
+                    .FirstOrDefault(s => s.CharacterName == config.CharacterName);
+                if (target != null)
+                {
+                    SelectedSegment = target;
+                    Log($"↪ 跳转到 {config.CharacterName} 初登场: {chapter.Title} #{target.Index}");
+                }
+            });
+        });
+    }
+
     // ── 日志 ──
     [ObservableProperty]
     private string _logText = "";
@@ -181,7 +213,8 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             _voiceManagerUnified,
             Log,
             RefreshAudioStatusAsync,
-            UpdatePortraitForVoiceConfig
+            UpdatePortraitForVoiceConfig,
+            JumpToVoiceConfigAppearance
         );
 
         ScanNovelFiles();

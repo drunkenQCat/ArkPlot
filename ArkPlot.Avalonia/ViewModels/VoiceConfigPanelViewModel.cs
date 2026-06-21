@@ -66,18 +66,21 @@ public partial class VoiceConfigPanelViewModel : ObservableObject
     private readonly Action<string> _log;
     private readonly Func<Task> _refreshAudioStatus;
     private readonly Action<VoiceConfigItem> _onSelectedVoiceConfigChanged;
+    private readonly Action<VoiceConfigItem> _jumpToFirstAppearance;
 
     public VoiceConfigPanelViewModel(
         VoiceManagerUnified voiceManagerUnified,
         Action<string> log,
         Func<Task> refreshAudioStatus,
-        Action<VoiceConfigItem> onSelectedVoiceConfigChanged
+        Action<VoiceConfigItem> onSelectedVoiceConfigChanged,
+        Action<VoiceConfigItem> jumpToFirstAppearance
     )
     {
         _voiceManagerUnified = voiceManagerUnified ?? throw new ArgumentNullException(nameof(voiceManagerUnified));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _refreshAudioStatus = refreshAudioStatus ?? throw new ArgumentNullException(nameof(refreshAudioStatus));
         _onSelectedVoiceConfigChanged = onSelectedVoiceConfigChanged ?? throw new ArgumentNullException(nameof(onSelectedVoiceConfigChanged));
+        _jumpToFirstAppearance = jumpToFirstAppearance ?? throw new ArgumentNullException(nameof(jumpToFirstAppearance));
     }
 
     // ── 选中变化回调 ──
@@ -123,6 +126,13 @@ public partial class VoiceConfigPanelViewModel : ObservableObject
     }
 
     // ── 命令 ──
+
+    [RelayCommand]
+    private void JumpToFirstAppearance(VoiceConfigItem? config)
+    {
+        if (config == null) return;
+        _jumpToFirstAppearance(config);
+    }
 
     [RelayCommand]
     private void RandomizeVoices()
@@ -196,24 +206,69 @@ public partial class VoiceConfigPanelViewModel : ObservableObject
         var narratorVoice = _voiceManagerUnified.GetNarratorAssignment().VoiceId;
         configs.Add(new VoiceConfigItem("(旁白)", "—", narratorVoice, allVoiceIds, null));
 
+        // 记录章节出场顺序
+        var chapterOrder = new Dictionary<string, int>();
+        var chapterIdx = 0;
+        foreach (var entry in entries)
+        {
+            if (!string.IsNullOrEmpty(entry.ChapterTitle) && !chapterOrder.ContainsKey(entry.ChapterTitle))
+                chapterOrder[entry.ChapterTitle] = chapterIdx++;
+        }
+
+        // 按出场顺序构建：遍历 entries，记录每个角色的首次出现
+        var firstAppearance = new Dictionary<string, (int ChapterOrder, int SegmentIdx)>();
+        var segmentCounters = new Dictionary<string, int>();
+
+        foreach (var entry in entries)
+        {
+            if (string.IsNullOrEmpty(entry.ChapterTitle))
+                continue;
+
+            if (!segmentCounters.ContainsKey(entry.ChapterTitle))
+                segmentCounters[entry.ChapterTitle] = 0;
+
+            if (entry.IsDialog)
+                segmentCounters[entry.ChapterTitle]++;
+
+            if (!entry.IsDialog || string.IsNullOrEmpty(entry.CharacterName))
+                continue;
+
+            var normalizedName = NormalizeCharacterName(entry.CharacterName);
+            if (!firstAppearance.ContainsKey(normalizedName))
+            {
+                var cOrder = chapterOrder.GetValueOrDefault(entry.ChapterTitle, int.MaxValue);
+                firstAppearance[normalizedName] = (cOrder, segmentCounters[entry.ChapterTitle]);
+            }
+        }
+
         var characters = entries
             .Where(e => e.IsDialog && !string.IsNullOrEmpty(e.CharacterName))
             .GroupBy(e => NormalizeCharacterName(e.CharacterName)!)
-            .Select(g => new
+            .Select(g =>
             {
-                Name = g.Key,
-                Gender = g.Select(e => e.Gender).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? "?",
-                Code = g.Select(e => e.CharacterCode).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)),
+                var name = g.Key;
+                var (chapterOrder, segmentIdx) = firstAppearance.GetValueOrDefault(name, (int.MaxValue, int.MaxValue));
+                return new
+                {
+                    Name = name,
+                    Gender = g.Select(e => e.Gender).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? "?",
+                    Code = g.Select(e => e.CharacterCode).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)),
+                    ChapterOrder = chapterOrder,
+                    SegmentIdx = segmentIdx,
+                    FirstChapter = entries
+                        .Where(e => NormalizeCharacterName(e.CharacterName) == name)
+                        .Select(e => e.ChapterTitle)
+                        .FirstOrDefault(t => !string.IsNullOrEmpty(t)) ?? "",
+                };
             })
-            .OrderByDescending(c =>
-                entries.Count(e => NormalizeCharacterName(e.CharacterName) == c.Name)
-            )
+            .OrderBy(c => c.ChapterOrder)
+            .ThenBy(c => c.SegmentIdx)
             .ToList();
 
         foreach (var ch in characters)
         {
             var voice = _voiceManagerUnified.GetVoiceForCharacter(ch.Name, ch.Gender).VoiceId;
-            configs.Add(new VoiceConfigItem(ch.Name, ch.Gender, voice, allVoiceIds, ch.Code));
+            configs.Add(new VoiceConfigItem(ch.Name, ch.Gender, voice, allVoiceIds, ch.Code, ch.FirstChapter, ch.SegmentIdx));
         }
 
         VoiceConfigs = new ObservableCollection<VoiceConfigItem>(configs);

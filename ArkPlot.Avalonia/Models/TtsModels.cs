@@ -38,6 +38,12 @@ public partial class VoiceConfigItem : ObservableObject
         };
     public string? CharacterCode { get; }
 
+    /// <summary>初登场章节标题。</summary>
+    public string FirstAppearanceChapter { get; }
+
+    /// <summary>初登场在章节内的片段序号（1-based）。</summary>
+    public int FirstAppearanceSegmentIndex { get; }
+
     [ObservableProperty]
     private string _selectedVoice;
 
@@ -48,7 +54,9 @@ public partial class VoiceConfigItem : ObservableObject
         string gender,
         string selectedVoice,
         List<string> availableVoices,
-        string? characterCode = null
+        string? characterCode = null,
+        string firstAppearanceChapter = "",
+        int firstAppearanceSegmentIndex = 0
     )
     {
         CharacterName = characterName;
@@ -56,6 +64,8 @@ public partial class VoiceConfigItem : ObservableObject
         CharacterCode = characterCode;
         _selectedVoice = selectedVoice;
         AvailableVoices = availableVoices;
+        FirstAppearanceChapter = firstAppearanceChapter;
+        FirstAppearanceSegmentIndex = firstAppearanceSegmentIndex;
     }
 }
 

@@ -39,14 +39,24 @@
              Background="Transparent">
       <ListBox.ItemTemplate>
         <DataTemplate>
-          <Grid ColumnDefinitions="Auto,*,Auto" Margin="4,3">
+          <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="4,3">
             <TextBlock Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0"
                        MinWidth="80">
               <Run Text="{Binding CharacterName}" FontWeight="SemiBold"/>
               <LineBreak/>
               <Run Text="{Binding Gender}" FontSize="11" Foreground="{Binding GenderColor}"/>
             </TextBlock>
-            <ComboBox Grid.Column="2" Width="280"
+            <Button Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0"
+                    Command="{Binding $parent[ListBox].((vm:VoiceConfigPanelViewModel)DataContext).JumpToFirstAppearanceCommand}"
+                    CommandParameter="{Binding}"
+                    Classes="Flat" Padding="4,2"
+                    ToolTip.Tip="{Binding FirstAppearanceChapter}">
+              <TextBlock FontSize="11" Opacity="0.7" TextTrimming="CharacterEllipsis" MaxWidth="120">
+                <Run Text="📍 "/>
+                <Run Text="{Binding FirstAppearanceChapter, Mode=OneWay}"/>
+              </TextBlock>
+            </Button>
+            <ComboBox Grid.Column="3" Width="280"
                       ItemsSource="{Binding AvailableVoices}"
                       SelectedItem="{Binding SelectedVoice}">
               <ComboBox.ItemTemplate>
