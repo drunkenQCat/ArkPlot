@@ -40,6 +40,12 @@
             RowDetailsVisibilityMode="{Binding RowDetailsVisibilityMode}"
             Margin="0,0,0,8">
 
+    <DataGrid.Styles>
+      <Style Selector="DataGridRow" x:DataType="models:SegmentRow">
+        <Setter Property="Background" Value="{Binding RowBackground}"/>
+      </Style>
+    </DataGrid.Styles>
+
     <i:Interaction.Behaviors>
       <behaviors:DataGridSelectionBehavior
         Command="{Binding UpdateSelectedSegmentRowsCommand}"/>

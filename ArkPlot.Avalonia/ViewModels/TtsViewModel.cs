@@ -16,6 +16,7 @@ using ArkPlot.Tts.Alignment;
 using ArkPlot.Tts.Engines;
 using ArkPlot.Tts.Models;
 using Avalonia.Controls;
+using Avalonia.Media;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -690,7 +691,6 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                             HasAudio = false,
                             AudioOpacity = 0.3,
                             AudioStatus = "— — — — —",
-                            RowBackground = e.IsDialog ? "" : "#10808080",
                         }
                 )
                 .ToList();
@@ -741,6 +741,14 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         });
 
         // UI 线程：赋值 + 触发音频扫描 + 订阅事件
+        // RowBackground 必须在 UI 线程创建（SolidColorBrush 是 Avalonia 对象）
+        var narratorBrush = new SolidColorBrush(Color.Parse("#109E7A7A"));
+        foreach (var row in rows)
+        {
+            if (row.SegmentType == "旁白")
+                row.RowBackground = narratorBrush;
+        }
+
         FilteredSegments = new ObservableCollection<SegmentRow>(rows);
 
         // 订阅所有音频条的播放事件（互斥）
