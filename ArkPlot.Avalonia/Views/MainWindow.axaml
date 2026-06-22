@@ -13,7 +13,7 @@
     x:Class="ArkPlot.Avalonia.Views.MainWindow"
     x:DataType="vm:MainWindowViewModel"
     Title="ArkPlot"
-    Height="770"
+    Height="860"
     Width="400">
     <Window.DataContext>
         <vm:MainWindowViewModel />

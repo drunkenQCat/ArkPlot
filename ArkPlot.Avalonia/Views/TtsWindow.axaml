@@ -7,7 +7,6 @@
     xmlns:models="using:ArkPlot.Avalonia.Models"
     xmlns:sukiUi="using:SukiUI.Controls"
     xmlns:c="using:CalcBinding"
-    xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
     mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="750"
     x:Class="ArkPlot.Avalonia.Views.TtsWindow"
     x:DataType="vm:TtsViewModel"
@@ -230,27 +229,7 @@
                                  FontSize="11"/>
                     </Border>
                     <!-- 场景占位行：跨列场景卡片 -->
-                    <Border IsVisible="{Binding IsScenePlaceholder}"
-                            CornerRadius="4" ClipToBounds="False"
-                            Margin="-2,-2,-690,-2"
-                            Background="#30FFFFFF">
-                      <Grid ColumnDefinitions="Auto,*" Margin="4,2">
-                        <Border Grid.Column="0" Width="80" Height="36"
-                                CornerRadius="4" ClipToBounds="True"
-                                Margin="0,0,8,0">
-                          <Image asyncImageLoader:ImageLoader.Source="{Binding SceneBackground}"
-                                 Stretch="UniformToFill"
-                                 IsVisible="{Binding SceneBackground, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                        </Border>
-                        <TextBlock Grid.Column="1"
-                                   Text="{Binding SceneDescription}"
-                                   TextWrapping="Wrap"
-                                   TextTrimming="CharacterEllipsis"
-                                   VerticalAlignment="Center"
-                                   FontSize="11" Foreground="#A0FFFFFF"
-                                   MaxLines="2"/>
-                      </Grid>
-                    </Border>
+                    <controls:ScenePlaceholderCard IsVisible="{Binding IsScenePlaceholder}"/>
                   </Grid>
                 </DataTemplate>
               </DataGridTemplateColumn.CellTemplate>
