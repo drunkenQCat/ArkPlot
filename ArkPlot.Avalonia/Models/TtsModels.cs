@@ -106,6 +106,9 @@ public partial class SegmentRow : ObservableObject, IDisposable
     /// <summary>场景背景图 URL。</summary>
     public string SceneBackground { get; set; } = "";
 
+    /// <summary>行背景色（用于旁白行区分）。</summary>
+    public string RowBackground { get; set; } = "";
+
     /// <summary>行级音频播放器（懒初始化，有音频时才创建）。</summary>
     private AudioPlayerViewModel? _audioPlayer;
     public AudioPlayerViewModel AudioPlayer =>

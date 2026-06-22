@@ -1,0 +1,37 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="using:ArkPlot.Avalonia.Models"
+             xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="100"
+             x:Class="ArkPlot.Avalonia.Views.Controls.SceneDetailCard"
+             x:DataType="models:SegmentRow">
+  <Border CornerRadius="6" Padding="8" Margin="4">
+    <Panel>
+      <!-- 场景行详情：大图 + 描述 -->
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12"
+            IsVisible="{Binding IsScenePlaceholder}">
+        <Border Grid.Column="0" Width="160" Height="90"
+                CornerRadius="4" ClipToBounds="True">
+          <Image asyncImageLoader:ImageLoader.Source="{Binding SceneBackground}"
+                 Stretch="UniformToFill"
+                 IsVisible="{Binding SceneBackground, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+        </Border>
+        <TextBlock Grid.Column="1"
+                   Text="{Binding SceneDescription}"
+                   TextWrapping="Wrap"
+                   VerticalAlignment="Center"
+                   FontSize="12" Foreground="#C0FFFFFF"/>
+      </Grid>
+
+      <!-- 普通行详情：完整台词文本 -->
+      <Border IsVisible="{Binding !IsScenePlaceholder}" Padding="4">
+        <TextBlock Text="{Binding NovelText}"
+                   TextWrapping="Wrap"
+                   FontSize="12"
+                   Foreground="#E0FFFFFF"/>
+      </Border>
+    </Panel>
+  </Border>
+</UserControl>

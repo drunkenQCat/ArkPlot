@@ -4,7 +4,6 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:ArkPlot.Avalonia.ViewModels"
     xmlns:controls="using:ArkPlot.Avalonia.Views.Controls"
-    xmlns:models="using:ArkPlot.Avalonia.Models"
     xmlns:sukiUi="using:SukiUI.Controls"
     xmlns:c="using:CalcBinding"
     mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="750"
@@ -13,21 +12,6 @@
     Title="TTS 语音生成"
     Width="1200" Height="800"
     MinWidth="900" MinHeight="600">
-
-  <Window.Styles>
-    <Style Selector="Border.PlayingRow">
-      <Style.Animations>
-        <Animation Duration="0:0:1.2" IterationCount="Infinite" PlaybackDirection="Alternate">
-          <KeyFrame Cue="0%">
-            <Setter Property="Background" Value="#0040C8FF"/>
-          </KeyFrame>
-          <KeyFrame Cue="100%">
-            <Setter Property="Background" Value="#3040C8FF"/>
-          </KeyFrame>
-        </Animation>
-      </Style.Animations>
-    </Style>
-  </Window.Styles>
 
   <Grid ColumnDefinitions="400,*">
     <!-- ======================== 左面板 ======================== -->
@@ -196,99 +180,7 @@
       <!-- 片段表格 + Gallery + 导出按钮 -->
       <Grid RowDefinitions="*,Auto,Auto">
         <!-- 片段表格 -->
-        <DataGrid Grid.Row="0"
-                  x:Name="SegmentsDataGrid"
-                  ItemsSource="{Binding FilteredSegments}"
-                  SelectedItem="{Binding SelectedSegment}"
-                  SelectionMode="Extended"
-                  AutoGenerateColumns="False"
-                  IsReadOnly="True"
-                  CanUserResizeColumns="True"
-                  CanUserSortColumns="False"
-                  GridLinesVisibility="Horizontal"
-                  RowHeight="40"
-                  Margin="0,0,0,8">
-          <DataGrid.ContextMenu>
-            <ContextMenu>
-              <MenuItem Header="生成选中行"
-                        Command="{Binding $parent[DataGrid].((vm:TtsViewModel)DataContext).GenerateSelectedSegmentsCommand}"
-                        IsEnabled="{c:Binding !$parent[DataGrid].((vm:TtsViewModel)DataContext).IsGenerating}"/>
-            </ContextMenu>
-          </DataGrid.ContextMenu>
-          <DataGrid.Columns>
-            <DataGridTemplateColumn Header="#" Width="40">
-              <DataGridTemplateColumn.CellTemplate>
-                <DataTemplate x:DataType="models:SegmentRow">
-                  <Grid>
-                    <!-- 普通行 -->
-                    <Border Classes="PlayingRow" CornerRadius="2"
-                            IsVisible="{Binding !IsScenePlaceholder}">
-                      <TextBlock Text="{Binding Index}"
-                                 VerticalAlignment="Center"
-                                 HorizontalAlignment="Center"
-                                 FontSize="11"/>
-                    </Border>
-                    <!-- 场景占位行：跨列场景卡片 -->
-                    <controls:ScenePlaceholderCard IsVisible="{Binding IsScenePlaceholder}"/>
-                  </Grid>
-                </DataTemplate>
-              </DataGridTemplateColumn.CellTemplate>
-            </DataGridTemplateColumn>
-            <DataGridTemplateColumn Header="角色" Width="100">
-              <DataGridTemplateColumn.CellTemplate>
-                <DataTemplate x:DataType="models:SegmentRow">
-                  <TextBlock Text="{Binding CharacterName}"
-                             IsVisible="{Binding !IsScenePlaceholder}"/>
-                </DataTemplate>
-              </DataGridTemplateColumn.CellTemplate>
-            </DataGridTemplateColumn>
-            <DataGridTemplateColumn Header="类型" Width="50">
-              <DataGridTemplateColumn.CellTemplate>
-                <DataTemplate x:DataType="models:SegmentRow">
-                  <TextBlock Text="{Binding SegmentType}"
-                             IsVisible="{Binding !IsScenePlaceholder}"
-                             Opacity="0.6"/>
-                </DataTemplate>
-              </DataGridTemplateColumn.CellTemplate>
-            </DataGridTemplateColumn>
-            <DataGridTemplateColumn Header="台词" Width="*">
-              <DataGridTemplateColumn.CellTemplate>
-                <DataTemplate x:DataType="models:SegmentRow">
-                  <TextBlock Text="{Binding NovelText}"
-                             IsVisible="{Binding !IsScenePlaceholder}"
-                             TextTrimming="CharacterEllipsis"
-                             VerticalAlignment="Center"
-                             Margin="4,0">
-                    <ToolTip.Tip>
-                      <TextBlock Text="{Binding NovelText}"
-                                 TextWrapping="Wrap"
-                                 MaxWidth="400"/>
-                    </ToolTip.Tip>
-                  </TextBlock>
-                </DataTemplate>
-              </DataGridTemplateColumn.CellTemplate>
-            </DataGridTemplateColumn>
-            <DataGridTemplateColumn Header="音频" Width="300">
-              <DataGridTemplateColumn.CellTemplate>
-                <DataTemplate x:DataType="models:SegmentRow">
-                  <!-- 普通行：音频控件 -->
-                  <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center" Margin="2,1,6,1"
-                        IsVisible="{Binding !IsScenePlaceholder}">
-                    <Border Grid.Column="0" IsVisible="{Binding HasAudio}">
-                      <controls:AudioPlayerControl DataContext="{Binding AudioPlayer}"
-                                                MinWidth="200"/>
-                    </Border>
-                    <TextBlock Grid.Column="1" IsVisible="{c:Binding !HasAudio}"
-                               Text="{Binding AudioStatus}"
-                               VerticalAlignment="Center"
-                               Opacity="{Binding AudioOpacity}"
-                               Margin="4,0"/>
-                  </Grid>
-                </DataTemplate>
-              </DataGridTemplateColumn.CellTemplate>
-            </DataGridTemplateColumn>
-          </DataGrid.Columns>
-        </DataGrid>
+        <controls:SegmentsDataGrid Grid.Row="0" DataContext="{Binding}"/>
 
         <!-- 场景 Gallery -->
         <controls:GalleryPanel Grid.Row="1" DataContext="{Binding GalleryPanel}"/>

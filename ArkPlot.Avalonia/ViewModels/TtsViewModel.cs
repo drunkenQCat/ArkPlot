@@ -15,6 +15,7 @@ using ArkPlot.Tts;
 using ArkPlot.Tts.Alignment;
 using ArkPlot.Tts.Engines;
 using ArkPlot.Tts.Models;
+using Avalonia.Controls;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -49,8 +50,35 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private SegmentRow? _selectedSegment;
 
-    /// <summary>DataGrid 多选时同步的选中行集合（由 View code-behind 更新）。</summary>
+    /// <summary>DataGrid 多选时同步的选中行集合（由 DataGridSelectionBehavior 更新）。</summary>
     public ObservableCollection<SegmentRow> SelectedSegmentRows { get; } = [];
+
+    /// <summary>
+    /// RowDetails 可见性模式：多选时折叠所有详情，单选/无选时按选中行显示。
+    /// </summary>
+    [ObservableProperty]
+    private DataGridRowDetailsVisibilityMode _rowDetailsVisibilityMode = DataGridRowDetailsVisibilityMode.VisibleWhenSelected;
+
+    /// <summary>
+    /// DataGrid SelectionChanged 时由 Behavior 调用，更新 SelectedSegmentRows 并控制 RowDetails 折叠。
+    /// </summary>
+    [RelayCommand]
+    private void UpdateSelectedSegmentRows(IList<object>? selectedItems)
+    {
+        SelectedSegmentRows.Clear();
+        if (selectedItems != null)
+        {
+            foreach (var item in selectedItems)
+            {
+                if (item is SegmentRow row)
+                    SelectedSegmentRows.Add(row);
+            }
+        }
+
+        RowDetailsVisibilityMode = SelectedSegmentRows.Count > 1
+            ? DataGridRowDetailsVisibilityMode.Collapsed
+            : DataGridRowDetailsVisibilityMode.VisibleWhenSelected;
+    }
 
     // ── 状态 ──
     [ObservableProperty]
@@ -93,6 +121,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     {
         if (value == null)
             return;
+
         Log($"[诊断] 选中行 #{value.Index}: {value.CharacterName}, EntryIndex={value.EntryIndex}");
         UpdateComponentsForSegment(value);
     }
@@ -661,6 +690,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                             HasAudio = false,
                             AudioOpacity = 0.3,
                             AudioStatus = "— — — — —",
+                            RowBackground = e.IsDialog ? "" : "#10808080",
                         }
                 )
                 .ToList();
@@ -774,6 +804,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
             foreach (var row in FilteredSegments)
             {
+                if (row.IsScenePlaceholder) continue;
                 var isDialog = row.SegmentType != "旁白";
                 var voice = VoiceConfigPanel.ResolveVoiceSelection(row.CharacterName, row.Gender, isDialog);
                 segments.Add(
@@ -851,8 +882,10 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task GenerateSelectedSegmentsAsync()
     {
-        var rows = SelectedSegmentRows.ToList();
-        if (rows.Count == 0 && SelectedSegment != null)
+        var rows = SelectedSegmentRows
+            .Where(r => !r.IsScenePlaceholder)
+            .ToList();
+        if (rows.Count == 0 && SelectedSegment != null && !SelectedSegment.IsScenePlaceholder)
             rows.Add(SelectedSegment);
         if (rows.Count == 0)
         {
