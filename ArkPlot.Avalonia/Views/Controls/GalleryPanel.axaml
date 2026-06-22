@@ -95,21 +95,50 @@
         </Panel>
       </Border>
 
-      <!-- 当前图 (Current) - 居中悬浮卡片 -->
-      <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+      <!-- 当前图 (Current) - 居中悬浮卡片，点击放大 -->
+      <Button HorizontalAlignment="Center" VerticalAlignment="Center"
               Width="720" Height="200" Margin="0,-4,0,-4"
-              CornerRadius="8" ClipToBounds="True"
-              BorderBrush="#60FFFFFF" BorderThickness="1"
-              IsHitTestVisible="False">
-        <Panel Background="#3A3A3A">
-          <Image asyncImageLoader:ImageLoader.Source="{Binding CurrentBackground}"
-                 Stretch="UniformToFill"
-                 IsVisible="{Binding HasCurrentBackground}"/>
-        </Panel>
-      </Border>
+              IsVisible="{Binding HasCurrentBackground}"
+              ToolTip.Tip="点击放大查看">
+        <Button.Template>
+          <ControlTemplate>
+            <Border CornerRadius="8" ClipToBounds="True"
+                    BorderBrush="#60FFFFFF" BorderThickness="1">
+              <Panel Background="#3A3A3A">
+                <Image asyncImageLoader:ImageLoader.Source="{Binding $parent[Button].((vm:GalleryPanelViewModel)DataContext).CurrentBackground}"
+                       Stretch="UniformToFill"/>
+              </Panel>
+            </Border>
+          </ControlTemplate>
+        </Button.Template>
+        <Button.Flyout>
+          <Flyout Placement="Bottom">
+            <Flyout.FlyoutPresenterTheme>
+              <ControlTheme TargetType="FlyoutPresenter">
+                <Setter Property="Background" Value="#1A1A1A"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="BorderBrush" Value="#60FFFFFF"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="4"/>
+                <Setter Property="MaxWidth" Value="900"/>
+                <Setter Property="MaxHeight" Value="600"/>
+              </ControlTheme>
+            </Flyout.FlyoutPresenterTheme>
+            <StackPanel Spacing="8">
+              <Image asyncImageLoader:ImageLoader.Source="{Binding $parent[UserControl].((vm:GalleryPanelViewModel)DataContext).CurrentBackground}"
+                     Stretch="Uniform"
+                     MaxWidth="880" MaxHeight="500"/>
+              <TextBlock Text="{Binding $parent[UserControl].((vm:GalleryPanelViewModel)DataContext).CurrentPicDescription}"
+                         TextWrapping="Wrap" MaxWidth="880"
+                         FontSize="12" Foreground="#C0FFFFFF"
+                         IsVisible="{Binding $parent[UserControl].((vm:GalleryPanelViewModel)DataContext).CurrentPicDescription, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            </StackPanel>
+          </Flyout>
+        </Button.Flyout>
+      </Button>
 
-      <!-- PicDesc tooltip (附加到当前图) -->
-      <Border IsHitTestVisible="False">
+      <!-- PicDesc tooltip (附加到当前图，hover 时显示简短描述) -->
+      <Border IsHitTestVisible="False" ZIndex="5">
         <ToolTip.Tip>
           <TextBlock Text="{Binding CurrentPicDescription}"
                      MaxWidth="300" TextWrapping="Wrap"/>
