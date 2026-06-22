@@ -570,8 +570,8 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             {
                 var picDesc = "";
                 if (
-                    !string.IsNullOrEmpty(anchor.CharacterCode)
-                    && picDescMap.TryGetValue(anchor.CharacterCode, out var desc)
+                    !string.IsNullOrEmpty(anchor.Bg)
+                    && picDescMap.TryGetValue(anchor.Bg, out var desc)
                 )
                     picDesc = desc;
 
