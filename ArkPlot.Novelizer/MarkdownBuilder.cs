@@ -145,7 +145,10 @@ public static partial class MarkdownBuilder
     [GeneratedRegex("(?i)(src\\s*=\\s*)https://[^\\s>]+")]
     private static partial Regex HttpsSrcUnquotedUrlRegex();
 
-    [GeneratedRegex(@"^\|?[-:|\s]+\|?$", RegexOptions.Multiline)]
+    /// <summary>
+    /// 匹配表格分隔线，如 |---|---|、|---:|等——必须至少包含一个 | 以避免误删 --- 场景分隔线。
+    /// </summary>
+    [GeneratedRegex(@"^[|\-:\s]*\|[|\-:\s]*$", RegexOptions.Multiline)]
     private static partial Regex TableSeparatorRegex();
 
     [GeneratedRegex(@"\n{3,}")]

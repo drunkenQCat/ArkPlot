@@ -41,21 +41,45 @@ public class BailianClient
     }
 
     /// <summary>
-    /// 调用百炼 Chat Completions API，返回 (reasoningContent, answerContent)
+    /// 调用百炼 Chat Completions API（单轮，system + user）。
     /// </summary>
     public async Task<ChatResult> ChatAsync(string model, string systemPrompt, string userContent)
     {
         Log($"[DIAG] ChatAsync 开始。model={model}, userContent长度={userContent.Length}, max_tokens={_config.MaxTokens}");
 
-        // 构建请求体：预设平台加专属字段，自定义平台保持纯 OpenAI 兼容
+        var messages = new List<ChatMessage>
+        {
+            new("system", systemPrompt),
+            new("user", userContent)
+        };
+
+        var requestBody = BuildRequestBody(model, messages);
+        return await SendChatRequestAsync(model, requestBody);
+    }
+
+    /// <summary>
+    /// 多轮对话调用：接受预构建的 messages 列表（含 system / user / assistant 多轮）。
+    /// 其余逻辑（平台字段、重试、token 统计）与 ChatAsync 一致。
+    /// </summary>
+    public async Task<ChatResult> ChatWithHistoryAsync(
+        string model,
+        IReadOnlyList<ChatMessage> messages)
+    {
+        Log($"[DIAG] ChatWithHistoryAsync 开始。model={model}, messages={messages.Count} 条");
+
+        var requestBody = BuildRequestBody(model, messages);
+        return await SendChatRequestAsync(model, requestBody);
+    }
+
+    /// <summary>
+    /// 构建 messages 数组（原有 ChatAsync 的 messages 内联构造移入此方法）
+    /// </summary>
+    private Dictionary<string, object> BuildRequestBody(string model, IReadOnlyList<ChatMessage> messages)
+    {
         var requestBody = new Dictionary<string, object>
         {
             ["model"] = model,
-            ["messages"] = new object[]
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userContent }
-            },
+            ["messages"] = messages.Select(m => new { role = m.Role, content = m.Content }).ToArray(),
             ["max_tokens"] = _config.MaxTokens
         };
 
@@ -68,8 +92,15 @@ public class BailianClient
         {
             requestBody["extra_body"] = new { enable_thinking = _config.EnableThinking };
         }
-        // 自定义 Provider：不加任何平台专属字段，保持纯 OpenAI 兼容
 
+        return requestBody;
+    }
+
+    /// <summary>
+    /// 发送 POST 请求 + 重试 + 解析响应（从 ChatAsync 提取的共享逻辑）
+    /// </summary>
+    private async Task<ChatResult> SendChatRequestAsync(string model, Dictionary<string, object> requestBody)
+    {
         var json = JsonSerializer.Serialize(requestBody, JsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
         Log($"[DIAG] 请求体 {json.Length} 字节，开始发送 POST");
@@ -148,10 +179,15 @@ public class BailianClient
                 u.GetProperty("total_tokens").GetInt32())
             : null;
 
-        Log($"[DIAG] ChatAsync 返回成功。answer={answer.Length}字符, reason={reasoning.Length}字符, usage={usage?.TotalTokens}");
+        Log($"[DIAG] SendChatRequestAsync 返回成功。answer={answer.Length}字符, reason={reasoning.Length}字符, usage={usage?.TotalTokens}");
         return new ChatResult(reasoning, answer, usage);
     }
 }
+
+/// <summary>
+/// 多轮对话中的一条消息
+/// </summary>
+public record ChatMessage(string Role, string Content);
 
 public record ChatResult(string ReasoningContent, string AnswerContent, TokenUsage? Usage);
 

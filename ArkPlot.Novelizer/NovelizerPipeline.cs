@@ -10,6 +10,9 @@ public class NovelizerPipeline
     private readonly BailianClient _client;
     private readonly Action<string>? _onLog;
     private readonly string _systemPrompt;
+    private readonly bool _enableMultiTurn;
+    private readonly int _chunkSize;
+    private readonly int _compressInterval;
 
     private const string DefaultSystemPrompt = """
 ## 明日方舟剧情小说化转换协议
@@ -82,16 +85,22 @@ public class NovelizerPipeline
 - `<aside>` 标签内的内容是视觉素材，必须用完全原创的叙事语言重构。同义替换等同于照抄。
 - 所有角色外貌描写必须用自己的语言重新表达。
 - "站在空无一物的虚空中"等元描述必须删除。
-直接输出小说正文，不包含任何前言、后记或解释性说明。
+直接输出小说正文。
 """;
 
     /// <param name="onLog">可选日志回调，同时写入 Console 和此回调（用于 Avalonia UI 同步）</param>
     /// <param name="systemPrompt">可选的自定义系统提示词，未提供时使用默认值</param>
+    /// <param name="enableMultiTurn">启用多轮对话模式（长章拆分为 ~chunkSize 的多轮调用）</param>
+    /// <param name="chunkSize">多轮模式下每 chunk 的目标字符数</param>
+    /// <param name="compressInterval">每 N 轮压缩一次上下文（0 = 不压缩）</param>
     public NovelizerPipeline(
         BailianClient client,
         ApiConfig config,
         Action<string>? onLog = null,
-        string? systemPrompt = null
+        string? systemPrompt = null,
+        bool enableMultiTurn = false,
+        int chunkSize = 5_000,
+        int compressInterval = 0
     )
     {
         _client = client;
@@ -99,6 +108,9 @@ public class NovelizerPipeline
         _systemPrompt = string.IsNullOrWhiteSpace(systemPrompt)
             ? DefaultSystemPrompt
             : systemPrompt;
+        _enableMultiTurn = enableMultiTurn;
+        _chunkSize = chunkSize;
+        _compressInterval = compressInterval;
     }
 
     private void Log(string msg)
@@ -147,7 +159,11 @@ public class NovelizerPipeline
         Log($"{'=' * 60}");
 
         // 处理所有章节
-        var processor = new ChapterProcessor(_client, _systemPrompt, Log, LogError);
+        var processor = new ChapterProcessor(
+            _client, _systemPrompt, Log, LogError,
+            enableMultiTurn: _enableMultiTurn,
+            chunkSize: _chunkSize,
+            compressInterval: _compressInterval);
         var results = await processor.ProcessAllAsync(chapters, model);
 
         // 组装并写入

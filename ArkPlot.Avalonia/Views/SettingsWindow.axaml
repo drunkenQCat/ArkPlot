@@ -49,198 +49,245 @@
 
             <!-- Tab 2: 小说化设置 -->
             <TabItem Header="小说化设置">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="8" Spacing="10">
-                        <TextBlock Text="系统提示词（System Prompt）" FontWeight="Bold" FontSize="14"/>
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Height="180">
-                            <TextBox Text="{Binding SystemPromptText}"
-                                     AcceptsReturn="True"
-                                     TextWrapping="Wrap"/>
-                        </ScrollViewer>
-                        <Button Command="{Binding RestoreDefaultPromptCommand}"
-                                Content="恢复默认提示词"
-                                HorizontalAlignment="Left"
-                                Padding="12,4"/>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="8" Spacing="10">
+                            <TextBlock Text="系统提示词（System Prompt）" FontWeight="Bold" FontSize="14"/>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Height="180">
+                                <TextBox Text="{Binding SystemPromptText}"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"/>
+                            </ScrollViewer>
+                            <Button Command="{Binding RestoreDefaultPromptCommand}"
+                                    Content="恢复默认提示词"
+                                    HorizontalAlignment="Left"
+                                    Padding="12,4"/>
 
-                        <Separator Margin="0,5"/>
+                            <Separator Margin="0,5"/>
 
-                        <TextBlock Text="API Key 配置" FontWeight="Bold" FontSize="14"/>
-                        <TextBlock Text="优先使用此处的值；如为空，则读取环境变量" FontSize="11" Foreground="Gray"/>
+                            <TextBlock Text="API Key 配置" FontWeight="Bold" FontSize="14"/>
+                            <TextBlock Text="优先使用此处的值；如为空，则读取环境变量" FontSize="11" Foreground="Gray"/>
 
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="DeepSeek API Key" FontSize="12"/>
-                            <TextBox Text="{Binding DeepSeekApiKeyText}"
-                                     PasswordChar="•"
-                                     Watermark="留空则使用 DEEPSEEK_API_KEY 环境变量"/>
-                        </StackPanel>
-
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="百炼 API Key" FontSize="12"/>
-                            <TextBox Text="{Binding BailianApiKeyText}"
-                                     PasswordChar="•"
-                                     Watermark="留空则使用 DASHSCOPE_API_KEY 环境变量"/>
-                        </StackPanel>
-
-                        <Separator Margin="0,5"/>
-
-                        <StackPanel Orientation="Horizontal" Spacing="20">
                             <StackPanel Spacing="4">
-                                <TextBlock Text="平台选择" FontSize="12"/>
-                                <ComboBox ItemsSource="{Binding ProviderOptions}"
-                                          SelectedItem="{Binding SelectedProvider}"
-                                          Width="160"/>
+                                <TextBlock Text="DeepSeek API Key" FontSize="12"/>
+                                <TextBox Text="{Binding DeepSeekApiKeyText}"
+                                         PasswordChar="•"
+                                         Watermark="留空则使用 DEEPSEEK_API_KEY 环境变量"/>
                             </StackPanel>
+
                             <StackPanel Spacing="4">
-                                <TextBlock Text="模型选择" FontSize="12"/>
-                                <ComboBox ItemsSource="{Binding ModelOptions}"
-                                          SelectedItem="{Binding SelectedModel}"
-                                          Width="200"/>
+                                <TextBlock Text="百炼 API Key" FontSize="12"/>
+                                <TextBox Text="{Binding BailianApiKeyText}"
+                                         PasswordChar="•"
+                                         Watermark="留空则使用 DASHSCOPE_API_KEY 环境变量"/>
                             </StackPanel>
-                        </StackPanel>
 
-                        <Separator Margin="0,5"/>
+                            <Separator Margin="0,5"/>
 
-                        <!-- 自定义平台管理 -->
-                        <Expander Header="自定义平台管理" IsExpanded="False">
-                            <StackPanel Spacing="6" Margin="4">
-                                <ListBox ItemsSource="{Binding CustomProviderList}"
-                                         SelectedIndex="{Binding SelectedCustomProviderIndex}"
-                                         Height="80">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock>
-                                                <Run Text="{Binding Name}"/>
-                                                <Run Text=" — "/>
-                                                <Run Text="{Binding BaseUrl}" Foreground="Gray"/>
-                                            </TextBlock>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-
+                            <StackPanel Orientation="Horizontal" Spacing="20">
                                 <StackPanel Spacing="4">
-                                    <TextBox Text="{Binding EditingProviderName}" Watermark="平台名称"/>
-                                    <TextBox Text="{Binding EditingProviderUrl}" Watermark="API Base URL（如 https://openrouter.ai/api/v1）"/>
-                                    <TextBox Text="{Binding EditingProviderKey}" PasswordChar="•" Watermark="API Key"/>
-                                    <TextBox Text="{Binding EditingProviderModelsText}" Watermark="模型列表（逗号分隔，如 gpt-4o,claude-3.5-sonnet）"/>
+                                    <TextBlock Text="平台选择" FontSize="12"/>
+                                    <ComboBox ItemsSource="{Binding ProviderOptions}"
+                                              SelectedItem="{Binding SelectedProvider}"
+                                              Width="160"/>
                                 </StackPanel>
-
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Command="{Binding AddCustomProviderCommand}" Content="添加" Padding="12,4"/>
-                                    <Button Command="{Binding UpdateCustomProviderCommand}" Content="更新" Padding="12,4"/>
-                                    <Button Command="{Binding DeleteCustomProviderCommand}" Content="删除" Padding="12,4" Foreground="#E53935"/>
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="模型选择" FontSize="12"/>
+                                    <ComboBox ItemsSource="{Binding ModelOptions}"
+                                              SelectedItem="{Binding SelectedModel}"
+                                              Width="200"/>
                                 </StackPanel>
                             </StackPanel>
-                        </Expander>
 
-                        <Separator Margin="0,5"/>
+                            <Separator Margin="0,5"/>
 
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
-                            <Button Width="100" Command="{Binding SaveNovelizerSettingsCommand}" Content="保存设置" Margin="0,0,10,0"/>
+                            <!-- 多轮对话设置 -->
+                            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" CornerRadius="4" Padding="12">
+                                <StackPanel Spacing="8">
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <CheckBox IsChecked="{Binding EnableMultiTurn}"
+                                                  Content="启用多轮对话模式"
+                                                  FontWeight="Bold"
+                                                  VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding TokenEstimateText}"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="Gray"
+                                                   FontSize="12"/>
+                                    </StackPanel>
+
+                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="Gray"
+                                               IsVisible="{Binding EnableMultiTurn}">
+                                        <Run Text="多轮模式将长章节拆分为多个小段，逐段生成并保持上下文连贯。适用于章节正文超过 10K 字符的剧情，能有效降低单次调用的 Token 压力，减少场景遗漏和内容压缩。"/>
+                                        <LineBreak/>
+                                        <Run Text="实验数据（孤星第一章 21KB）：单次调用会丢失开场或中段场景；多轮 + 5KB chunk + 每 2 轮压缩可实现 100% 场景覆盖。"/>
+                                        <LineBreak/>
+                                        <Run Text="代价是调用次数增多（约 2-4 倍），总 Token 消耗约为单次调用的 1.5-2 倍。"/>
+                                    </TextBlock>
+
+                                    <StackPanel Orientation="Horizontal" Spacing="20"
+                                                IsVisible="{Binding EnableMultiTurn}">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="Chunk Size（字符）" FontSize="12"/>
+                                            <TextBox Text="{Binding ChunkSize}"
+                                                     Width="100"
+                                                     ToolTip.Tip="每轮输入的字符数，越小轮次越多。建议 3000-5000"/>
+                                        </StackPanel>
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="压缩间隔（轮）" FontSize="12"/>
+                                            <TextBox Text="{Binding CompressInterval}"
+                                                     Width="100"
+                                                     ToolTip.Tip="每 N 轮对已有小说内容做一次摘要压缩，清空对话历史以节省上下文空间。0=不压缩。建议 2"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Separator Margin="0,5"/>
+
+                            <!-- 自定义平台管理 -->
+                            <Expander Header="自定义平台管理" IsExpanded="False">
+                                <StackPanel Spacing="6" Margin="4">
+                                    <ListBox ItemsSource="{Binding CustomProviderList}"
+                                             SelectedIndex="{Binding SelectedCustomProviderIndex}"
+                                             Height="80">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock>
+                                                    <Run Text="{Binding Name}"/>
+                                                    <Run Text=" — "/>
+                                                    <Run Text="{Binding BaseUrl}" Foreground="Gray"/>
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+
+                                    <StackPanel Spacing="4">
+                                        <TextBox Text="{Binding EditingProviderName}" Watermark="平台名称"/>
+                                        <TextBox Text="{Binding EditingProviderUrl}" Watermark="API Base URL（如 https://openrouter.ai/api/v1）"/>
+                                        <TextBox Text="{Binding EditingProviderKey}" PasswordChar="•" Watermark="API Key"/>
+                                        <TextBox Text="{Binding EditingProviderModelsText}" Watermark="模型列表（逗号分隔，如 gpt-4o,claude-3.5-sonnet）"/>
+                                    </StackPanel>
+
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Command="{Binding AddCustomProviderCommand}" Content="添加" Padding="12,4"/>
+                                        <Button Command="{Binding UpdateCustomProviderCommand}" Content="更新" Padding="12,4"/>
+                                        <Button Command="{Binding DeleteCustomProviderCommand}" Content="删除" Padding="12,4" Foreground="#E53935"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Expander>
+                        </StackPanel>
+                    </ScrollViewer>
+                    <Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" Padding="12,8" Background="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
                             <TextBlock Text="{Binding SaveFeedbackText}"
                                        VerticalAlignment="Center"
                                        Foreground="#4CAF50"
                                        FontWeight="Bold"/>
-                        </StackPanel>
-
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,7,0,10">
+                            <Button Width="100" Command="{Binding SaveNovelizerSettingsCommand}" Content="保存设置"/>
                             <Button Width="80"
                                     Command="{Binding CloseWindowCommand}"
                                     CommandParameter="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType={x:Type Window}}}"
                                     Content="关闭"/>
                         </StackPanel>
-                    </StackPanel>
-                </ScrollViewer>
+                    </Border>
+                </Grid>
             </TabItem>
 
             <!-- Tab 3: 图片描述设置 -->
             <TabItem Header="图片描述设置">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="8" Spacing="10">
-                        <TextBlock Text="系统提示词（System Prompt）" FontWeight="Bold" FontSize="14"/>
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Height="150">
-                            <TextBox Text="{Binding VisionSystemPrompt}"
-                                     AcceptsReturn="True"
-                                     TextWrapping="Wrap"/>
-                        </ScrollViewer>
-                        <Button Command="{Binding RestoreDefaultVisionPromptCommand}"
-                                Content="恢复默认提示词"
-                                HorizontalAlignment="Left"
-                                Padding="12,4"/>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="8" Spacing="10">
+                            <TextBlock Text="系统提示词（System Prompt）" FontWeight="Bold" FontSize="14"/>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Height="150">
+                                <TextBox Text="{Binding VisionSystemPrompt}"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"/>
+                            </ScrollViewer>
+                            <Button Command="{Binding RestoreDefaultVisionPromptCommand}"
+                                    Content="恢复默认提示词"
+                                    HorizontalAlignment="Left"
+                                    Padding="12,4"/>
 
-                        <Separator Margin="0,5"/>
+                            <Separator Margin="0,5"/>
 
-                        <StackPanel Orientation="Horizontal" Spacing="20">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="平台选择" FontSize="12"/>
-                                <ComboBox ItemsSource="{Binding VisionProviderOptions}"
-                                          SelectedItem="{Binding VisionSelectedProvider}"
-                                          Width="160"/>
-                            </StackPanel>
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="模型选择" FontSize="12"/>
-                                <ComboBox ItemsSource="{Binding VisionModelOptions}"
-                                          SelectedItem="{Binding VisionSelectedModel}"
-                                          Width="200"/>
-                            </StackPanel>
-                        </StackPanel>
-
-                        <StackPanel Spacing="4" IsVisible="{Binding IsOllamaProvider}">
-                            <TextBlock Text="Ollama 服务地址" FontSize="12"/>
-                            <TextBox Text="{Binding VisionOllamaBaseUrl}" Watermark="http://localhost:11434"/>
-                        </StackPanel>
-
-                        <Separator Margin="0,5"/>
-
-                        <!-- 自定义平台管理 -->
-                        <Expander Header="自定义平台管理" IsExpanded="False">
-                            <StackPanel Spacing="6" Margin="4">
-                                <ListBox ItemsSource="{Binding VisionCustomProviderList}"
-                                         SelectedIndex="{Binding VisionSelectedCustomProviderIndex}"
-                                         Height="80">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock>
-                                                <Run Text="{Binding Name}"/>
-                                                <Run Text=" — "/>
-                                                <Run Text="{Binding BaseUrl}" Foreground="Gray"/>
-                                            </TextBlock>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-
+                            <StackPanel Orientation="Horizontal" Spacing="20">
                                 <StackPanel Spacing="4">
-                                    <TextBox Text="{Binding VisionEditingProviderName}" Watermark="平台名称"/>
-                                    <TextBox Text="{Binding VisionEditingProviderUrl}" Watermark="API Base URL"/>
-                                    <TextBox Text="{Binding VisionEditingProviderKey}" PasswordChar="•" Watermark="API Key"/>
-                                    <TextBox Text="{Binding VisionEditingProviderModelsText}" Watermark="模型列表（逗号分隔）"/>
+                                    <TextBlock Text="平台选择" FontSize="12"/>
+                                    <ComboBox ItemsSource="{Binding VisionProviderOptions}"
+                                              SelectedItem="{Binding VisionSelectedProvider}"
+                                              Width="160"/>
                                 </StackPanel>
-
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Command="{Binding AddVisionCustomProviderCommand}" Content="添加" Padding="12,4"/>
-                                    <Button Command="{Binding UpdateVisionCustomProviderCommand}" Content="更新" Padding="12,4"/>
-                                    <Button Command="{Binding DeleteVisionCustomProviderCommand}" Content="删除" Padding="12,4" Foreground="#E53935"/>
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="模型选择" FontSize="12"/>
+                                    <ComboBox ItemsSource="{Binding VisionModelOptions}"
+                                              SelectedItem="{Binding VisionSelectedModel}"
+                                              Width="200"/>
                                 </StackPanel>
                             </StackPanel>
-                        </Expander>
 
-                        <Separator Margin="0,5"/>
+                            <StackPanel Spacing="4" IsVisible="{Binding IsOllamaProvider}">
+                                <TextBlock Text="Ollama 服务地址" FontSize="12"/>
+                                <TextBox Text="{Binding VisionOllamaBaseUrl}" Watermark="http://localhost:11434"/>
+                            </StackPanel>
 
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
-                            <Button Width="100" Command="{Binding SaveVisionSettingsCommand}" Content="保存设置" Margin="0,0,10,0"/>
+                            <Separator Margin="0,5"/>
+
+                            <!-- 自定义平台管理 -->
+                            <Expander Header="自定义平台管理" IsExpanded="False">
+                                <StackPanel Spacing="6" Margin="4">
+                                    <ListBox ItemsSource="{Binding VisionCustomProviderList}"
+                                             SelectedIndex="{Binding VisionSelectedCustomProviderIndex}"
+                                             Height="80">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock>
+                                                    <Run Text="{Binding Name}"/>
+                                                    <Run Text=" — "/>
+                                                    <Run Text="{Binding BaseUrl}" Foreground="Gray"/>
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+
+                                    <StackPanel Spacing="4">
+                                        <TextBox Text="{Binding VisionEditingProviderName}" Watermark="平台名称"/>
+                                        <TextBox Text="{Binding VisionEditingProviderUrl}" Watermark="API Base URL"/>
+                                        <TextBox Text="{Binding VisionEditingProviderKey}" PasswordChar="•" Watermark="API Key"/>
+                                        <TextBox Text="{Binding VisionEditingProviderModelsText}" Watermark="模型列表（逗号分隔）"/>
+                                    </StackPanel>
+
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Command="{Binding AddVisionCustomProviderCommand}" Content="添加" Padding="12,4"/>
+                                        <Button Command="{Binding UpdateVisionCustomProviderCommand}" Content="更新" Padding="12,4"/>
+                                        <Button Command="{Binding DeleteVisionCustomProviderCommand}" Content="删除" Padding="12,4" Foreground="#E53935"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Expander>
+                        </StackPanel>
+                    </ScrollViewer>
+                    <Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" Padding="12,8" Background="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
                             <TextBlock Text="{Binding VisionSaveFeedbackText}"
                                        VerticalAlignment="Center"
                                        Foreground="#4CAF50"
                                        FontWeight="Bold"/>
-                        </StackPanel>
-
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,7,0,10">
+                            <Button Width="100" Command="{Binding SaveVisionSettingsCommand}" Content="保存设置"/>
                             <Button Width="80"
                                     Command="{Binding CloseWindowCommand}"
                                     CommandParameter="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType={x:Type Window}}}"
                                     Content="关闭"/>
                         </StackPanel>
-                    </StackPanel>
-                </ScrollViewer>
+                    </Border>
+                </Grid>
             </TabItem>
 
             <!-- Tab 4: TTS 配置 -->

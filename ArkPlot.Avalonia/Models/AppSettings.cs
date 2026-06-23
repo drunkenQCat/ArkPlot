@@ -126,7 +126,10 @@ public record NovelizerSettings(
     string SelectedProvider,
     string SelectedModel,
     Dictionary<string, string> ApiKeys,
-    ProviderConfig[]? CustomProviders = null
+    ProviderConfig[]? CustomProviders = null,
+    bool EnableMultiTurn = false,
+    int ChunkSize = 5_000,
+    int CompressInterval = 2
 )
 {
     public const string DefaultSystemPrompt = """
@@ -247,7 +250,10 @@ public record NovelizerSettings(
             SystemPrompt: DefaultSystemPrompt,
             SelectedProvider: "DeepSeek",
             SelectedModel: "deepseek-v4-pro",
-            ApiKeys: new Dictionary<string, string> { ["DeepSeek"] = "", ["百炼"] = "" }
+            ApiKeys: new Dictionary<string, string> { ["DeepSeek"] = "", ["百炼"] = "" },
+            EnableMultiTurn: false,
+            ChunkSize: 5_000,
+            CompressInterval: 2
         );
     }
 }

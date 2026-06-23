@@ -21,7 +21,7 @@ features: [肩头微颤, 凝望方向]
 colors: [银色, 黑色, 深蓝]
 </aside>
 
-`图像平移`
+`场景流转`
 
 “如若此后百年千年，来人漫步于繁星身侧，人们便要赞颂她的名。”
 
@@ -254,7 +254,7 @@ colors: [灰, 红, 蓝]
 
 **监狱负责人**`讲道：`谁这么会挑时间，唔，银行的邮件，我不是还清了吗...
 
-`瞳孔地震`
+`震惊`
 
 **监狱负责人**`讲道：`...呃！
 
@@ -808,7 +808,7 @@ features: [耳尖微颤, 冷峻侧颜]
 colors: [金色, 青蓝, 金属色]
 </aside>
 
-`瞳孔地震`
+`震惊`
 
 <img  src="" alt="38_i07" loading="lazy" style="max-height:350px"/>
 
@@ -830,7 +830,7 @@ features: [耳尖微颤, 冷峻侧颜]
 colors: [金色, 青蓝, 金属色]
 </aside>
 
-`图像平移`
+`场景流转`
 
 <audio controls class="lazy-audio" width="300" alt="$waterbubble_h"><source src="" type="audio/mpeg"></audio>
 
@@ -848,9 +848,9 @@ colors: [金色, 青蓝, 金属色]
 
 `音效`：blacktimewand
 
-`瞳孔地震`
+`震惊`
 
-`图像平移`
+`场景流转`
 
 **缪尔赛思**`讲道：`既然被你发现了，那就直接溺毙你，再找台报废的动力甲塞进去。
 
@@ -870,9 +870,9 @@ colors: [金色, 青蓝, 金属色]
 
 `音效`：windmagic
 
-`瞳孔地震`
+`震惊`
 
-`图像平移`
+`场景流转`
 
 <img  src="" alt="38_i07" loading="lazy" style="max-height:350px"/>
 
@@ -933,9 +933,9 @@ mood: [冷峻, 静谧, 等待]
 
 ---
 
-`图像平移`
+`场景流转`
 
-`瞳孔地震`
+`震惊`
 
 <audio controls class="lazy-audio" width="300" alt="$tactfulboost"><source src="" type="audio/mpeg"></audio>
 
@@ -1067,7 +1067,7 @@ colors: [铜质, 红棕, 无]
 
 ---
 
-`瞳孔地震`
+`震惊`
 
 <aside class="portrait-facts" data-character="街边摊贩">
 lighting: [无光源, 无明暗, 无色温]  

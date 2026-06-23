@@ -24,6 +24,7 @@ public class StoryDocumentBuilder
             : new ReadableRenderer(enableDescriptions, _ctx.DescribedImages);
 
         RemoveEmptyLines();
+        NormalizeStageDirections();
         _ctx.Groups.AddRange(SegmentGrouper.Group(_ctx.Lines));
         PortraitProcessor.DetectPortraits(_ctx);
         if (outputMode != OutputMode.PromptOptimized)
@@ -40,6 +41,21 @@ public class StoryDocumentBuilder
         _ctx.Lines.AddRange(filtered);
         int idx = 0;
         _ctx.Lines.ForEach(line => { line.Index = idx; idx++; });
+    }
+
+    /// <summary>
+    /// 统一归一化游戏引擎指令，使其更适合 LLM 小说化输入。
+    /// 影响 Readable 和 Prompt 两种输出模式。
+    /// </summary>
+    private void NormalizeStageDirections()
+    {
+        foreach (var line in _ctx.Lines)
+        {
+            if (string.IsNullOrEmpty(line.MdText)) continue;
+            line.MdText = line.MdText
+                .Replace("`瞳孔地震`", "`震惊`")
+                .Replace("`图像平移`", "`场景流转`");
+        }
     }
 
     public string Result

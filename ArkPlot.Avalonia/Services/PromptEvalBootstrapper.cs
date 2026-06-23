@@ -367,7 +367,12 @@ public sealed class PromptEvalBootstrapper
         };
         using var http = new HttpClient();
         var client = new BailianClient(http, config, onLog);
-        var pipeline = new NovelizerPipeline(client, config, onLog, systemPrompt: novelizer.SystemPrompt);
+        var pipeline = new NovelizerPipeline(
+            client, config, onLog,
+            systemPrompt: novelizer.SystemPrompt,
+            enableMultiTurn: novelizer.EnableMultiTurn,
+            chunkSize: novelizer.ChunkSize,
+            compressInterval: novelizer.CompressInterval);
         await pipeline.BatchProcessAsync(outputDir, [novelizer.SelectedModel], force: false);
 
         return Directory.GetFiles(outputDir, "*_novel_*.md")

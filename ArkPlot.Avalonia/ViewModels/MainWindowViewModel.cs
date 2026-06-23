@@ -604,7 +604,12 @@ public partial class MainWindowViewModel : ViewModelBase
                 global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => noticeBlock.RaiseCommonEvent(msg));
             };
             var client = new BailianClient(http, config, onLog: log);
-            var pipeline = new NovelizerPipeline(client, config, onLog: log, systemPrompt: systemPrompt);
+            var pipeline = new NovelizerPipeline(
+                client, config, onLog: log,
+                systemPrompt: systemPrompt,
+                enableMultiTurn: novelizer.EnableMultiTurn,
+                chunkSize: novelizer.ChunkSize,
+                compressInterval: novelizer.CompressInterval);
             LogDiag("[RunNovelizer] 对象创建完成，即将调用 BatchProcessAsync");
 
             var sw = System.Diagnostics.Stopwatch.StartNew();

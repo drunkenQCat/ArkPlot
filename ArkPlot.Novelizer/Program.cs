@@ -32,7 +32,7 @@ class Program
 
     static async Task<int> RunAsync(string[] args)
     {
-        var (input, compare, force, model, provider, promptFile, tag) = ParseRunArgs(args);
+        var (input, compare, force, model, provider, promptFile, tag, multiTurn, chunkSize, compressInterval) = ParseRunArgs(args);
         var config = LoadConfig(provider);
 
         if (string.IsNullOrEmpty(config.ApiKey))
@@ -73,7 +73,19 @@ class Program
 
         using var http = new HttpClient();
         var client = new BailianClient(http, config);
-        var pipeline = new NovelizerPipeline(client, config, systemPrompt: customPrompt);
+
+        if (multiTurn)
+        {
+            var compressInfo = compressInterval > 0 ? $", 每 {compressInterval} 轮压缩" : "";
+            Console.WriteLine($"🔄 多轮对话模式: chunkSize={chunkSize}{compressInfo}");
+        }
+
+        var pipeline = new NovelizerPipeline(
+            client, config,
+            systemPrompt: customPrompt,
+            enableMultiTurn: multiTurn,
+            chunkSize: chunkSize,
+            compressInterval: compressInterval);
 
         if (Directory.Exists(input))
         {
@@ -135,7 +147,7 @@ class Program
 
     static async Task<int> TestAsync(string[] args)
     {
-        var (input, _, _, model, provider, _, _) = ParseRunArgs(args);
+        var (input, _, _, model, provider, _, _, _, _, _) = ParseRunArgs(args);
         if (string.IsNullOrEmpty(input))
         {
             Console.Error.WriteLine("用法: Novelizer test <example_data.json> [--model flash|pro] [--provider deepseek|bailian]");
@@ -442,7 +454,7 @@ class Program
         };
     }
 
-    static (string input, bool compare, bool force, string? model, string? provider, string? prompt, string? tag) ParseRunArgs(string[] args)
+    static (string input, bool compare, bool force, string? model, string? provider, string? prompt, string? tag, bool multiTurn, int chunkSize, int compressInterval) ParseRunArgs(string[] args)
     {
         var input = "";
         var compare = false;
@@ -451,6 +463,9 @@ class Program
         string? provider = null;
         string? prompt = null;
         string? tag = null;
+        var multiTurn = false;
+        var chunkSize = 5_000;
+        var compressInterval = 0;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -477,6 +492,17 @@ class Program
                 case "--tag" or "-t" when i + 1 < args.Length:
                     tag = args[++i];
                     break;
+                case "--multi-turn" or "-mt":
+                    multiTurn = true;
+                    break;
+                case "--chunk-size" or "-cs" when i + 1 < args.Length:
+                    if (int.TryParse(args[++i], out var parsed) && parsed > 0)
+                        chunkSize = parsed;
+                    break;
+                case "--compress-interval" or "-ci" when i + 1 < args.Length:
+                    if (int.TryParse(args[++i], out var ci) && ci > 0)
+                        compressInterval = ci;
+                    break;
                 default:
                     if (!args[i].StartsWith("-") && string.IsNullOrEmpty(input))
                         input = args[i];
@@ -484,7 +510,7 @@ class Program
             }
         }
 
-        return (input, compare, force, model, provider, prompt, tag);
+        return (input, compare, force, model, provider, prompt, tag, multiTurn, chunkSize, compressInterval);
     }
 
     /// <summary>
@@ -532,13 +558,16 @@ class Program
         Console.WriteLine("  verify  反照抄端到端验证：孤星第一章 DB → 双模式 MD → 小说对比");
         Console.WriteLine();
         Console.WriteLine("选项:");
-        Console.WriteLine("  --input, -i    输入文件(.md/.json) 或目录");
-        Console.WriteLine("  --compare, -c  并行调用 pro 和 flash 两个模型进行对比");
-        Console.WriteLine("  --force, -f    忽略缓存，强制重新生成");
-        Console.WriteLine("  --model, -m    指定模型 (flash / pro)");
-        Console.WriteLine("  --provider, -p 指定平台 (deepseek / bailian)");
-        Console.WriteLine("  --prompt       自定义 system prompt 文件路径（覆盖默认提示词）");
-        Console.WriteLine("  --tag, -t      输出标签（替代模型名出现在输出文件名中）");
+        Console.WriteLine("  --input, -i        输入文件(.md/.json) 或目录");
+        Console.WriteLine("  --compare, -c      并行调用 pro 和 flash 两个模型进行对比");
+        Console.WriteLine("  --force, -f        忽略缓存，强制重新生成");
+        Console.WriteLine("  --model, -m        指定模型 (flash / pro)");
+        Console.WriteLine("  --provider, -p     指定平台 (deepseek / bailian)");
+        Console.WriteLine("  --prompt           自定义 system prompt 文件路径（覆盖默认提示词）");
+        Console.WriteLine("  --tag, -t          输出标签（替代模型名出现在输出文件名中）");
+        Console.WriteLine("  --multi-turn, -mt        启用多轮对话模式（长章自动拆分为多轮调用）");
+        Console.WriteLine("  --chunk-size, -cs        多轮模式下每 chunk 目标字符数（默认 5000）");
+        Console.WriteLine("  --compress-interval, -ci 每 N 轮压缩一次上下文（默认 0 = 不压缩）");
         Console.WriteLine();
         Console.WriteLine("verify 专用选项:");
         Console.WriteLine("  --db <path>    arkplot.db 路径（默认自动查找 Avalonia 输出目录）");

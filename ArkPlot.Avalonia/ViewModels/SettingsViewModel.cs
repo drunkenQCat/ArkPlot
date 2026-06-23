@@ -38,6 +38,9 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string[] _providerOptions = NovelizerSettings.BuiltInProviders.Keys.ToArray();
     [ObservableProperty] private string[] _modelOptions = NovelizerSettings.BuiltInProviders["DeepSeek"].Models;
     [ObservableProperty] private string _saveFeedbackText = "";
+    [ObservableProperty] private bool _enableMultiTurn;
+    [ObservableProperty] private int _chunkSize = 5_000;
+    [ObservableProperty] private int _compressInterval = 2;
 
     // 小说化自定义 Provider
     [ObservableProperty] private ObservableCollection<ProviderConfig> _customProviderList = new();
@@ -216,6 +219,9 @@ public partial class SettingsViewModel : ObservableObject
         var novelizer = settings.Novelizer;
 
         SystemPromptText = novelizer.SystemPrompt;
+        EnableMultiTurn = novelizer.EnableMultiTurn;
+        ChunkSize = novelizer.ChunkSize;
+        CompressInterval = novelizer.CompressInterval;
 
         // 自定义 Provider 列表
         CustomProviderList = new ObservableCollection<ProviderConfig>(novelizer.CustomProviders ?? []);
@@ -245,6 +251,9 @@ public partial class SettingsViewModel : ObservableObject
             SystemPrompt = SystemPromptText,
             SelectedProvider = SelectedProvider,
             SelectedModel = SelectedModel,
+            EnableMultiTurn = EnableMultiTurn,
+            ChunkSize = ChunkSize,
+            CompressInterval = CompressInterval,
             ApiKeys = new Dictionary<string, string>
             {
                 ["DeepSeek"] = DeepSeekApiKeyText,
@@ -258,6 +267,32 @@ public partial class SettingsViewModel : ObservableObject
         SaveFeedbackText = "✅ 已保存";
         _ = Task.Delay(2000).ContinueWith(_ => SaveFeedbackText = "");
     }
+
+    /// <summary>Token 消耗估算文本（多轮模式下按典型 20K 章节估算）</summary>
+    public string TokenEstimateText
+    {
+        get
+        {
+            if (!EnableMultiTurn)
+                return "单次调用，费用视章节长度而定";
+
+            var preprocessed = 20_000; // 典型预处理后约 20K 字符
+            var k = (int)Math.Ceiling((double)preprocessed / ChunkSize);
+            var s = CompressInterval > 0 ? Math.Max(0, (k - 1) / CompressInterval) : 0;
+            var totalCalls = k + s;
+
+            // 基于 V4 实验数据（21K body → 54K input tokens + 16K output tokens）的比例估算
+            var inputTokens = (int)(preprocessed * 2.5);
+            var outputTokens = k * 2_000;
+            var totalTokens = inputTokens + outputTokens;
+
+            return $"～{totalTokens:N0} tokens（{k} 轮 + {s} 次压缩 = {totalCalls} 次调用，{inputTokens:N0} 入 / {outputTokens:N0} 出）";
+        }
+    }
+
+    partial void OnEnableMultiTurnChanged(bool value) => OnPropertyChanged(nameof(TokenEstimateText));
+    partial void OnChunkSizeChanged(int value) => OnPropertyChanged(nameof(TokenEstimateText));
+    partial void OnCompressIntervalChanged(int value) => OnPropertyChanged(nameof(TokenEstimateText));
 
     [RelayCommand]
     private void RestoreDefaultPrompt()

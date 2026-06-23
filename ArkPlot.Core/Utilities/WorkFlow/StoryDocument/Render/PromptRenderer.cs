@@ -40,6 +40,11 @@ internal class PromptRenderer : IMdRenderer
 
             var mdText = entry.MdText;
 
+            // 归一化游戏引擎指令（兜底，对应 StoryDocumentBuilder 的同名步骤）
+            mdText = mdText
+                .Replace("`瞳孔地震`", "`震惊`")
+                .Replace("`图像平移`", "`场景流转`");
+
             while (mdText.StartsWith("> "))
                 mdText = mdText[2..];
 
