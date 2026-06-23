@@ -10,11 +10,11 @@ namespace ArkPlot.Cli.Pipeline;
 /// </summary>
 public static class MarkdownExporter
 {
-    public static (string OutputDir, Plot Markdown) Export(
+    public static async Task<(string OutputDir, Plot Markdown)> ExportAsync(
         AkpStoryLoader storyLoader, PicDescService? picDescService, string actName)
     {
         Console.WriteLine("[8/8] 正在导出 Markdown...");
-        var mdContent = AkpProcessor.ExportPlots(storyLoader.ContentTable, picDescService, CliOptions.EnablePicDesc);
+        var mdContent = await AkpProcessor.ExportPlotsAsync(storyLoader.ContentTable, picDescService, CliOptions.EnablePicDesc);
         var mdWithTitle = $"# {actName}\n\n{mdContent}";
         var markdown = new Plot(actName, new System.Text.StringBuilder(mdWithTitle));
 

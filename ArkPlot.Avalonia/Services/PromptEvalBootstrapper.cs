@@ -311,7 +311,7 @@ public sealed class PromptEvalBootstrapper
         await Task.Run(storyLoader.GetPreloadInfo);
         await storyLoader.ParseAllDocuments(options.TagsJsonPath);
 
-        var mdContent = AkpProcessor.ExportPlots(storyLoader.ContentTable, picDescService, options.EnablePicDesc);
+        var mdContent = await AkpProcessor.ExportPlotsAsync(storyLoader.ContentTable, picDescService, options.EnablePicDesc);
         var mdWithTitle = $"# {act.Name}\n\n{mdContent}";
 
         var actOutputDir = Path.Combine(options.OutputRoot, act.Name);

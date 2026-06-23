@@ -289,8 +289,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private async Task<string> ExportPlots(List<PlotManager> allPlots)
     {
-        var output = await Task.Run(() => AkpProcessor.ExportPlots(allPlots));
-        return output;
+        return await AkpProcessor.ExportPlotsAsync(allPlots);
     }
 
     [RelayCommand]

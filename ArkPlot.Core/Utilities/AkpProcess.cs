@@ -2,6 +2,7 @@ using System.IO;
 using ArkPlot.Core.Model;
 using ArkPlot.Core.Utilities.TagProcessingComponents;
 using ArkPlot.Core.Utilities.WorkFlow;
+using ArkPlot.Core.Utilities.WorkFlow.StoryDocument;
 using Markdig;
 
 namespace ArkPlot.Core.Utilities;
@@ -11,22 +12,21 @@ public abstract class AkpProcessor
     /// <summary>
     /// 将一组剧情导出为 Markdown 文本。
     /// </summary>
-    /// <param name="plotList">要导出的剧情列表。</param>
-    /// <param name="picDescService">可选的图片描述服务。</param>
-    /// <returns>表示导出的 Markdown 内容的字符串。</returns>
-    public static string ExportPlots(
+    public static async Task<string> ExportPlotsAsync(
         List<PlotManager> plotList,
         Services.PicDescService? picDescService = null,
         bool enableDescriptions = true,
-        WorkFlow.OutputMode outputMode = WorkFlow.OutputMode.Readable)
+        OutputMode outputMode = OutputMode.Readable)
     {
         var md = new StringBuilder();
         foreach (var chapter in plotList)
         {
             var textList = chapter.CurrentPlot.TextVariants;
-            var reconstructor = new MdReconstructor(textList, picDescService, enableDescriptions, outputMode);
+            if (picDescService != null)
+                await PicDescEnricher.EnrichAsync(textList, picDescService);
+            var builder = new StoryDocumentBuilder(textList, enableDescriptions, outputMode);
             md.Append($"## {chapter.CurrentPlot.Title}\r\n\r\n");
-            reconstructor.AppendResultToBuilder(md);
+            builder.AppendResultToBuilder(md);
         }
 
         return md.ToString();

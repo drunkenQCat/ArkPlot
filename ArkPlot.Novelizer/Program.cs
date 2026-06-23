@@ -3,6 +3,7 @@ using ArkPlot.Core.Infrastructure;
 using ArkPlot.Core.Model;
 using ArkPlot.Core.Services;
 using ArkPlot.Core.Utilities.WorkFlow;
+using ArkPlot.Core.Utilities.WorkFlow.StoryDocument;
 
 namespace ArkPlot.Novelizer;
 
@@ -245,9 +246,8 @@ class Program
         PopulatePicFacts(entries, db);
 
         // 5. Prompt 模式生成 MD
-        var reconstructor = new MdReconstructor(
+        var reconstructor = new StoryDocumentBuilder(
             new List<FormattedTextEntry>(entries.Select(e => new FormattedTextEntry(e))),
-            picDescService: null,
             enableDescriptions: true,
             outputMode: OutputMode.PromptOptimized);
 

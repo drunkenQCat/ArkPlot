@@ -14,6 +14,7 @@ using ArkPlot.Core.Utilities; // Added for AkpProcessor
 using ArkPlot.Core.Utilities.PrtsComponents;
 using ArkPlot.Core.Utilities.TagProcessingComponents;
 using ArkPlot.Core.Utilities.WorkFlow;
+using ArkPlot.Core.Utilities.WorkFlow.StoryDocument;
 using ArkPlot.Novelizer;
 using ArkPlot.Vision;
 using Avalonia.Controls.Notifications;
@@ -752,8 +753,7 @@ public partial class MainWindowViewModel : ViewModelBase
         PicDescService? picDescService = null,
         OutputMode outputMode = OutputMode.Readable)
     {
-        var output = await Task.Run(() => AkpProcessor.ExportPlots(allPlots, picDescService, outputMode: outputMode));
-        return output;
+        return await AkpProcessor.ExportPlotsAsync(allPlots, picDescService, outputMode: outputMode);
     }
 
     [RelayCommand]

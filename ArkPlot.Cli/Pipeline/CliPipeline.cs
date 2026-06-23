@@ -76,7 +76,7 @@ public class CliPipeline
         }
 
         // 9. 导出 Markdown（所有章节合并）
-        var (outputDir, markdown) = MarkdownExporter.Export(storyLoader, picDescService, actName);
+        var (outputDir, markdown) = await MarkdownExporter.ExportAsync(storyLoader, picDescService, actName);
         Console.WriteLine($"    ✅ Markdown 已保存：{outputDir}");
         Console.WriteLine($"    📄 文件大小：{markdown.Content.Length} 字符");
 
