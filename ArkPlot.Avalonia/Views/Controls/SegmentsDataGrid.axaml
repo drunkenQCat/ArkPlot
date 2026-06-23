@@ -63,7 +63,7 @@
 
     <DataGrid.RowDetailsTemplate>
       <DataTemplate x:DataType="models:SegmentRow">
-        <controls:SceneDetailCard DataContext="{Binding}" Margin="8,4"/>
+        <controls:SceneDetailCard DataContext="{Binding}" Margin="4,2"/>
       </DataTemplate>
     </DataGrid.RowDetailsTemplate>
 

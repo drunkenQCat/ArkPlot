@@ -7,7 +7,7 @@
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="100"
              x:Class="ArkPlot.Avalonia.Views.Controls.SceneDetailCard"
              x:DataType="models:SegmentRow">
-  <Border CornerRadius="6" Padding="8" Margin="4">
+  <Border CornerRadius="6" Padding="4,2" Margin="2">
     <Panel>
       <!-- 场景行详情：大图 + 描述 -->
       <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12"
@@ -26,7 +26,7 @@
       </Grid>
 
       <!-- 普通行详情：完整台词文本 -->
-      <Border IsVisible="{Binding !IsScenePlaceholder}" Padding="4">
+      <Border IsVisible="{Binding !IsScenePlaceholder}" Padding="2,1">
         <TextBlock Text="{Binding NovelText}"
                    TextWrapping="Wrap"
                    FontSize="12"

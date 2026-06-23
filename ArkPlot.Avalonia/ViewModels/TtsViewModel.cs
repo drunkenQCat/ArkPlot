@@ -60,8 +60,11 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private DataGridRowDetailsVisibilityMode _rowDetailsVisibilityMode = DataGridRowDetailsVisibilityMode.VisibleWhenSelected;
 
+    private SegmentRow? _previousSelectedSegment;
+
     /// <summary>
     /// DataGrid SelectionChanged 时由 Behavior 调用，更新 SelectedSegmentRows 并控制 RowDetails 折叠。
+    /// 再次点击已选中的行会收起详情。
     /// </summary>
     [RelayCommand]
     private void UpdateSelectedSegmentRows(IList<object>? selectedItems)
@@ -74,6 +77,25 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                 if (item is SegmentRow row)
                     SelectedSegmentRows.Add(row);
             }
+        }
+
+        // 单选时再次点击同一行 → 折叠
+        if (SelectedSegmentRows.Count == 1)
+        {
+            var single = SelectedSegmentRows[0];
+            if (single == _previousSelectedSegment)
+            {
+                SelectedSegment = null;
+                SelectedSegmentRows.Clear();
+                _previousSelectedSegment = null;
+                RowDetailsVisibilityMode = DataGridRowDetailsVisibilityMode.Collapsed;
+                return;
+            }
+            _previousSelectedSegment = single;
+        }
+        else
+        {
+            _previousSelectedSegment = null;
         }
 
         RowDetailsVisibilityMode = SelectedSegmentRows.Count > 1
