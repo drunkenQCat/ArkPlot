@@ -27,11 +27,31 @@ public class NovelizerPipeline
 
 ### 三、 视听语言的叙事转化
 
-* **场景（背景图）**：严禁概括性描述。必须将场景拆解为具象的叙事客体。
-* **角色外貌（立绘描述）**：输入文本中的外貌描述来自游戏立绘，其中包含大量模板化表达（如"沉静如深潭"、"仿佛正递出一枚无法言说的契约"）。**你必须用自己的语言重新描写这些外貌特征，不得照抄原文中的任何句子。** 保留关键视觉信息（发色、装备、伤疤等），但用全新的、场景特定的语言重新表达。
-  1. **删除所有元描述**：任何"站在空无一物的虚空中"、"站在空茫的背景里"、"望向画面外某处"等描述游戏展示方式的文字必须完全删除。
+输入文本中的 `<aside>` HTML 标签包含视觉素材，这些是原始素材而非正文：
+* `<aside class="scene-facts">`：场景视觉事实（可能是 YAML 格式或散文描述）
+* `<aside class="portrait-facts" data-character="XXX">`：角色外貌事实
+* `<aside class="item-facts">`：物品/图像视觉事实
+
+**反照抄铁律**：这些素材只是原材料。你输出的每一句话都必须是原创的叙事语言。同义替换（如"光洁"→"光滑"、"映着"→"倒映"）等同于照抄。
+
+* **场景转化**：从 `<aside class="scene-facts">` 中提取视觉元素（材质、光线、物件、空间关系），通过角色的感官体验重新构建场景描写。
+* **外貌转化**：从 `<aside class="portrait-facts">` 中提取视觉信息（发色、装备、姿态），碎片化嵌入角色的动作和交互中。
+  1. **删除所有元描述**：任何"站在空无一物的虚空中"、"站在空茫的背景里"等描述游戏展示方式的文字必须完全删除。
   2. **碎片化嵌入**：将外貌特征拆解，分散嵌入角色的动作和交互中。
-* **声音（音乐/音效）**：严禁出现任何提及音乐或音效的字眼。BGM变化转化为叙事张力，音效转化为物理事件。
+* **声音**：`音效`标签转化为物理事件描写。严禁出现任何提及音乐的字眼。
+* **输出清洁**：输出的小说正文中不应出现任何 `<aside>` 标签。
+
+#### 转化示例
+
+**场景描写**（输入为 YAML 格式时）：
+- 输入：`lighting: [惨白灯管, 昏暗, 冷色] materials: [铁栏, 混凝土, 锈迹] objects: [双层牢房, 编号门牌] space: [监狱走廊] mood: [压迫, 沉默]`
+- ❌ 错误（逐条翻译 YAML）："惨白的灯管照亮昏暗的走廊，铁栏和混凝土构成冷硬的空间。双层牢房对称排列..."
+- ✅ 正确（角色感官重构）："他走进走廊时，灯管的电流声比脚步更响。018号牢房的门牌上有一道深深的划痕。铁栏后面的黑暗里什么也看不见，但空气的味道告诉他这里最近有人待过。"
+
+**场景描写**（输入为散文格式时）：
+- 输入：`米白色光洁的地面映着顶灯的方格，像铺了一层凝固的月光。`
+- ❌ 照抄式："米白色地面映着顶灯的方格纹路，像凝固的月光被切割成几何。"（同义替换=照抄）
+- ✅ 转化式："她的高跟鞋踩进顶灯投下的方格影子里，每一步都踏过大理石冰凉的纹路。"
 
 ### 四、 对话的质感与角色声音
 
@@ -49,15 +69,20 @@ public class NovelizerPipeline
 
 ### 六、 严重警告事项
 * 不要忽略">"开头的文字，那些是需要保留的原文。
-* 带有html标签的文本不参与信息筛选，只用于补充信息。
+* `<aside>` 标签内的文本是视觉素材，只用于提取信息后重新创作，不得照抄。
 * 输出必须覆盖所有信息单元，不得压缩为摘要。
 * 允许改写表达，但禁止信息缺失。
 * 若信息过多，应扩展文本长度，而不是删减内容。
+* 输出的小说正文中不得出现任何 `<aside>` HTML 标签。
 
 
 ---
 
-**【即刻执行】** 请提供你需要改写的《明日方舟》AVG剧情脚本。改写时注意：所有角色外貌描写必须用自己的语言重新表达，严禁照抄输入原文中的任何句子（特别是"站在空无一物的虚空中"等元描述必须删除）。直接输出小说正文，不包含任何前言、后记或解释性说明。
+**【即刻执行】** 请提供你需要改写的《明日方舟》AVG剧情脚本。改写时注意：
+- `<aside>` 标签内的内容是视觉素材，必须用完全原创的叙事语言重构。同义替换等同于照抄。
+- 所有角色外貌描写必须用自己的语言重新表达。
+- "站在空无一物的虚空中"等元描述必须删除。
+直接输出小说正文，不包含任何前言、后记或解释性说明。
 """;
 
     /// <param name="onLog">可选日志回调，同时写入 Console 和此回调（用于 Avalonia UI 同步）</param>
@@ -95,9 +120,12 @@ public class NovelizerPipeline
     /// 3. 每一章单独调 LLM
     /// 4. 所有章节合并成一个小说文件
     /// </summary>
-    public async Task<string> ProcessMdFileAsync(string mdPath, string model, string outputDir)
+    /// <param name="outputTag">可选，用于输出文件命名的标签（替代 model）。如 "pass2_01_flow"</param>
+    public async Task<string> ProcessMdFileAsync(string mdPath, string model, string outputDir, string? outputTag = null)
     {
-        Log($"[DIAG] ProcessMdFileAsync 开始。file={Path.GetFileName(mdPath)}, model={model}");
+        var tag = outputTag ?? model;
+
+        Log($"[DIAG] ProcessMdFileAsync 开始。file={Path.GetFileName(mdPath)}, model={model}, tag={tag}");
 
         Log($"[DIAG] 读取文件...");
         var mdContent = File.ReadAllText(mdPath);
@@ -115,7 +143,7 @@ public class NovelizerPipeline
         Log($"\n{'=' * 60}");
         Log($"📖 模型: {model}");
         Log($"📄 输入: {Path.GetFileName(mdPath)} → 共 {chapters.Count} 章");
-        Log($"📝 输出: {Path.GetFileName(NovelComposer.GetNovelPath(mdPath, model))}");
+        Log($"📝 输出: {Path.GetFileName(NovelComposer.GetNovelPath(mdPath, tag))}");
         Log($"{'=' * 60}");
 
         // 处理所有章节
@@ -123,7 +151,7 @@ public class NovelizerPipeline
         var results = await processor.ProcessAllAsync(chapters, model);
 
         // 组装并写入
-        var novelPath = NovelComposer.ComposeAndWrite(results, mdPath, model, Log);
+        var novelPath = NovelComposer.ComposeAndWrite(results, mdPath, tag, Log);
 
         var tracker = new TokenTracker();
         foreach (var r in results)

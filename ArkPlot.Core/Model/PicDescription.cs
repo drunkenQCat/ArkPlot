@@ -28,6 +28,12 @@ public class PicDescription
     public string PicDesc { get; set; } = string.Empty;
 
     /// <summary>
+    /// 结构化视觉事实（YAML-like），由散文描述提取而来，供 Novelizer Prompt 模式使用
+    /// </summary>
+    [SugarColumn(ColumnDataType = "TEXT", IsNullable = true)]
+    public string? PicFacts { get; set; }
+
+    /// <summary>
     /// 描述来源：Vision / Placeholder / Error
     /// </summary>
     [SugarColumn(Length = 20, IsNullable = false)]

@@ -96,6 +96,13 @@ public class FormattedTextEntry
     public string PicDesc { get; set; } = "";
 
     /// <summary>
+    /// 结构化视觉事实（YAML-like），供 Prompt 模式使用。
+    /// 运行时从 PicDescription.PicFacts 填充，不持久化到 FormattedTextEntry 表。
+    /// </summary>
+    [SugarColumn(IsIgnore = true)]
+    public string PicFacts { get; set; } = "";
+
+    /// <summary>
     /// 瞬态标记：此条目不应生成立绘 MdText（如 charslot focus="none"）。
     /// 由 PrtsPreloader 设置，AkpParser 读取。不持久化。
     /// </summary>
@@ -123,6 +130,7 @@ public class FormattedTextEntry
         Portraits = new(entry.Portraits);
         PortraitFocus = entry.PortraitFocus;
         PicDesc = entry.PicDesc;
+        PicFacts = entry.PicFacts;
         SkipPortraitOutput = entry.SkipPortraitOutput;
     }
 

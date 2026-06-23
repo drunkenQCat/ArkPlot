@@ -26,12 +26,21 @@ public class MdReconstructor
     private readonly List<int> portraitIndexes = new();
     private readonly PicDescService? _picDescService;
     private readonly bool _enableDescriptions;
+    private readonly OutputMode _outputMode;
 
     // 用于跟踪已输出描述的图片 URL，确保每个 URL 在章节内只描述一次
     private readonly HashSet<string> _describedImages = new();
 
     // 用于跟踪已输出描述的角色，按 CharacterCode 去重（章节内）
     private readonly HashSet<string> _describedCharacters = new();
+
+    // Prompt 模式下需要跳过的音乐/音量相关标签类型
+    // 音乐相关全部删除，音量调整（含音乐音量和音效音量）也删除
+    private static readonly HashSet<string> MusicSkipTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "playmusic", "stopmusic", "musicvolume", "musicstop",
+        "soundvolume"  // 音效音量也输出为 `音量调整`，一并删除
+    };
 
     /// <summary>
     /// 初始化 MdReconstructor 类的新实例。
@@ -42,16 +51,20 @@ public class MdReconstructor
     public MdReconstructor(
         EntryList entries,
         PicDescService? picDescService = null,
-        bool enableDescriptions = true
+        bool enableDescriptions = true,
+        OutputMode outputMode = OutputMode.Readable
     )
     {
         _picDescService = picDescService;
         _enableDescriptions = enableDescriptions;
+        _outputMode = outputMode;
         lineList = new(entries);
         ProcessPicDescsAsync().GetAwaiter().GetResult();
         RemoveEmptyLines();
         GroupLinesBySegment();
-        ProcessPortraits();
+        // Prompt 模式不生成 HTML 表格，立绘描述改为内联
+        if (_outputMode != OutputMode.PromptOptimized)
+            ProcessPortraits();
         RemovePortraitLines();
     }
 
@@ -116,13 +129,17 @@ public class MdReconstructor
                 : null;
 
             var descs = new List<string>();
+            var factss = new List<string>();
             foreach (var url in urlsToDescribe)
             {
-                var desc = await _picDescService.GetOrCreatePicDescAsync(url, characterCode);
-                if (!string.IsNullOrEmpty(desc))
-                    descs.Add(desc);
+                var result = await _picDescService.GetOrCreatePicDescWithFactsAsync(url, characterCode);
+                if (!string.IsNullOrEmpty(result.Description))
+                    descs.Add(result.Description);
+                if (!string.IsNullOrEmpty(result.Facts))
+                    factss.Add(result.Facts);
             }
             entry.PicDesc = string.Join("; ", descs);
+            entry.PicFacts = string.Join("\n", factss);
         }
     }
 
@@ -152,6 +169,36 @@ public class MdReconstructor
 
         foreach (var item in lineList)
         {
+            // "---" 是显式的段落分隔符：先分段，然后丢弃自身
+            if (item.MdText.Trim() == "---")
+            {
+                if (temp.Count > 0)
+                {
+                    RemoveLeadingDashes(temp);
+                    GroupRemainingText(temp, isPortraitGroup);
+                    temp = new EntryList();
+                    isPortraitGroup = false;
+                }
+                continue;
+            }
+
+            // playmusic 是场景转换信号（stopmusic → playmusic = 音乐切换）：
+            // 强制分段。Readable 模式下保留在原位（由 AkpParser 上游处理），
+            // Prompt 模式下 MusicSkipTypes 会过滤，但分段在分组阶段已完成。
+            // 不丢弃 playmusic，让它正常进入当前组
+            if (item.Type.Equals("playmusic", StringComparison.OrdinalIgnoreCase))
+            {
+                if (temp.Count > 0)
+                {
+                    RemoveLeadingDashes(temp);
+                    GroupRemainingText(temp, isPortraitGroup);
+                    temp = new EntryList();
+                    isPortraitGroup = false;
+                }
+                temp.Add(item);
+                continue;
+            }
+
             if (IsItemOnlyDashes(item) || temp.Count < 16)
             {
                 if (IsPortrait(item))
@@ -167,6 +214,13 @@ public class MdReconstructor
             temp = new EntryList();
             isPortraitGroup = false;
             temp.Add(item);
+        }
+
+        // flush 最后一组
+        if (temp.Count > 0)
+        {
+            RemoveLeadingDashes(temp);
+            GroupRemainingText(temp, isPortraitGroup);
         }
     }
 
@@ -467,7 +521,9 @@ public class MdReconstructor
     {
         get
         {
-            var lines = lineGroups.Select(grp => string.Join("\r\n\r\n", grp));
+            var lines = lineGroups
+                .Select(grp => string.Join("\r\n\r\n", grp))
+                .Where(s => !string.IsNullOrWhiteSpace(s));
             return "\r\n" + string.Join("\r\n\r\n---\r\n\r\n", lines) + "\r\n";
         }
     }
@@ -479,15 +535,31 @@ public class MdReconstructor
     public void AppendResultToBuilder(StringBuilder builder)
     {
         builder.AppendLine();
+        var hasContent = false;
         foreach (var group in lineGroups)
         {
-            builder.Append("\r\n\r\n---\r\n\r\n");
-            builder.AppendJoin("\r\n\r\n", GetRawMdLines(group));
+            var lines = GetRawMdLines(group);
+            if (lines.Count == 0)
+                continue;
+            if (hasContent)
+                builder.Append("\r\n\r\n---\r\n\r\n");
+            builder.AppendJoin("\r\n\r\n", lines);
+            hasContent = true;
         }
         builder.AppendLine();
     }
 
     List<string> GetRawMdLines(EntryList grp)
+    {
+        return _outputMode == OutputMode.PromptOptimized
+            ? GetPromptModeLines(grp)
+            : GetReadableModeLines(grp);
+    }
+
+    /// <summary>
+    /// Readable 模式：维持现状的 HTML 表格 + 散文描述输出。
+    /// </summary>
+    private List<string> GetReadableModeLines(EntryList grp)
     {
         string ExtractFileNameWithoutExtension(string url) => Path.GetFileNameWithoutExtension(url);
 
@@ -513,7 +585,6 @@ public class MdReconstructor
                         continue;
 
                     var desc = entry.PicDesc;
-                    // 过滤占位符、错误信息、空值、纯分号
                     if (
                         string.IsNullOrWhiteSpace(desc)
                         || desc.Trim() == ";"
@@ -530,6 +601,111 @@ public class MdReconstructor
             }
         }
         return mdList;
+    }
+
+    /// <summary>
+    /// Prompt 模式：aside + YAML 事实，面向 LLM 输入优化。
+    /// - 场景描述：scene-facts 紧跟 background/largebg 条目
+    /// - 立绘描述：portrait-facts 内联到角色首次说话位置
+    /// - sticker/subtitle：去掉标记前缀
+    /// - 音乐标签：全部删除，只保留音效
+    /// - 其他图片：item-facts
+    /// </summary>
+    private List<string> GetPromptModeLines(EntryList grp)
+    {
+        var mdList = new List<string>();
+        foreach (var entry in grp)
+        {
+            // 跳过音乐相关标签
+            if (MusicSkipTypes.Contains(entry.Type))
+                continue;
+
+            // 立绘条目的 MdText 已被 RemovePortraitLines 清空，跳过
+            if (string.IsNullOrWhiteSpace(entry.MdText))
+                continue;
+
+            // 跳过残留的段落分隔符（正常情况下 GroupLinesBySegment 已丢弃）
+            if (entry.MdText.Trim() == "---")
+                continue;
+
+            var mdText = entry.MdText;
+
+            // sticker 去标记
+            if (entry.Type == "sticker" && mdText.StartsWith("> "))
+                mdText = mdText[2..];
+            // subtitle 去标记
+            else if (entry.Type == "subtitle")
+            {
+                mdText = mdText.Replace("> `居中字幕`：", "");
+                mdText = mdText.Replace("> `居中字幕`:", "");
+            }
+
+            // 角色首次出场时内联 portrait-facts
+            if (!string.IsNullOrEmpty(entry.CharacterName) && !string.IsNullOrEmpty(entry.CharacterCode)
+                && !_describedCharacters.Contains(entry.CharacterCode))
+            {
+                _describedCharacters.Add(entry.CharacterCode);
+                var portraitFacts = GetPortraitFactsForCharacter(entry);
+                if (!string.IsNullOrEmpty(portraitFacts))
+                {
+                    mdList.Add($"<aside class=\"portrait-facts\" data-character=\"{entry.CharacterName}\">\n{portraitFacts}\n</aside>");
+                }
+            }
+
+            mdList.Add(mdText);
+
+            // 场景图片：background/largebg 条目后紧跟 scene-facts
+            if (entry.Type is "background" or "largebg"
+                && !string.IsNullOrEmpty(entry.PicFacts))
+            {
+                var bgName = Path.GetFileNameWithoutExtension(entry.Bg);
+                mdList.Add($"<aside class=\"scene-facts\" data-bg=\"{bgName}\">\n{entry.PicFacts}\n</aside>");
+            }
+
+            // 其他非背景图片（showitem/cgitem/interlude）：item-facts
+            if (entry.Type is "showitem" or "cgitem" or "interlude" or "image"
+                && !string.IsNullOrEmpty(entry.PicFacts))
+            {
+                mdList.Add($"<aside class=\"item-facts\">\n{entry.PicFacts}\n</aside>");
+            }
+        }
+        return mdList;
+    }
+
+    /// <summary>
+    /// 获取角色的 portrait-facts（YAML 结构化外貌事实）。
+    /// 优先从 entry.PicFacts 读取，否则从 PicDescService 获取。
+    /// </summary>
+    private string GetPortraitFactsForCharacter(FormattedTextEntry entry)
+    {
+        if (!string.IsNullOrEmpty(entry.PicFacts))
+            return entry.PicFacts;
+
+        // 回退：从 PicDescService 按 CharacterCode 查
+        if (_picDescService == null || string.IsNullOrEmpty(entry.CharacterCode))
+            return "";
+
+        var urls = entry.ResourceUrls;
+        if (urls.Count == 0)
+            return "";
+
+        // 找到立绘 URL
+        var focusIndex = entry.PortraitFocus > 0 ? entry.PortraitFocus - 1 : 0;
+        if (focusIndex >= urls.Count)
+            focusIndex = 0;
+        var url = urls[focusIndex];
+
+        try
+        {
+            var result = _picDescService
+                .GetOrCreatePicDescWithFactsAsync(url, entry.CharacterCode)
+                .GetAwaiter().GetResult();
+            return result.Facts ?? "";
+        }
+        catch
+        {
+            return "";
+        }
     }
 
     private record PortraitGrp(EntryList SList, List<CharacterInfo> PortraitMarks);

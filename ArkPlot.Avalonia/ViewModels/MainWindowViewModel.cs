@@ -447,7 +447,37 @@ public partial class MainWindowViewModel : ViewModelBase
                     describeByUrl = async url => await bailianClient.DescribeImageUrlAsync(url);
                 }
 
-                picDescService = new PicDescService(describeByUrl);
+                // 如果同时开启小说化，创建 YAML 提取委托（复用 Novelizer 模型）
+                Func<string, Task<string>>? extractFacts = null;
+                if (IsNovelizerEnabled)
+                {
+                    var novelizerSettings = AppSettings.Load().Novelizer;
+                    var nProviderName = novelizerSettings.SelectedProvider;
+                    var nApiKey = novelizerSettings.GetApiKeyForProvider(nProviderName);
+                    var nBaseUrl = novelizerSettings.GetBaseUrlForProvider(nProviderName);
+                    var nProvider = nProviderName switch
+                    {
+                        "DeepSeek" => ApiProvider.DeepSeek,
+                        "百炼" => ApiProvider.Bailian,
+                        _ => ApiProvider.Custom
+                    };
+                    if (!string.IsNullOrEmpty(nApiKey))
+                    {
+                        var nConfig = new ApiConfig { Provider = nProvider, ApiKey = nApiKey, BaseUrl = nBaseUrl };
+                        var nHttp = new HttpClient();
+                        var nClient = new BailianClient(nHttp, nConfig);
+                        extractFacts = async prose =>
+                        {
+                            var result = await nClient.ChatAsync(
+                                novelizerSettings.SelectedModel,
+                                PicDescService.YamlExtractionPrompt,
+                                prose);
+                            return result.AnswerContent;
+                        };
+                    }
+                }
+
+                picDescService = new PicDescService(describeByUrl, extractFacts);
                 picDescService.InitializeCleanup();
                 noticeBlock.RaiseCommonEvent($"✅ 图片描述已启用（{providerName} {model}）");
 
@@ -461,7 +491,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
-            var rawMd = await ExportPlots(contentLoader.ContentTable, picDescService);
+            var outputMode = (IsNovelizerEnabled && IsPicDescEnabled)
+                ? OutputMode.PromptOptimized
+                : OutputMode.Readable;
+            var rawMd = await ExportPlots(contentLoader.ContentTable, picDescService, outputMode);
             var rawMdWithTitle = "# " + (activeTitle ?? "") + "\n\n" + rawMd;
             ExportMdAndHtmlFiles(rawMdWithTitle);
             if (IsLocalResChecked)
@@ -714,9 +747,12 @@ public partial class MainWindowViewModel : ViewModelBase
         ConsoleOutput = ""; //先清空这片区域
     }
 
-    private async Task<string> ExportPlots(List<PlotManager> allPlots, PicDescService? picDescService = null)
+    private async Task<string> ExportPlots(
+        List<PlotManager> allPlots,
+        PicDescService? picDescService = null,
+        OutputMode outputMode = OutputMode.Readable)
     {
-        var output = await Task.Run(() => AkpProcessor.ExportPlots(allPlots, picDescService));
+        var output = await Task.Run(() => AkpProcessor.ExportPlots(allPlots, picDescService, outputMode: outputMode));
         return output;
     }
 
