@@ -23,7 +23,12 @@ public abstract class AkpProcessor
         {
             var textList = chapter.CurrentPlot.TextVariants;
             if (picDescService != null)
+            {
                 await PicDescEnricher.EnrichAsync(textList, picDescService);
+                // 传播 CharacterCode：charslot 条目的 CharacterCode 传播到后续同名对话条目
+                // 再将 charslot 的 PicFacts 复制给对话条目，确保 Prompt 模式输出 portrait-facts
+                PropagateCharacterCodeAndFacts(textList);
+            }
             var builder = new StoryDocumentBuilder(textList, enableDescriptions, outputMode);
             md.Append($"## {chapter.CurrentPlot.Title}\r\n\r\n");
             builder.AppendResultToBuilder(md);
@@ -124,6 +129,55 @@ public abstract class AkpProcessor
             var currentTyp = Path.Join(typFolder, $"{fileIndex}_{plot.CurrentPlot.Title}.typ");
             File.WriteAllText(currentTyp, result);
             fileIndex++;
+        }
+    }
+
+    /// <summary>
+    /// 传播 CharacterCode：从 charslot/character 条目传播到后续同名对话条目，
+    /// 并将 charslot 条目的 PicFacts 复制给对话条目，确保 PromptRenderer 能输出 portrait-facts。
+    /// </summary>
+    private static void PropagateCharacterCodeAndFacts(IList<FormattedTextEntry> entries)
+    {
+        var nameToCode = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var codeToFacts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string? pendingCode = null;
+        string? pendingFacts = null;
+
+        foreach (var entry in entries)
+        {
+            // charslot/character 条目：记录 CharacterCode 和 PicFacts
+            if (entry.Type is "character" or "charactercutin" or "charslot"
+                && !string.IsNullOrEmpty(entry.CharacterCode))
+            {
+                pendingCode = entry.CharacterCode;
+                if (!string.IsNullOrEmpty(entry.PicFacts))
+                    pendingFacts = entry.PicFacts;
+            }
+            // 对话条目：首次出现的 CharacterName 分配 CharacterCode 和 PicFacts
+            else if (!string.IsNullOrEmpty(entry.CharacterName) && string.IsNullOrEmpty(entry.CharacterCode))
+            {
+                if (nameToCode.TryGetValue(entry.CharacterName, out var knownCode))
+                {
+                    entry.CharacterCode = knownCode;
+                    if (string.IsNullOrEmpty(entry.PicFacts)
+                        && codeToFacts.TryGetValue(knownCode, out var knownFacts))
+                    {
+                        entry.PicFacts = knownFacts;
+                    }
+                }
+                else if (pendingCode != null)
+                {
+                    nameToCode[entry.CharacterName] = pendingCode;
+                    entry.CharacterCode = pendingCode;
+                    if (string.IsNullOrEmpty(entry.PicFacts) && pendingFacts != null)
+                    {
+                        codeToFacts[pendingCode] = pendingFacts;
+                        entry.PicFacts = pendingFacts;
+                    }
+                    pendingCode = null;
+                    pendingFacts = null;
+                }
+            }
         }
     }
 
