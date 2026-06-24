@@ -25,7 +25,7 @@ public class StorySyncService
     /// </summary>
     public static async Task<string?> GetLatestCommitShaAsync(string repo)
     {
-        var url = $"https://api.github.com/repos/{repo}/commits?per_page=1";
+        var url = GitHubProxy.GetUrl($"https://api.github.com/repos/{repo}/commits?per_page=1");
         try
         {
             using var client = new HttpClient();
@@ -34,8 +34,9 @@ public class StorySyncService
             var arr = JArray.Parse(json);
             return arr[0]?["sha"]?.ToString();
         }
-        catch
+        catch (Exception ex)
         {
+            GitHubProxy.CheckConnectionError(url, exception: ex);
             return null;
         }
     }
@@ -56,9 +57,9 @@ public class StorySyncService
     public static string GetTableUrl(string lang)
     {
         if (lang == "zh_CN")
-            return $"https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/master/{lang}/gamedata/excel/story_review_table.json";
+            return GitHubProxy.GetUrl($"https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/master/{lang}/gamedata/excel/story_review_table.json");
 
-        return $"https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData_YoStar/master/{lang}/gamedata/excel/story_review_table.json";
+        return GitHubProxy.GetUrl($"https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData_YoStar/master/{lang}/gamedata/excel/story_review_table.json");
     }
 
     /// <summary>

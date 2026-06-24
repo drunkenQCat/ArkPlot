@@ -37,11 +37,11 @@ public class ReviewTableParser
     private string GetTableUrl()
     {
         if (lang == "zh_CN")
-            return
-                $"https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/master/{lang}/gamedata/excel/story_review_table.json";
+            return GitHubProxy.GetUrl(
+                $"https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/master/{lang}/gamedata/excel/story_review_table.json");
 
-        return
-            $"https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData_YoStar/master/{lang}/gamedata/excel/story_review_table.json";
+        return GitHubProxy.GetUrl(
+            $"https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData_YoStar/master/{lang}/gamedata/excel/story_review_table.json");
     }
 
     private void LoadJson()

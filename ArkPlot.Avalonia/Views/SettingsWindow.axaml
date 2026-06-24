@@ -509,6 +509,41 @@
 
                     <Separator Margin="0,8"/>
 
+                    <!-- GitHub 代理设置 -->
+                    <TextBlock Text="GitHub 代理镜像" FontWeight="Bold" FontSize="14"/>
+                    <TextBlock Text="通过代理加速 GitHub 数据下载（活动列表、剧情文本）。适用于国内网络环境。"
+                               TextWrapping="Wrap" FontSize="11" Foreground="Gray"/>
+
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <ComboBox ItemsSource="{Binding ProxyPresetOptions}"
+                                  SelectedIndex="{Binding SelectedProxyPresetIndex}"
+                                  Width="180"/>
+                        <TextBox Text="{Binding GitHubProxyPrefix}"
+                                 Width="260"
+                                 Watermark="https://gh-proxy.com/ 或留空=直连"/>
+                        <Button Content="测试连接"
+                                Command="{Binding TestGitHubProxyConnectionCommand}"
+                                IsEnabled="{Binding !IsProxyTesting}"
+                                Padding="16,6"/>
+                        <Button Content="一键测速"
+                                Command="{Binding ScanAllProxiesCommand}"
+                                IsEnabled="{Binding !IsProxyScanning}"
+                                Padding="16,6"
+                                Classes="Accent"/>
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding ProxyTestStatus}"
+                               TextWrapping="Wrap"
+                               Margin="0,4,0,0"
+                               FontWeight="Bold"
+                               IsVisible="{Binding !IsProxyScanning}"/>
+                    <TextBlock Text="{Binding ProxyScanStatus}"
+                               TextWrapping="Wrap"
+                               Margin="0,4,0,0"
+                               FontWeight="Bold"/>
+
+                    <Separator Margin="0,8"/>
+
                     <TextBlock Text="危险区域" FontWeight="Bold" FontSize="16" Foreground="#E53935"/>
                     <TextBlock Text="清空数据库中所有缓存数据，包括活动列表、章节内容、PRTS 资源索引等。操作不可撤销。"
                                TextWrapping="Wrap" Foreground="Gray"/>

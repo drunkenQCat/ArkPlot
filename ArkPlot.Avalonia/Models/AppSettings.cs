@@ -25,7 +25,8 @@ public record ProviderConfig(
 public record AppSettings(
     NovelizerSettings Novelizer,
     VisionSettings? Vision = null,
-    TtsSettings? Tts = null
+    TtsSettings? Tts = null,
+    string GitHubProxyPrefix = ""
 )
 {
     private static readonly string FilePath = Path.Combine(
@@ -44,7 +45,7 @@ public record AppSettings(
     /// </summary>
     public static AppSettings Load()
     {
-        return LoadFromFile(FilePath);
+        return LoadAndInitProxy(FilePath);
     }
 
     /// <summary>
@@ -115,6 +116,16 @@ public record AppSettings(
             Vision: VisionSettings.CreateDefaults(),
             Tts: TtsSettings.CreateDefaults()
         );
+    }
+
+    /// <summary>
+    /// 加载配置时同步初始化 GitHubProxy.Prefix。
+    /// </summary>
+    private static AppSettings LoadAndInitProxy(string filePath)
+    {
+        var settings = LoadFromFile(filePath);
+        ArkPlot.Core.Utilities.GitHubProxy.Prefix = settings.GitHubProxyPrefix;
+        return settings;
     }
 }
 

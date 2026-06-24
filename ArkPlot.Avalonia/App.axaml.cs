@@ -24,6 +24,8 @@ public partial class App : Application
                     {
                         var settingsView = new SettingsWindow();
                         var settingsViewModel = new ViewModels.SettingsViewModel(message.JsonPath);
+                        if (message.SelectedTabIndex.HasValue)
+                            settingsViewModel.SelectedTabIndex = message.SelectedTabIndex.Value;
                         settingsView.DataContext = settingsViewModel;
                         settingsView.Show();
                     }

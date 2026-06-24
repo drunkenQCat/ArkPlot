@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -223,6 +224,10 @@ public partial class SettingsViewModel : ObservableObject
         ChunkSize = novelizer.ChunkSize;
         CompressInterval = novelizer.CompressInterval;
 
+        // GitHub 代理
+        GitHubProxyPrefix = settings.GitHubProxyPrefix;
+        SelectProxyPreset(settings.GitHubProxyPrefix);
+
         // 自定义 Provider 列表
         CustomProviderList = new ObservableCollection<ProviderConfig>(novelizer.CustomProviders ?? []);
         RefreshNovelizerProviderOptions();
@@ -233,6 +238,16 @@ public partial class SettingsViewModel : ObservableObject
 
         DeepSeekApiKeyText = settings.GetApiKey("DeepSeek");
         BailianApiKeyText = settings.GetApiKey("百炼");
+    }
+
+    private void SelectProxyPreset(string prefix)
+    {
+        if (string.IsNullOrEmpty(prefix))
+            SelectedProxyPresetIndex = 0; // 直连
+        else if (prefix == "https://gh-proxy.com/")
+            SelectedProxyPresetIndex = 1;
+        else
+            SelectedProxyPresetIndex = 2; // 自定义
     }
 
     private void RefreshNovelizerProviderOptions()
@@ -261,11 +276,188 @@ public partial class SettingsViewModel : ObservableObject
             },
             CustomProviders = CustomProviderList.ToArray()
         };
-        settings = settings with { Novelizer = novelizer };
+        settings = settings with
+        {
+            Novelizer = novelizer,
+            GitHubProxyPrefix = GitHubProxyPrefix
+        };
         settings.Save();
+        // 立即生效
+        ArkPlot.Core.Utilities.GitHubProxy.Prefix = GitHubProxyPrefix;
 
         SaveFeedbackText = "✅ 已保存";
         _ = Task.Delay(2000).ContinueWith(_ => SaveFeedbackText = "");
+    }
+
+    private GitHubProxyPreset[] _proxyPresets = GitHubProxyPresetList.Load().Presets;
+
+    /// <summary>GitHub 代理预设选项列表（含 "自定义..." 附加项）</summary>
+    public string[] ProxyPresetOptions
+    {
+        get
+        {
+            var names = _proxyPresets.Select(p => p.Name).ToList();
+            names.Add("自定义...");
+            return names.ToArray();
+        }
+    }
+
+    partial void OnSelectedProxyPresetIndexChanged(int value)
+    {
+        if (value >= 0 && value < _proxyPresets.Length)
+        {
+            GitHubProxyPrefix = _proxyPresets[value].Url;
+        }
+        // value == _proxyPresets.Length 即"自定义..."，保留当前输入框值不变
+    }
+
+    /// <summary>测试 GitHub 代理连接</summary>
+    [RelayCommand]
+    private async Task TestGitHubProxyConnection()
+    {
+        if (IsProxyTesting) return;
+        IsProxyTesting = true;
+        ProxyTestStatus = "正在测试...";
+
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var prefix = GitHubProxyPrefix.EndsWith("/") ? GitHubProxyPrefix : GitHubProxyPrefix + "/";
+            if (string.IsNullOrEmpty(GitHubProxyPrefix))
+            {
+                ProxyTestStatus = "⚠️ 请先选择或输入代理地址";
+                return;
+            }
+
+            // 测试 raw 文件
+            var rawUrl = prefix + "https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/master/zh_CN/gamedata/excel/story_review_table.json";
+            var rawResp = await http.GetAsync(rawUrl);
+            var rawOk = rawResp.IsSuccessStatusCode;
+
+            // 测试 API
+            var apiUrl = prefix + "https://api.github.com/repos/Kengxxiao/ArknightsGameData/commits?per_page=1";
+            var apiReq = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+            apiReq.Headers.UserAgent.TryParseAdd("ArkPlot");
+            var apiResp = await http.SendAsync(apiReq);
+            var apiOk = apiResp.IsSuccessStatusCode;
+
+            ProxyTestStatus = rawOk && apiOk
+                ? "✅ 连接正常（raw + API 均可用）"
+                : rawOk
+                    ? "⚠️ 仅 raw 可用，API 不通（无法检查更新）"
+                    : "❌ 无法连接";
+        }
+        catch (Exception ex)
+        {
+            ProxyTestStatus = $"❌ 连接失败：{ex.Message}";
+        }
+        finally
+        {
+            IsProxyTesting = false;
+        }
+    }
+
+    /// <summary>一键测速：测试所有预设节点并更新列表</summary>
+    [RelayCommand]
+    private async Task ScanAllProxies()
+    {
+        if (IsProxyScanning) return;
+        IsProxyScanning = true;
+        ProxyScanStatus = "";
+
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var results = new List<(GitHubProxyPreset Preset, bool RawOk, bool ApiOk)>();
+
+            // 跳过第 0 项（直连）和"自定义..."
+            var targets = _proxyPresets.Where(p => !string.IsNullOrEmpty(p.Url)).ToArray();
+
+            for (int i = 0; i < targets.Length; i++)
+            {
+                var p = targets[i];
+                ProxyScanStatus = $"正在测试 ({i + 1}/{targets.Length}): {p.Name}...";
+
+                var prefix = p.Url.EndsWith("/") ? p.Url : p.Url + "/";
+                bool rawOk = false, apiOk = false;
+
+                try
+                {
+                    var rawResp = await http.GetAsync(prefix + "https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/master/zh_CN/gamedata/excel/story_review_table.json");
+                    rawOk = rawResp.IsSuccessStatusCode;
+                }
+                catch { }
+
+                try
+                {
+                    var apiReq = new HttpRequestMessage(HttpMethod.Get, prefix + "https://api.github.com/repos/Kengxxiao/ArknightsGameData/commits?per_page=1");
+                    apiReq.Headers.UserAgent.TryParseAdd("ArkPlot");
+                    var apiResp = await http.SendAsync(apiReq);
+                    apiOk = apiResp.IsSuccessStatusCode;
+                }
+                catch { }
+
+                results.Add((p, rawOk, apiOk));
+            }
+
+            // 更新 _proxyPresets 数组（保留直连 + 可用的，去掉不通的）
+            var good = results.Where(r => r.RawOk && r.ApiOk).Select(r => new GitHubProxyPreset
+            {
+                Name = r.Preset.Name,
+                Url = r.Preset.Url
+            }).ToList();
+
+            // 标注意外：仅 raw 可用的
+            var warn = results.Where(r => r.RawOk && !r.ApiOk).Select(r => r.Preset.Name);
+
+            // 重建 presets：直连 + 双通节点
+            var all = new List<GitHubProxyPreset> { new() { Name = "直连（不加速）", Url = "" } };
+            all.AddRange(good);
+            _proxyPresets = all.ToArray();
+
+            // 触发 UI 刷新
+            OnPropertyChanged(nameof(ProxyPresetOptions));
+            // 如果当前选中超出范围，重置
+            if (SelectedProxyPresetIndex >= _proxyPresets.Length)
+                SelectedProxyPresetIndex = 0;
+
+            var warnText = warn.Any() ? $"\n⚠️ {warn.Count()} 个仅 raw 可用（已过滤）：{string.Join("、", warn.Take(3))}" : "";
+            ProxyScanStatus = $"✅ 测速完成：{good.Count} 个节点可用{warnText}";
+
+            // 持久化到 JSON 文件
+            SaveProxyResults(good);
+        }
+        catch (Exception ex)
+        {
+            ProxyScanStatus = $"❌ 测速失败：{ex.Message}";
+        }
+        finally
+        {
+            IsProxyScanning = false;
+        }
+    }
+
+    private void SaveProxyResults(List<GitHubProxyPreset> good)
+    {
+        try
+        {
+            var list = new ArkPlot.Avalonia.Models.GitHubProxyPresetList
+            {
+                Version = 1,
+                UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd"),
+                Description = "由 ArkPlot 一键测速更新",
+                Presets =
+                [
+                    .. new[] { new GitHubProxyPreset { Name = "直连（不加速）", Url = "" } },
+                    .. good
+                ]
+            };
+            var json = System.Text.Json.JsonSerializer.Serialize(list, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(
+                Path.Combine(AppContext.BaseDirectory, "Assets", "github_proxies.json"),
+                json);
+        }
+        catch { /* 静默失败，不影响 UI */ }
     }
 
     /// <summary>Token 消耗估算文本（多轮模式下按典型 20K 章节估算）</summary>
@@ -491,6 +683,12 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _selectedLanguage = "zh_CN";
     [ObservableProperty] private string _dataManagementStatus = "";
     [ObservableProperty] private bool _isDataOperationRunning;
+    [ObservableProperty] private string _gitHubProxyPrefix = "";
+    [ObservableProperty] private string _proxyTestStatus = "";
+    [ObservableProperty] private bool _isProxyTesting;
+    [ObservableProperty] private bool _isProxyScanning;
+    [ObservableProperty] private string _proxyScanStatus = "";
+    [ObservableProperty] private int _selectedProxyPresetIndex;
 
     public string[] LanguageOptions => ["zh_CN", "en_US"];
 

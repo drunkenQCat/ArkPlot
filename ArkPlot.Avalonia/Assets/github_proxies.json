@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "updatedAt": "2026-06-24",
+  "description": "GitHub 代理镜像节点列表。由 _tools/scrape-github-proxies.js 自动生成。",
+  "presets": [
+    {
+      "name": "直连（不加速）",
+      "url": ""
+    },
+    {
+      "name": "tvv.tw",
+      "url": "https://tvv.tw"
+    },
+    {
+      "name": "ghproxy.cxkpro.top",
+      "url": "https://ghproxy.cxkpro.top"
+    },
+    {
+      "name": "gh.bugdey.us.kg",
+      "url": "https://gh.bugdey.us.kg"
+    },
+    {
+      "name": "gh.jasonzeng.dev",
+      "url": "https://gh.jasonzeng.dev"
+    },
+    {
+      "name": "gh.idayer.com",
+      "url": "https://gh.idayer.com"
+    },
+    {
+      "name": "ghpxy.hwinzniej.top",
+      "url": "https://ghpxy.hwinzniej.top"
+    },
+    {
+      "name": "ghf.无名氏.top",
+      "url": "https://ghf.无名氏.top"
+    },
+    {
+      "name": "github.cnxiaobai.com",
+      "url": "https://github.cnxiaobai.com"
+    },
+    {
+      "name": "gh.nxnow.top",
+      "url": "https://gh.nxnow.top"
+    },
+    {
+      "name": "ghm.078465.xyz",
+      "url": "https://ghm.078465.xyz"
+    },
+    {
+      "name": "github.dpik.top",
+      "url": "https://github.dpik.top"
+    },
+    {
+      "name": "github.tbedu.top",
+      "url": "https://github.tbedu.top"
+    },
+    {
+      "name": "gh.noki.icu",
+      "url": "https://gh.noki.icu"
+    },
+    {
+      "name": "jiashu.1win.eu.org",
+      "url": "https://jiashu.1win.eu.org"
+    },
+    {
+      "name": "ghproxy.monkeyray.net",
+      "url": "https://ghproxy.monkeyray.net"
+    },
+    {
+      "name": "ghfile.geekertao.top",
+      "url": "https://ghfile.geekertao.top"
+    },
+    {
+      "name": "gh.dpik.top",
+      "url": "https://gh.dpik.top"
+    },
+    {
+      "name": "gh.catmak.name",
+      "url": "https://gh.catmak.name"
+    }
+  ]
+}

@@ -14,6 +14,7 @@ public static class NetworkUtility
             using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
             if (!response.IsSuccessStatusCode)
             {
+                GitHubProxy.CheckConnectionError(url, statusCode: (int)response.StatusCode);
                 if (response.ReasonPhrase != null)
                     NotificationBlock.Instance.OnNetErrorHappen(new NetworkErrorEventArgs(response));
                 return "";
@@ -24,6 +25,7 @@ public static class NetworkUtility
         }
         catch (Exception e)
         {
+            GitHubProxy.CheckConnectionError(url, exception: e);
             NotificationBlock.Instance.OnNetErrorHappen(new NetworkErrorEventArgs(e.Message));
             return "";
         }
@@ -45,6 +47,7 @@ public static class NetworkUtility
         }
         catch (HttpRequestException e)
         {
+            GitHubProxy.CheckConnectionError(plotsJsonRequestUrl, exception: e);
             NotificationBlock.Instance.OnNetErrorHappen(new NetworkErrorEventArgs(e.Message));
             return "";
         }

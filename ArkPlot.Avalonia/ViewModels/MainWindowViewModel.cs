@@ -39,6 +39,12 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly NotificationBlock noticeBlock = NotificationBlock.Instance;
     private readonly PrtsDataProcessor prts = new();
 
+    public MainWindowViewModel()
+    {
+        // 订阅 GitHub 连接失败事件，弹出引导对话框
+        ArkPlot.Core.Utilities.GitHubProxy.ConnectionFailed += OnGitHubConnectionFailed;
+    }
+
     [ObservableProperty]
     private ISukiToastManager toastManager = new SukiToastManager(); // public, 只读属性
 
@@ -766,6 +772,36 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var messenger = WeakReferenceMessenger.Default;
         messenger.Send(new OpenWindowMessage("SettingsWindow", JsonPath));
+    }
+
+    /// <summary>
+    /// GitHub 直连失败时弹出对话框，引导用户开启代理加速。
+    /// </summary>
+    private async void OnGitHubConnectionFailed(string url)
+    {
+        await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            try
+            {
+                var box = MessageBoxManager
+                    .GetMessageBoxStandard("GitHub 连接失败",
+                        "无法连接到 GitHub，这通常是因为国内网络环境限制。\n\n是否启用代理加速？",
+                        ButtonEnum.YesNo, Icon.Warning);
+
+                var result = await box.ShowAsync();
+                if (result == ButtonResult.Yes)
+                {
+                    // 开启代理并跳转到设置页
+                    ArkPlot.Core.Utilities.GitHubProxy.Prefix = "https://gh-proxy.com/";
+                    var messenger = WeakReferenceMessenger.Default;
+                    messenger.Send(new OpenWindowMessage("SettingsWindow", JsonPath, selectedTabIndex: 4));
+                }
+            }
+            catch
+            {
+                // 对话框失败不阻塞
+            }
+        });
     }
 
     [RelayCommand]

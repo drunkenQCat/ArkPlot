@@ -49,11 +49,13 @@
     <Copy SourceFiles="tags.json" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="Assets/head.html" DestinationFolder="$(OutputPath)/Assets" SkipUnchangedFiles="true" />
     <Copy SourceFiles="Assets/tail.html" DestinationFolder="$(OutputPath)/Assets" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="Assets/github_proxies.json" DestinationFolder="$(OutputPath)/Assets" SkipUnchangedFiles="true" />
   </Target>
   <Target Name="CopyFilesAfterPub" AfterTargets="Publish">
     <Copy SourceFiles="tags.json" DestinationFolder="$(PublishDir)" />
     <Copy SourceFiles="Assets/head.html" DestinationFolder="$(PublishDir)/Assets" />
     <Copy SourceFiles="Assets/tail.html" DestinationFolder="$(PublishDir)/Assets" />
+    <Copy SourceFiles="Assets/github_proxies.json" DestinationFolder="$(PublishDir)/Assets" />
   </Target>
 
   <Target Name="CopyTypstTemplate" AfterTargets="Build">
