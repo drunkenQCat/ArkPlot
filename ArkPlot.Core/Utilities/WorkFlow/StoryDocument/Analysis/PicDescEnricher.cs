@@ -1,3 +1,4 @@
+using System.Threading;
 using ArkPlot.Core.Model;
 using ArkPlot.Core.Services;
 
@@ -9,10 +10,11 @@ namespace ArkPlot.Core.Utilities.WorkFlow.StoryDocument;
 /// </summary>
 public static class PicDescEnricher
 {
-    public static async Task EnrichAsync(IList<FormattedTextEntry> entries, PicDescService picDescService)
+    public static async Task EnrichAsync(IList<FormattedTextEntry> entries, PicDescService picDescService, CancellationToken ct = default)
     {
         foreach (var entry in entries)
         {
+            ct.ThrowIfCancellationRequested();
             if (entry.ResourceUrls.Count == 0)
                 continue;
 

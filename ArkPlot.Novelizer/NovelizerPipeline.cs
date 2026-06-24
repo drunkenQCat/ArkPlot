@@ -133,11 +133,12 @@ public class NovelizerPipeline
     /// 4. 所有章节合并成一个小说文件
     /// </summary>
     /// <param name="outputTag">可选，用于输出文件命名的标签（替代 model）。如 "pass2_01_flow"</param>
-    public async Task<string> ProcessMdFileAsync(string mdPath, string model, string outputDir, string? outputTag = null)
+    public async Task<string> ProcessMdFileAsync(string mdPath, string model, string outputDir, string? outputTag = null, CancellationToken ct = default)
     {
         var tag = outputTag ?? model;
 
         Log($"[DIAG] ProcessMdFileAsync 开始。file={Path.GetFileName(mdPath)}, model={model}, tag={tag}");
+        ct.ThrowIfCancellationRequested();
 
         Log($"[DIAG] 读取文件...");
         var mdContent = File.ReadAllText(mdPath);
@@ -164,7 +165,7 @@ public class NovelizerPipeline
             enableMultiTurn: _enableMultiTurn,
             chunkSize: _chunkSize,
             compressInterval: _compressInterval);
-        var results = await processor.ProcessAllAsync(chapters, model);
+        var results = await processor.ProcessAllAsync(chapters, model, ct);
 
         // 组装并写入
         var novelPath = NovelComposer.ComposeAndWrite(results, mdPath, tag, Log);
@@ -222,7 +223,8 @@ public class NovelizerPipeline
         string inputDir,
         string[] models,
         bool force,
-        string? outputDir = null
+        string? outputDir = null,
+        CancellationToken ct = default
     )
     {
         outputDir ??= inputDir;
@@ -249,6 +251,7 @@ public class NovelizerPipeline
 
         foreach (var mdFile in mdFiles.OrderBy(f => f))
         {
+            ct.ThrowIfCancellationRequested();
             var fn = Path.GetFileName(mdFile);
             foreach (var model in models)
             {
@@ -266,7 +269,7 @@ public class NovelizerPipeline
                 try
                 {
                     var sw = System.Diagnostics.Stopwatch.StartNew();
-                    await ProcessMdFileAsync(mdFile, model, outputDir);
+                    await ProcessMdFileAsync(mdFile, model, outputDir, ct: ct);
                     sw.Stop();
                     Log(
                         $"[DIAG] ProcessMdFileAsync 返回成功，{fn} 耗时 {sw.Elapsed.TotalSeconds:F1}s"

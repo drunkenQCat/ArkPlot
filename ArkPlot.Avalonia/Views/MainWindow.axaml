@@ -224,13 +224,24 @@
                 Margin="0 0 0 0"
                 Grid.Row="3"
                 VerticalAlignment="Center">
-                <Button
-                    IsEnabled="{c:Binding !LoadInitResourceCommand.IsRunning and IsInitialized}"
-                    Margin="0 10 0 10"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center" Command="{Binding LoadMdCommand}" Width="100">
-                    开始
-                </Button>
+                <!-- 开始/停止 合并按钮：同位置、互斥显示 -->
+                <Panel Margin="0 10 0 10" HorizontalAlignment="Center">
+                    <Button
+                        IsVisible="{c:Binding !LoadMdCommand.IsRunning}"
+                        IsEnabled="{c:Binding !LoadInitResourceCommand.IsRunning and IsInitialized}"
+                        VerticalAlignment="Center" Command="{Binding LoadMdCommand}" Width="100">
+                        开始
+                    </Button>
+                    <Button
+                        IsVisible="{c:Binding LoadMdCommand.IsRunning}"
+                        VerticalAlignment="Center"
+                        Command="{Binding StopGenerationCommand}"
+                        Width="100"
+                        Background="#FFD32F2F"
+                        Foreground="White">
+                        停止
+                    </Button>
+                </Panel>
                 <Button
                     Margin="0 0 0 10"
                     HorizontalAlignment="Center"
@@ -265,26 +276,43 @@
             <Border
                 Grid.Row="4" Margin="7" BorderThickness="2" BorderBrush="#7001"
                 VerticalAlignment="Stretch" Height="225">
-                <ScrollViewer
-                    x:Name="ConsoleScrollViewer"
-                    HorizontalAlignment="Stretch"
-                    VerticalAlignment="Top"
-                >
-                    <i:Interaction.Behaviors>
-                        <ba:AutoScrollBehavior Enabled="True" />
-                    </i:Interaction.Behaviors>
-                    <!-- HorizontalAlignment="Stretch" -->
-                    <!-- VerticalAlignment="Top" -->
-                    <!-- properties:AutoScroll.AutoScroll="True" -->
-                    <!-- HorizontalScrollBarVisibility="Disabled" -->
-                    <!-- IsInertiaEnabled="True"> -->
-                    <TextBox
-                        Margin="10 12 10 0"
-                        TextWrapping="Wrap"
+                <Grid RowDefinitions="*,Auto">
+                    <ScrollViewer
+                        Grid.Row="0"
+                        x:Name="ConsoleScrollViewer"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Top"
+                    >
+                        <i:Interaction.Behaviors>
+                            <ba:AutoScrollBehavior Enabled="True" />
+                        </i:Interaction.Behaviors>
+                        <TextBox
+                            Margin="10 12 10 0"
+                            TextWrapping="Wrap"
+                            Background="Transparent"
+                            IsReadOnly="True"
+                            Text="{Binding ConsoleOutput}" />
+                    </ScrollViewer>
+                    <Button
+                        Grid.Row="1"
+                        IsVisible="{Binding HasNetworkError}"
+                        Content="停止生成并前往设置 →"
+                        Command="{Binding NetworkErrorActionCommand}"
+                        Margin="10 4 10 8"
+                        HorizontalAlignment="Left"
                         Background="Transparent"
-                        IsReadOnly="True"
-                        Text="{Binding ConsoleOutput}" />
-                </ScrollViewer>
+                        BorderThickness="0"
+                        Foreground="#FF326CF3"
+                        Cursor="Hand"
+                        FontSize="13">
+                        <Button.Styles>
+                            <Style Selector="Button:pointerover">
+                                <Setter Property="Foreground" Value="#FF5588FF" />
+                                <Setter Property="TextBlock.TextDecorations" Value="Underline" />
+                            </Style>
+                        </Button.Styles>
+                    </Button>
+                </Grid>
             </Border>
         </Grid>
     </StackPanel>

@@ -521,6 +521,9 @@
                         <TextBox Text="{Binding GitHubProxyPrefix}"
                                  Width="260"
                                  Watermark="https://gh-proxy.com/ 或留空=直连"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="12">
                         <Button Content="测试连接"
                                 Command="{Binding TestGitHubProxyConnectionCommand}"
                                 IsEnabled="{Binding !IsProxyTesting}"

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading;
 using ArkPlot.Core.Model;
 using ArkPlot.Core.Utilities.TagProcessingComponents;
 using ArkPlot.Core.Utilities.WorkFlow;
@@ -16,15 +17,17 @@ public abstract class AkpProcessor
         List<PlotManager> plotList,
         Services.PicDescService? picDescService = null,
         bool enableDescriptions = true,
-        OutputMode outputMode = OutputMode.Readable)
+        OutputMode outputMode = OutputMode.Readable,
+        CancellationToken ct = default)
     {
         var md = new StringBuilder();
         foreach (var chapter in plotList)
         {
+            ct.ThrowIfCancellationRequested();
             var textList = chapter.CurrentPlot.TextVariants;
             if (picDescService != null)
             {
-                await PicDescEnricher.EnrichAsync(textList, picDescService);
+                await PicDescEnricher.EnrichAsync(textList, picDescService, ct);
                 // 传播 CharacterCode：charslot 条目的 CharacterCode 传播到后续同名对话条目
                 // 再将 charslot 的 PicFacts 复制给对话条目，确保 Prompt 模式输出 portrait-facts
                 PropagateCharacterCodeAndFacts(textList);

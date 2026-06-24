@@ -20,9 +20,9 @@
       <testViews:AudioTestPanel x:Name="AudioTestTab"/>
     </TabItem>
 
-    <!-- 未来可加更多 Tab -->
-    <TabItem Header="Gallery (待做)" IsEnabled="False">
-      <TextBlock Text="GalleryPanel 测试待实现" Margin="16" Opacity="0.5"/>
+    <!-- 网络中断模拟 -->
+    <TabItem Header="网络中断">
+      <testViews:NetworkFailureTestPanel x:Name="NetworkFailureTab"/>
     </TabItem>
   </TabControl>
 </sukiUi:SukiWindow>

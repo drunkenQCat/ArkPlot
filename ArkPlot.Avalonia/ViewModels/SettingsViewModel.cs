@@ -309,6 +309,17 @@ public partial class SettingsViewModel : ObservableObject
             GitHubProxyPrefix = _proxyPresets[value].Url;
         }
         // value == _proxyPresets.Length 即"自定义..."，保留当前输入框值不变
+        // 保存由 OnGitHubProxyPrefixChanged 触发
+    }
+
+    partial void OnGitHubProxyPrefixChanged(string value)
+    {
+        var settings = AppSettings.Load();
+        if (settings.GitHubProxyPrefix == value)
+            return;
+        settings = settings with { GitHubProxyPrefix = value };
+        settings.Save();
+        ArkPlot.Core.Utilities.GitHubProxy.Prefix = value;
     }
 
     /// <summary>测试 GitHub 代理连接</summary>
@@ -322,12 +333,8 @@ public partial class SettingsViewModel : ObservableObject
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            var prefix = GitHubProxyPrefix.EndsWith("/") ? GitHubProxyPrefix : GitHubProxyPrefix + "/";
-            if (string.IsNullOrEmpty(GitHubProxyPrefix))
-            {
-                ProxyTestStatus = "⚠️ 请先选择或输入代理地址";
-                return;
-            }
+            var prefix = string.IsNullOrEmpty(GitHubProxyPrefix) ? "" :
+                GitHubProxyPrefix.EndsWith("/") ? GitHubProxyPrefix : GitHubProxyPrefix + "/";
 
             // 测试 raw 文件
             var rawUrl = prefix + "https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/master/zh_CN/gamedata/excel/story_review_table.json";
@@ -357,7 +364,7 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
-    /// <summary>一键测速：测试所有预设节点并更新列表</summary>
+    /// <summary>一键测速：并行测试所有预设节点并更新列表</summary>
     [RelayCommand]
     private async Task ScanAllProxies()
     {
@@ -370,15 +377,16 @@ public partial class SettingsViewModel : ObservableObject
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             var results = new List<(GitHubProxyPreset Preset, bool RawOk, bool ApiOk)>();
 
-            // 跳过第 0 项（直连）和"自定义..."
-            var targets = _proxyPresets.Where(p => !string.IsNullOrEmpty(p.Url)).ToArray();
+            // 包含直连在内的所有节点
+            var targets = _proxyPresets.Where(p => p.Name != "自定义...").ToArray();
+            var total = targets.Length;
+            var completed = 0;
+            var lockObj = new object();
 
-            for (int i = 0; i < targets.Length; i++)
+            var tasks = targets.Select(async p =>
             {
-                var p = targets[i];
-                ProxyScanStatus = $"正在测试 ({i + 1}/{targets.Length}): {p.Name}...";
-
-                var prefix = p.Url.EndsWith("/") ? p.Url : p.Url + "/";
+                var prefix = string.IsNullOrEmpty(p.Url) ? "" :
+                    p.Url.EndsWith("/") ? p.Url : p.Url + "/";
                 bool rawOk = false, apiOk = false;
 
                 try
@@ -397,11 +405,18 @@ public partial class SettingsViewModel : ObservableObject
                 }
                 catch { }
 
-                results.Add((p, rawOk, apiOk));
-            }
+                lock (lockObj)
+                {
+                    results.Add((p, rawOk, apiOk));
+                    completed++;
+                    ProxyScanStatus = $"正在测试 ({completed}/{total})...";
+                }
+            });
 
-            // 更新 _proxyPresets 数组（保留直连 + 可用的，去掉不通的）
-            var good = results.Where(r => r.RawOk && r.ApiOk).Select(r => new GitHubProxyPreset
+            await Task.WhenAll(tasks);
+
+            // 更新 _proxyPresets 数组（直连始终保留，代理节点过滤仅 raw 可用的）
+            var good = results.Where(r => r.RawOk && r.ApiOk && !string.IsNullOrEmpty(r.Preset.Url)).Select(r => new GitHubProxyPreset
             {
                 Name = r.Preset.Name,
                 Url = r.Preset.Url
@@ -410,7 +425,11 @@ public partial class SettingsViewModel : ObservableObject
             // 标注意外：仅 raw 可用的
             var warn = results.Where(r => r.RawOk && !r.ApiOk).Select(r => r.Preset.Name);
 
-            // 重建 presets：直连 + 双通节点
+            // 直连不通时也提示
+            var directResult = results.FirstOrDefault(r => string.IsNullOrEmpty(r.Preset.Url));
+            var directOk = directResult is { RawOk: true, ApiOk: true };
+
+            // 重建 presets：直连 + 双通代理节点
             var all = new List<GitHubProxyPreset> { new() { Name = "直连（不加速）", Url = "" } };
             all.AddRange(good);
             _proxyPresets = all.ToArray();
@@ -421,8 +440,9 @@ public partial class SettingsViewModel : ObservableObject
             if (SelectedProxyPresetIndex >= _proxyPresets.Length)
                 SelectedProxyPresetIndex = 0;
 
+            var directText = directOk ? "" : "，直连不可用";
             var warnText = warn.Any() ? $"\n⚠️ {warn.Count()} 个仅 raw 可用（已过滤）：{string.Join("、", warn.Take(3))}" : "";
-            ProxyScanStatus = $"✅ 测速完成：{good.Count} 个节点可用{warnText}";
+            ProxyScanStatus = $"✅ 测速完成：{good.Count} 个代理节点可用{directText}{warnText}";
 
             // 持久化到 JSON 文件
             SaveProxyResults(good);
@@ -690,7 +710,13 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _proxyScanStatus = "";
     [ObservableProperty] private int _selectedProxyPresetIndex;
 
-    public string[] LanguageOptions => ["zh_CN", "en_US"];
+    public string[] LanguageOptions => [
+        "zh_CN",
+        "en_US",
+        "ja_JP",
+        "ko_KR",
+        "zh_TW",
+        ];
 
     [RelayCommand]
     private async Task ForceRefreshData()

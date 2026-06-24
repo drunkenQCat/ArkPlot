@@ -57,7 +57,8 @@ public class ChapterProcessor
     /// </summary>
     public async Task<IReadOnlyList<ChapterResult>> ProcessAllAsync(
         IReadOnlyList<Chapter> chapters,
-        string model)
+        string model,
+        CancellationToken ct = default)
     {
         var semaphore = new SemaphoreSlim(_maxConcurrency);
         var results = new Dictionary<int, ChapterResult>();
@@ -66,6 +67,7 @@ public class ChapterProcessor
 
         foreach (var chapter in chapters)
         {
+            ct.ThrowIfCancellationRequested();
             if (string.IsNullOrEmpty(chapter.Body))
             {
                 _log($"⏭️  第 {chapter.Index + 1}/{chapters.Count} 章「{chapter.Title}」无正文，跳过。");
@@ -73,10 +75,11 @@ public class ChapterProcessor
                 continue;
             }
 
-            tasks.Add(ProcessChapterAsync(chapter, chapters.Count, model, semaphore, results, tokenTracker));
+            tasks.Add(ProcessChapterAsync(chapter, chapters.Count, model, semaphore, results, tokenTracker, ct));
         }
 
         await Task.WhenAll(tasks);
+        ct.ThrowIfCancellationRequested();
 
         return results.OrderBy(kv => kv.Key).Select(kv => kv.Value).ToList();
     }
@@ -87,11 +90,13 @@ public class ChapterProcessor
         string model,
         SemaphoreSlim semaphore,
         Dictionary<int, ChapterResult> results,
-        TokenTracker tokenTracker)
+        TokenTracker tokenTracker,
+        CancellationToken ct)
     {
-        await semaphore.WaitAsync();
+        await semaphore.WaitAsync(ct);
         try
         {
+            ct.ThrowIfCancellationRequested();
             // 多轮模式 && 正文超过 chunkSize → 走多轮路径
             if (_enableMultiTurn && chapter.Body.Length > _chunkSize)
             {

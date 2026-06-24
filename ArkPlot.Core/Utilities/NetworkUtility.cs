@@ -1,17 +1,18 @@
 using System.Net.Http;
+using System.Threading;
 using ArkPlot.Core.Services;
 
 namespace ArkPlot.Core.Utilities;
 
 public static class NetworkUtility
 {
-    public static async Task<string> GetAsync(string url)
+    public static async Task<string> GetAsync(string url, CancellationToken ct = default)
     {
         try
         {
             // 发送一个request请求
             using var client = new HttpClient();
-            using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+            using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!response.IsSuccessStatusCode)
             {
                 GitHubProxy.CheckConnectionError(url, statusCode: (int)response.StatusCode);
@@ -22,6 +23,10 @@ public static class NetworkUtility
 
             var fileContent = await response.Content.ReadAsStringAsync();
             return fileContent;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {

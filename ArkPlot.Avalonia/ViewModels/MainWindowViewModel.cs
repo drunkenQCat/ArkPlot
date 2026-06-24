@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using ArkPlot.Avalonia.Models;
 using ArkPlot.Avalonia.Services;
@@ -39,6 +40,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly NotificationBlock noticeBlock = NotificationBlock.Instance;
     private readonly PrtsDataProcessor prts = new();
 
+    private CancellationTokenSource? _loadMdCts;
+    private int _connectionFailedHandled;
+
     public MainWindowViewModel()
     {
         // 订阅 GitHub 连接失败事件，弹出引导对话框
@@ -69,6 +73,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool isPicDescEnabled;
+
+    [ObservableProperty]
+    private bool hasNetworkError;
 
     /// <summary>
     /// DeepSeek 官方 API Key（从环境变量 DEEPSEEK_API_KEY 读取）
@@ -303,7 +310,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task LoadMd()
+    private async Task LoadMd(CancellationToken ct)
     {
         if (Chapters.Count == 0)
         {
@@ -332,24 +339,34 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var content = new AkpStoryLoader(CurrentAct, chapters);
 
+        // 创建联动 CTS：命令的 CT 或 StopGeneration/OnGitHubConnectionFailed 都能触发取消
+        _loadMdCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var effectiveCt = _loadMdCts.Token;
+
         try
         {
             // GetAllChapters 内部自动处理缓存：
             // - Status=2 章节从 DB 加载
             // - 未缓存章节从 GitHub 下载并写 Status=1
-            await content.GetAllChapters(selectedChapters);
+            await content.GetAllChapters(selectedChapters, effectiveCt);
             noticeBlock.RaiseCommonEvent("章节加载完成。");
 
-            await PreloadResources(content);
+            await PreloadResources(content, effectiveCt);
             // StartParseDocuments → PlotManager.StartParseLines 自动将解析结果写为 Status=2
-            await StartParseDocuments(content);
+            await StartParseDocuments(content, effectiveCt);
 
-            await ExportDocuments(content);
-            await RunNovelizerIfEnabled();
+            await ExportDocuments(content, effectiveCt);
+            await RunNovelizerIfEnabled(effectiveCt);
             await CompleteLoading();
+        }
+        catch (OperationCanceledException)
+        {
+            noticeBlock.RaiseCommonEvent("⚠️ 生成已被取消。");
         }
         finally
         {
+            _loadMdCts?.Dispose();
+            _loadMdCts = null;
             IsInitialized = true;
         }
     }
@@ -357,31 +374,33 @@ public partial class MainWindowViewModel : ViewModelBase
     private void PrepareLoading()
     {
         IsInitialized = false;
+        _connectionFailedHandled = 0;
+        HasNetworkError = false;
         ClearConsoleOutput();
         noticeBlock.RaiseCommonEvent("初始化加载...");
     }
 
-    private async Task PreloadResources(AkpStoryLoader contentLoader)
+    private async Task PreloadResources(AkpStoryLoader contentLoader, CancellationToken ct)
     {
         noticeBlock.RaiseCommonEvent("正在预加载资源....");
         if (IsLocalResChecked)
         {
             noticeBlock.RaiseCommonEvent("正在下载资源....");
-            await contentLoader.PreloadAssetsForAllChapters();
+            await contentLoader.PreloadAssetsForAllChapters(ct);
         }
         else
         {
-            await Task.Run(contentLoader.GetPreloadInfo);
+            await Task.Run(contentLoader.GetPreloadInfo, ct);
         }
     }
 
-    private async Task StartParseDocuments(AkpStoryLoader content)
+    private async Task StartParseDocuments(AkpStoryLoader content, CancellationToken ct)
     {
         noticeBlock.RaiseCommonEvent("正在解析文档....");
-        await content.ParseAllDocuments(JsonPath);
+        await content.ParseAllDocuments(JsonPath, ct);
     }
 
-    private async Task ExportDocuments(AkpStoryLoader contentLoader)
+    private async Task ExportDocuments(AkpStoryLoader contentLoader, CancellationToken ct)
     {
         noticeBlock.RaiseCommonEvent("正在导出文档....");
 
@@ -422,7 +441,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     describeByUrl = async url =>
                     {
                         using var http = new HttpClient();
-                        var bytes = await http.GetByteArrayAsync(url);
+                        var bytes = await http.GetByteArrayAsync(url, ct);
                         var base64 = Convert.ToBase64String(bytes);
                         return await ollamaClient.DescribeImageBase64Async(base64);
                     };
@@ -501,7 +520,7 @@ public partial class MainWindowViewModel : ViewModelBase
             var outputMode = (IsNovelizerEnabled && IsPicDescEnabled)
                 ? OutputMode.PromptOptimized
                 : OutputMode.Readable;
-            var rawMd = await ExportPlots(contentLoader.ContentTable, picDescService, outputMode);
+            var rawMd = await ExportPlots(contentLoader.ContentTable, picDescService, outputMode, ct);
             var rawMdWithTitle = "# " + (activeTitle ?? "") + "\n\n" + rawMd;
             ExportMdAndHtmlFiles(rawMdWithTitle);
             if (IsLocalResChecked)
@@ -563,7 +582,7 @@ public partial class MainWindowViewModel : ViewModelBase
             OutputPath = resultFolder.FirstOrDefault()!.Path.LocalPath;
     }
 
-    private async Task RunNovelizerIfEnabled()
+    private async Task RunNovelizerIfEnabled(CancellationToken ct)
     {
         LogDiag("[RunNovelizer] 入口。IsNovelizerEnabled={0}", IsNovelizerEnabled);
 
@@ -619,7 +638,7 @@ public partial class MainWindowViewModel : ViewModelBase
             LogDiag("[RunNovelizer] 对象创建完成，即将调用 BatchProcessAsync");
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            await pipeline.BatchProcessAsync(outputPathOfCurrentStory, [model], force: false);
+            await pipeline.BatchProcessAsync(outputPathOfCurrentStory, [model], force: false, ct: ct);
             sw.Stop();
             LogDiag("[RunNovelizer] BatchProcessAsync 返回，耗时 {0}s", sw.Elapsed.TotalSeconds);
 
@@ -762,9 +781,48 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task<string> ExportPlots(
         List<PlotManager> allPlots,
         PicDescService? picDescService = null,
-        OutputMode outputMode = OutputMode.Readable)
+        OutputMode outputMode = OutputMode.Readable,
+        CancellationToken ct = default)
     {
-        return await AkpProcessor.ExportPlotsAsync(allPlots, picDescService, outputMode: outputMode);
+        return await AkpProcessor.ExportPlotsAsync(allPlots, picDescService, outputMode: outputMode, ct: ct);
+    }
+
+    [RelayCommand]
+    private void NetworkErrorAction()
+    {
+        HasNetworkError = false;
+
+        // 取消正在运行的生成任务
+        _loadMdCts?.Cancel();
+
+        // 弹出对话框，引导用户前往设置
+        _ = global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            try
+            {
+                var box = MessageBoxManager
+                    .GetMessageBoxStandard("网络连接失败",
+                        "生成过程中网络连接中断。\n\n请检查网络连接，或前往设置页面调整：\n• 代理加速（GitHub 资源下载）\n• API Key（百炼/DeepSeek 等 AI 服务）\n\n是否打开设置页面？",
+                        ButtonEnum.YesNo, Icon.Warning);
+
+                var result = await box.ShowAsync();
+                if (result == ButtonResult.Yes)
+                {
+                    var messenger = WeakReferenceMessenger.Default;
+                    messenger.Send(new OpenWindowMessage("SettingsWindow", JsonPath, selectedTabIndex: 4));
+                }
+            }
+            catch
+            {
+                // 对话框失败不阻塞
+            }
+        });
+    }
+
+    [RelayCommand]
+    private void StopGeneration()
+    {
+        _loadMdCts?.Cancel();
     }
 
     [RelayCommand]
@@ -779,6 +837,13 @@ public partial class MainWindowViewModel : ViewModelBase
     /// </summary>
     private async void OnGitHubConnectionFailed(string url)
     {
+        // 取消正在运行的生成任务
+        _loadMdCts?.Cancel();
+
+        // 去重：只处理第一次连接失败
+        if (Interlocked.CompareExchange(ref _connectionFailedHandled, 1, 0) != 0)
+            return;
+
         await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
         {
             try
@@ -855,9 +920,9 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         noticeBlock.NetErrorHappen += (_, args) =>
         {
-            var s = $"\n网络错误：{args.Message}，请确认是否连接代理？";
+            var s = $"\n网络错误：{args.Message}。请检查网络连接，或前往设置页面调整代理/API Key 等配置。";
             ConsoleOutput += s;
-            // Removed MessageBox.Show(s);
+            HasNetworkError = true;
         };
     }
 

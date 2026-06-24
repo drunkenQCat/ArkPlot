@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Threading;
 using ArkPlot.Core.Model;
 using ArkPlot.Core.Services;
 using ArkPlot.Core.Utilities.PrtsComponents;
@@ -65,7 +66,7 @@ public class AkpStoryLoader
     /// 未缓存章节从 GitHub 下载并写入 Status=1 缓存。
     /// </summary>
     /// <param name="chaptersToLoad">需要加载的章节名称列表。</param>
-    public async Task GetAllChapters(IEnumerable<string> chaptersToLoad)
+    public async Task GetAllChapters(IEnumerable<string> chaptersToLoad, CancellationToken ct = default)
     {
         var chapterUrlTable = GetChapterUrls();
         var chaptersList = chaptersToLoad.ToList();
@@ -109,11 +110,12 @@ public class AkpStoryLoader
         // 并行下载所有章节内容
         var downloadTasks = chaptersToDownload.Select(async ch =>
         {
-            var content = await NetworkUtility.GetAsync(ch.url);
+            var content = await NetworkUtility.GetAsync(ch.url, ct);
             return (ch.title, ch.chapterId, content);
         }).ToList();
 
         var downloadedChapters = await Task.WhenAll(downloadTasks);
+        ct.ThrowIfCancellationRequested();
 
         // 串行处理下载结果并写入数据库（避免 SQLite 并发冲突）
         foreach (var (title, chapterId, content) in downloadedChapters)
@@ -163,17 +165,20 @@ public class AkpStoryLoader
     /// <summary>
     /// 预加载所有章节相关的资源。
     /// </summary>
-    public async Task PreloadAssetsForAllChapters()
+    public async Task PreloadAssetsForAllChapters(CancellationToken ct = default)
     {
         var toPreLoad = GetPreloadInfo();
-        await PrtsResLoader.DownloadAssets(StoryName, toPreLoad);
+        await PrtsResLoader.DownloadAssets(StoryName, toPreLoad, ct);
     }
 
-    public async Task ParseAllDocuments(string jsonPath)
+    public async Task ParseAllDocuments(string jsonPath, CancellationToken ct = default)
     {
         var parser = new AkpParser(jsonPath);
         foreach (var pm in ContentTable)
+        {
+            ct.ThrowIfCancellationRequested();
             await pm.StartParseLines(parser);
+        }
     }
 
     /// <summary>
