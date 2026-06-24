@@ -39,10 +39,7 @@ public class AkpStoryLoader
     /// </summary>
     private string GetRawUrl()
     {
-        if (lang == "zh_CN")
-            return GitHubProxy.GetUrl($"https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/master/{lang}/gamedata/story/");
-
-        return GitHubProxy.GetUrl($"https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData_YoStar/master/{lang}/gamedata/story/");
+        return GitHubProxy.GetStoryBaseUrl(lang);
     }
 
     /// <summary>

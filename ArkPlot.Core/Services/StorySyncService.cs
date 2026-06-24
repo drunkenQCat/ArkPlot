@@ -25,7 +25,7 @@ public class StorySyncService
     /// </summary>
     public static async Task<string?> GetLatestCommitShaAsync(string repo)
     {
-        var url = GitHubProxy.GetUrl($"https://api.github.com/repos/{repo}/commits?per_page=1");
+        var url = GitHubProxy.GetCommitApiUrl(repo);
         try
         {
             using var client = new HttpClient();
@@ -46,20 +46,17 @@ public class StorySyncService
     /// </summary>
     public static string GetRepoByLang(string lang)
     {
-        return lang == "zh_CN"
-            ? "Kengxxiao/ArknightsGameData"
-            : "Kengxxiao/ArknightsGameData_YoStar";
+        return GitHubProxy.GetRepoName(lang);
     }
+
+
 
     /// <summary>
     /// 获取 story_review_table.json 的下载 URL。
     /// </summary>
     public static string GetTableUrl(string lang)
     {
-        if (lang == "zh_CN")
-            return GitHubProxy.GetUrl($"https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/master/{lang}/gamedata/excel/story_review_table.json");
-
-        return GitHubProxy.GetUrl($"https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData_YoStar/master/{lang}/gamedata/excel/story_review_table.json");
+        return GitHubProxy.GetStoryTableUrl(lang);
     }
 
     /// <summary>

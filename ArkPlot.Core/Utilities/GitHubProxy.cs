@@ -78,6 +78,58 @@ public static class GitHubProxy
         ConnectionFailed?.Invoke(url);
     }
 
+    /// <summary>
+    /// 根据语言代码返回数据仓库名称。
+    /// zh_CN 使用 Kengxxiao/ArknightsGameData，其余语言使用 ArknightsAssets/ArknightsGamedata。
+    /// </summary>
+    public static string GetRepoName(string lang)
+    {
+        return lang == "zh_CN"
+            ? "Kengxxiao/ArknightsGameData"
+            : "ArknightsAssets/ArknightsGamedata";
+    }
+
+    /// <summary>
+    /// 将 UI 层语言代码（如 zh_CN, en_US）映射为数据仓库中的目录名。
+    /// Kengxxiao 使用 zh_CN / en_US，ArknightsAssets 使用 cn / en / jp / kr / tw。
+    /// </summary>
+    public static string MapLangToDir(string lang)
+    {
+        return lang switch
+        {
+            "zh_CN" => "zh_CN",
+            "en_US" => "en",
+            "ja_JP" => "jp",
+            "ko_KR" => "kr",
+            "zh_TW" => "tw",
+            _ => lang
+        };
+    }
+
+    /// <summary>
+    /// 获取 story_review_table.json 的下载 URL。
+    /// </summary>
+    public static string GetStoryTableUrl(string lang)
+    {
+        return GetUrl($"https://raw.githubusercontent.com/{GetRepoName(lang)}/master/{MapLangToDir(lang)}/gamedata/excel/story_review_table.json");
+    }
+
+    /// <summary>
+    /// 获取剧情文本目录的 base URL（后续拼接章节路径）。
+    /// </summary>
+    public static string GetStoryBaseUrl(string lang)
+    {
+        return GetUrl($"https://raw.githubusercontent.com/{GetRepoName(lang)}/master/{MapLangToDir(lang)}/gamedata/story/");
+    }
+
+    /// <summary>
+    /// 获取 GitHub API commit SHA 查询 URL。
+    /// </summary>
+    public static string GetCommitApiUrl(string repo)
+    {
+        return GetUrl($"https://api.github.com/repos/{repo}/commits?per_page=1");
+    }
+
     private static string EnsureTrailingSlash(string url)
     {
         return url.EndsWith('/') ? url : url + '/';
