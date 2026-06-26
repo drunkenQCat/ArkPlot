@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using ArkPlot.Avalonia.Models;
 using ArkPlot.Avalonia.Services;
+using ArkPlot.Core.Infrastructure;
 using ArkPlot.Core.Model;
 using ArkPlot.Core.Services;
 using ArkPlot.Core.Utilities; // Added for AkpProcessor
@@ -124,7 +125,10 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnIsPicDescEnabledChanged(bool value)
     {
         var settings = AppSettings.Load();
-        var vision = (settings.Vision ?? VisionSettings.CreateDefaults()) with { IsPicDescEnabled = value };
+        var vision = (settings.Vision ?? VisionSettings.CreateDefaults()) with
+        {
+            IsPicDescEnabled = value,
+        };
         settings = settings with { Vision = vision };
         settings.Save();
     }
@@ -182,7 +186,8 @@ public partial class MainWindowViewModel : ViewModelBase
         BailianApiKey = settings.GetApiKey("百炼");
 
         // 根据 API Key 可用性初始化小说化开关
-        IsNovelizerEnabled = !string.IsNullOrEmpty(DeepSeekApiKey) || !string.IsNullOrEmpty(BailianApiKey);
+        IsNovelizerEnabled =
+            !string.IsNullOrEmpty(DeepSeekApiKey) || !string.IsNullOrEmpty(BailianApiKey);
 
         // 加载图片描述开关
         IsPicDescEnabled = settings.Vision?.IsPicDescEnabled ?? false;
@@ -416,7 +421,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 var providerName = vision.SelectedProvider;
                 var model = vision.SelectedModel;
                 var systemPrompt = string.IsNullOrEmpty(vision.SystemPrompt)
-                    ? VisionSettings.DefaultSystemPrompt : vision.SystemPrompt;
+                    ? VisionSettings.DefaultSystemPrompt
+                    : vision.SystemPrompt;
 
                 var log = (string msg) =>
                 {
@@ -433,7 +439,7 @@ public partial class MainWindowViewModel : ViewModelBase
                         Model = model,
                         SystemPrompt = systemPrompt,
                         TimeoutSeconds = 120,
-                        MaxTokens = 2048
+                        MaxTokens = 2048,
                     };
                     var ollamaClient = new OllamaVisionClient(visionConfig, onLog: log);
                     visionDisposable = ollamaClient;
@@ -455,7 +461,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
                     if (string.IsNullOrEmpty(apiKey))
                     {
-                        noticeBlock.RaiseCommonEvent($"⚠️ 图片描述已开启但未配置 {providerName} API Key，跳过。");
+                        noticeBlock.RaiseCommonEvent(
+                            $"⚠️ 图片描述已开启但未配置 {providerName} API Key，跳过。"
+                        );
                         goto skipVision;
                     }
 
@@ -466,7 +474,7 @@ public partial class MainWindowViewModel : ViewModelBase
                         Model = model,
                         SystemPrompt = systemPrompt,
                         TimeoutSeconds = 120,
-                        MaxTokens = 2048
+                        MaxTokens = 2048,
                     };
                     var bailianClient = new BailianVisionClient(visionConfig, onLog: log);
                     visionDisposable = bailianClient;
@@ -485,11 +493,16 @@ public partial class MainWindowViewModel : ViewModelBase
                     {
                         "DeepSeek" => ApiProvider.DeepSeek,
                         "百炼" => ApiProvider.Bailian,
-                        _ => ApiProvider.Custom
+                        _ => ApiProvider.Custom,
                     };
                     if (!string.IsNullOrEmpty(nApiKey))
                     {
-                        var nConfig = new ApiConfig { Provider = nProvider, ApiKey = nApiKey, BaseUrl = nBaseUrl };
+                        var nConfig = new ApiConfig
+                        {
+                            Provider = nProvider,
+                            ApiKey = nApiKey,
+                            BaseUrl = nBaseUrl,
+                        };
                         var nHttp = new HttpClient();
                         var nClient = new BailianClient(nHttp, nConfig);
                         extractFacts = async prose =>
@@ -497,7 +510,8 @@ public partial class MainWindowViewModel : ViewModelBase
                             var result = await nClient.ChatAsync(
                                 novelizerSettings.SelectedModel,
                                 PicDescService.YamlExtractionPrompt,
-                                prose);
+                                prose
+                            );
                             return result.AnswerContent;
                         };
                     }
@@ -507,7 +521,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 picDescService.InitializeCleanup();
                 noticeBlock.RaiseCommonEvent($"✅ 图片描述已启用（{providerName} {model}）");
 
-            skipVision:;
+                skipVision:
+                ;
             }
             catch (Exception ex)
             {
@@ -517,10 +532,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
-            var outputMode = (IsNovelizerEnabled && IsPicDescEnabled)
-                ? OutputMode.PromptOptimized
-                : OutputMode.Readable;
-            var rawMd = await ExportPlots(contentLoader.ContentTable, picDescService, outputMode, ct);
+            var outputMode =
+                (IsNovelizerEnabled && IsPicDescEnabled)
+                    ? OutputMode.PromptOptimized
+                    : OutputMode.Readable;
+            var rawMd = await ExportPlots(
+                contentLoader.ContentTable,
+                picDescService,
+                outputMode,
+                ct
+            );
             var rawMdWithTitle = "# " + (activeTitle ?? "") + "\n\n" + rawMd;
             ExportMdAndHtmlFiles(rawMdWithTitle);
             if (IsLocalResChecked)
@@ -603,13 +624,20 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             "DeepSeek" => ApiProvider.DeepSeek,
             "百炼" => ApiProvider.Bailian,
-            _ => ApiProvider.Custom
+            _ => ApiProvider.Custom,
         };
-        LogDiag("[RunNovelizer] provider={0}, baseUrl={1}, apiKey长度={2}", selectedProviderName, baseUrl, apiKey.Length);
+        LogDiag(
+            "[RunNovelizer] provider={0}, baseUrl={1}, apiKey长度={2}",
+            selectedProviderName,
+            baseUrl,
+            apiKey.Length
+        );
 
         if (string.IsNullOrEmpty(apiKey))
         {
-            noticeBlock.RaiseCommonEvent($"❌ 未配置 {selectedProviderName} API Key，跳过小说生成。");
+            noticeBlock.RaiseCommonEvent(
+                $"❌ 未配置 {selectedProviderName} API Key，跳过小说生成。"
+            );
             LogDiag("[RunNovelizer] apiKey 为空，返回");
             return;
         }
@@ -622,23 +650,38 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             LogDiag("[RunNovelizer] 开始创建 BailianClient + NovelizerPipeline");
-            var config = new ApiConfig { Provider = provider, ApiKey = apiKey, BaseUrl = baseUrl };
+            var config = new ApiConfig
+            {
+                Provider = provider,
+                ApiKey = apiKey,
+                BaseUrl = baseUrl,
+            };
             using var http = new HttpClient();
             var log = (string msg) =>
             {
-                global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => noticeBlock.RaiseCommonEvent(msg));
+                global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    noticeBlock.RaiseCommonEvent(msg)
+                );
             };
             var client = new BailianClient(http, config, onLog: log);
             var pipeline = new NovelizerPipeline(
-                client, config, onLog: log,
+                client,
+                config,
+                onLog: log,
                 systemPrompt: systemPrompt,
                 enableMultiTurn: novelizer.EnableMultiTurn,
                 chunkSize: novelizer.ChunkSize,
-                compressInterval: novelizer.CompressInterval);
+                compressInterval: novelizer.CompressInterval
+            );
             LogDiag("[RunNovelizer] 对象创建完成，即将调用 BatchProcessAsync");
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            await pipeline.BatchProcessAsync(outputPathOfCurrentStory, [model], force: false, ct: ct);
+            await pipeline.BatchProcessAsync(
+                outputPathOfCurrentStory,
+                [model],
+                force: false,
+                ct: ct
+            );
             sw.Stop();
             LogDiag("[RunNovelizer] BatchProcessAsync 返回，耗时 {0}s", sw.Elapsed.TotalSeconds);
 
@@ -782,9 +825,15 @@ public partial class MainWindowViewModel : ViewModelBase
         List<PlotManager> allPlots,
         PicDescService? picDescService = null,
         OutputMode outputMode = OutputMode.Readable,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        return await AkpProcessor.ExportPlotsAsync(allPlots, picDescService, outputMode: outputMode, ct: ct);
+        return await AkpProcessor.ExportPlotsAsync(
+            allPlots,
+            picDescService,
+            outputMode: outputMode,
+            ct: ct
+        );
     }
 
     [RelayCommand]
@@ -800,16 +849,20 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             try
             {
-                var box = MessageBoxManager
-                    .GetMessageBoxStandard("网络连接失败",
-                        "生成过程中网络连接中断。\n\n请检查网络连接，或前往设置页面调整：\n• 代理加速（GitHub 资源下载）\n• API Key（百炼/DeepSeek 等 AI 服务）\n\n是否打开设置页面？",
-                        ButtonEnum.YesNo, Icon.Warning);
+                var box = MessageBoxManager.GetMessageBoxStandard(
+                    "网络连接失败",
+                    "生成过程中网络连接中断。\n\n请检查网络连接，或前往设置页面调整：\n• 代理加速（GitHub 资源下载）\n• API Key（百炼/DeepSeek 等 AI 服务）\n\n是否打开设置页面？",
+                    ButtonEnum.YesNo,
+                    Icon.Warning
+                );
 
                 var result = await box.ShowAsync();
                 if (result == ButtonResult.Yes)
                 {
                     var messenger = WeakReferenceMessenger.Default;
-                    messenger.Send(new OpenWindowMessage("SettingsWindow", JsonPath, selectedTabIndex: 4));
+                    messenger.Send(
+                        new OpenWindowMessage("SettingsWindow", JsonPath, selectedTabIndex: 4)
+                    );
                 }
             }
             catch
@@ -848,10 +901,12 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             try
             {
-                var box = MessageBoxManager
-                    .GetMessageBoxStandard("GitHub 连接失败",
-                        "无法连接到 GitHub，这通常是因为国内网络环境限制。\n\n是否启用代理加速？",
-                        ButtonEnum.YesNo, Icon.Warning);
+                var box = MessageBoxManager.GetMessageBoxStandard(
+                    "GitHub 连接失败",
+                    "无法连接到 GitHub，这通常是因为国内网络环境限制。\n\n是否启用代理加速？",
+                    ButtonEnum.YesNo,
+                    Icon.Warning
+                );
 
                 var result = await box.ShowAsync();
                 if (result == ButtonResult.Yes)
@@ -859,7 +914,9 @@ public partial class MainWindowViewModel : ViewModelBase
                     // 开启代理并跳转到设置页
                     ArkPlot.Core.Utilities.GitHubProxy.Prefix = "https://gh-proxy.com/";
                     var messenger = WeakReferenceMessenger.Default;
-                    messenger.Send(new OpenWindowMessage("SettingsWindow", JsonPath, selectedTabIndex: 4));
+                    messenger.Send(
+                        new OpenWindowMessage("SettingsWindow", JsonPath, selectedTabIndex: 4)
+                    );
                 }
             }
             catch
@@ -888,10 +945,11 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        var storyOutputDir = Path.Combine(OutputPath, actName);
+        var storyOutputDir = OutputPaths.ActRootAbsolute(actName);
 
         // 检测输出目录是否有小说化缓存
-        var hasNovelCache = Directory.Exists(storyOutputDir)
+        var hasNovelCache =
+            Directory.Exists(storyOutputDir)
             && Directory.GetFiles(storyOutputDir, "*_novel_*.md").Length > 0;
 
         if (!hasNovelCache)
@@ -908,7 +966,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         var messenger = WeakReferenceMessenger.Default;
-        messenger.Send(new OpenWindowMessage("TtsWindow", storyOutputDir));
+        messenger.Send(new OpenWindowMessage("TtsWindow", currentActName: actName));
     }
 
     private void SubscribeCommonNotification()
@@ -920,7 +978,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         noticeBlock.NetErrorHappen += (_, args) =>
         {
-            var s = $"\n网络错误：{args.Message}。请检查网络连接，或前往设置页面调整代理/API Key 等配置。";
+            var s =
+                $"\n网络错误：{args.Message}。请检查网络连接，或前往设置页面调整代理/API Key 等配置。";
             ConsoleOutput += s;
             HasNetworkError = true;
         };

@@ -198,9 +198,11 @@
                         VerticalAlignment="Center"
                         HorizontalAlignment="Right"
                         Foreground="#FF326CF3"
-                        BorderBrush="#FF326CF3" />
+                        BorderBrush="#FF326CF3" 
+                        IsEnabled="False" />
 
                     <ComboBox
+                        x:Name="StoryNameCombo"
                         Grid.Row="0"
                         Grid.Column="1"
                         ItemsSource="{Binding StoriesNames}"
@@ -216,8 +218,10 @@
                     <!-- Drop="JsonPathBox_Drop" -->
                     <!-- PreviewDragOver="TextBox_PreviewDragOver" -->
                     <TextBox Grid.Row="2" Grid.Column="1"
-                        Text="{Binding OutputPath}" VerticalAlignment="Center"
-                        HorizontalAlignment="Stretch" />
+                        Text="{Binding OutputPath}" 
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Stretch"
+                        IsEnabled="False" />
                 </Grid>
             </Grid>
             <StackPanel
@@ -249,6 +253,7 @@
                     设置
                 </Button>
                 <Button
+                    x:Name="TTSButton"
                     Margin="0 0 0 10"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center" Command="{Binding OpenTtsCommand}" Width="140">

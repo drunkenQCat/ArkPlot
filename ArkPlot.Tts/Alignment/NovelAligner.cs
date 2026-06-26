@@ -16,7 +16,7 @@ namespace ArkPlot.Tts.Alignment;
 /// </summary>
 public class NovelAligner
 {
-    private const int CurrentAlignmentCacheVersion = 3;
+    private const int CurrentAlignmentCacheVersion = 6;
     private readonly SqlSugarClient _db;
     private readonly GenderOverrideProvider? _genderOverrides;
 
@@ -224,6 +224,7 @@ public class NovelAligner
     // ── 锚点 + 窗口对齐 配置 ──
     internal const int WindowSize = 5;
     internal const double WindowMatchThreshold = 0.4;
+    internal const double NarratorMatchThreshold = 0.15;
 
     private static (List<AlignmentEntry> Entries, AlignmentStats Stats) AlignChapters(
         List<NovelChapter> novelChapters,
@@ -326,6 +327,7 @@ public class NovelAligner
             }
 
             // Phase 4: 构建结果
+            var chapterStart = results.Count;
             int dialogIdx = 0;
             foreach (var segment in novelChapter.Segments)
             {
@@ -352,6 +354,117 @@ public class NovelAligner
                 }
 
                 dialogIdx++;
+            }
+
+            // Phase 5: 旁白对齐 + 继承兜底
+            // ── Step 5a: 用 BigramJaccard 匹配旁白到 DB 旁白条目 ──
+            var dbNarrators = plotEntries
+                .Where(e => string.IsNullOrEmpty(e.CharacterName) && !string.IsNullOrEmpty(e.Dialog))
+                .ToList();
+
+            if (dbNarrators.Count > 0)
+            {
+                // 收集围栏柱（已对齐的对话 EntryIndex，按在 results 中的位置排序）
+                var fences = new List<(int ResultIdx, int EntryIdx)>();
+                for (int i = chapterStart; i < results.Count; i++)
+                {
+                    if (results[i].IsDialog && results[i].EntryIndex >= 0)
+                        fences.Add((i, results[i].EntryIndex));
+                }
+
+                // 构建区间：(leftFenceResultIdx, rightFenceResultIdx, leftEntryIdx, rightEntryIdx)
+                // 每个区间内的旁白只能匹配该区间内的 DB 旁白条目
+                var intervals = new List<(int LeftRes, int RightRes, int LeftEntry, int RightEntry)>();
+                int prevResIdx = chapterStart - 1;
+                int prevEntryIdx = -1;
+                foreach (var (resIdx, entryIdx) in fences)
+                {
+                    intervals.Add((prevResIdx, resIdx, prevEntryIdx, entryIdx));
+                    prevResIdx = resIdx;
+                    prevEntryIdx = entryIdx;
+                }
+                intervals.Add((prevResIdx, results.Count, prevEntryIdx, int.MaxValue));
+
+                foreach (var (leftRes, rightRes, leftEntry, rightEntry) in intervals)
+                {
+                    // 该区间内的 DB 旁白条目
+                    var candidates = dbNarrators
+                        .Where(e => e.Index > leftEntry && e.Index < rightEntry)
+                        .ToList();
+                    if (candidates.Count == 0) continue;
+
+                    // 该区间内的旁白 results
+                    int cursor = 0;
+                    int lastMatchedCursor = -1;
+
+                    for (int i = leftRes + 1; i < rightRes; i++)
+                    {
+                        if (results[i].IsDialog || results[i].EntryIndex >= 0) continue;
+
+                        var narratorNorm = NormalizeLoose(results[i].NovelText ?? "");
+                        if (string.IsNullOrEmpty(narratorNorm)) continue;
+
+                        double bestScore = 0;
+                        FormattedTextEntry? bestEntry = null;
+                        int bestCursor = cursor;
+
+                        for (int ci = cursor; ci < candidates.Count; ci++)
+                        {
+                            var entryNorm = NormalizeLoose(candidates[ci].Dialog ?? "");
+                            var score = BigramJaccard(narratorNorm, entryNorm);
+                            if (score > bestScore)
+                            {
+                                bestScore = score;
+                                bestEntry = candidates[ci];
+                                bestCursor = ci;
+                            }
+                        }
+
+                        // 允许匹配上一句相同的 DB 条目（多句共享同一 entry）
+                        if (lastMatchedCursor >= 0 && lastMatchedCursor < candidates.Count)
+                        {
+                            var prevNorm = NormalizeLoose(candidates[lastMatchedCursor].Dialog ?? "");
+                            var prevScore = BigramJaccard(narratorNorm, prevNorm);
+                            if (prevScore > bestScore)
+                            {
+                                bestScore = prevScore;
+                                bestEntry = candidates[lastMatchedCursor];
+                                bestCursor = lastMatchedCursor;
+                            }
+                        }
+
+                        if (bestScore >= NarratorMatchThreshold && bestEntry != null)
+                        {
+                            cursor = bestCursor;
+                            lastMatchedCursor = bestCursor;
+                            results[i] = results[i] with { EntryIndex = bestEntry.Index };
+                        }
+                    }
+                }
+            }
+
+            // ── Step 5b: 前向继承（匹配不上的走继承兜底）──
+            {
+                int lastIdx = -1;
+                for (int i = chapterStart; i < results.Count; i++)
+                {
+                    if (results[i].EntryIndex >= 0)
+                        lastIdx = results[i].EntryIndex;
+                    else if (lastIdx >= 0)
+                        results[i] = results[i] with { EntryIndex = lastIdx };
+                }
+            }
+
+            // ── Step 5c: 后向继承（章节开头的 -1）──
+            {
+                int nextIdx = -1;
+                for (int i = results.Count - 1; i >= chapterStart; i--)
+                {
+                    if (results[i].EntryIndex >= 0)
+                        nextIdx = results[i].EntryIndex;
+                    else if (nextIdx >= 0 && results[i].EntryIndex < 0)
+                        results[i] = results[i] with { EntryIndex = nextIdx };
+                }
             }
             }
             catch (IndexOutOfRangeException ex)
@@ -458,6 +571,29 @@ public class NovelAligner
             commonLen++;
 
         return (double)commonLen / Math.Max(a.Length, b.Length);
+    }
+
+    /// <summary>
+    /// Character bigram Jaccard 相似度。对句首改写免疫，适合旁白匹配。
+    /// </summary>
+    internal static double BigramJaccard(string a, string b)
+    {
+        if (a.Length < 2 || b.Length < 2) return 0;
+
+        var setA = new HashSet<string>();
+        for (int i = 0; i < a.Length - 1; i++)
+            setA.Add(a[i..(i + 2)]);
+
+        var setB = new HashSet<string>();
+        for (int i = 0; i < b.Length - 1; i++)
+            setB.Add(b[i..(i + 2)]);
+
+        int intersection = 0;
+        foreach (var bg in setA)
+            if (setB.Contains(bg)) intersection++;
+
+        int union = setA.Count + setB.Count - intersection;
+        return union == 0 ? 0 : (double)intersection / union;
     }
 
     private static AlignmentEntry MakeNarrationEntry(NovelSegment segment, string chapterTitle)

@@ -47,6 +47,7 @@
     <ProjectReference Include="..\ArkPlot.Tts\ArkPlot.Tts.csproj" />
     <ProjectReference Include="..\ArkPlot.Vision\ArkPlot.Vision.csproj" />
     <ProjectReference Include="..\ArkPlot.AudioNormalizer\ArkPlot.AudioNormalizer.csproj" />
+    <ProjectReference Include="..\ArkPlot.Video\ArkPlot.Video.csproj" />
     <!-- <ProjectReference Include="C:\TechProjects\About_MyRepos\HandyControl\src\Avalonia\HandyControl_Avalonia\HandyControl_Avalonia.csproj" /> -->
   </ItemGroup>
   <Target Name="CopyFilesAfterBuild" AfterTargets="Build">
@@ -64,9 +65,9 @@
 
   <Target Name="CopyTypstTemplate" AfterTargets="Build">
     <ItemGroup>
-      <TypstTemplateFiles Include="..\typst-template\**\*" />
+      <TypstTemplateFiles Include="..\typst-template\**\*" Exclude="..\typst-template\test_output*.png" />
     </ItemGroup>
-    <Copy SourceFiles="@(TypstTemplateFiles)" DestinationFolder="$(OutputPath)\%(RecursiveDir)" />
+    <Copy SourceFiles="@(TypstTemplateFiles)" DestinationFolder="$(OutputPath)typst-template\%(RecursiveDir)" />
   </Target>
 
 </Project>

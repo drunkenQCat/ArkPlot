@@ -124,9 +124,14 @@ public static partial class DialogExtractor
 
     private static void AddNarration(List<NovelSegment> segments, string text)
     {
-        var trimmed = text.Trim();
-        if (!string.IsNullOrWhiteSpace(trimmed))
-            segments.Add(new NovelSegment(trimmed, IsDialog: false));
+        // 按段落（双换行）拆分，避免将跨场景的大段旁白合并为一个 segment
+        var paragraphs = text.Split("\n\n", StringSplitOptions.RemoveEmptyEntries);
+        foreach (var para in paragraphs)
+        {
+            var trimmed = para.Trim();
+            if (!string.IsNullOrWhiteSpace(trimmed))
+                segments.Add(new NovelSegment(trimmed, IsDialog: false));
+        }
     }
 
     [GeneratedRegex(@"^#+\s+", RegexOptions.Multiline)]

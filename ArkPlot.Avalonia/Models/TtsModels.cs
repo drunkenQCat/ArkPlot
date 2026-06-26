@@ -93,6 +93,7 @@ public partial class SegmentRow : ObservableObject, IDisposable
     public string? CharacterCode { get; set; }
     public string? Gender { get; set; }
     public string ChapterTitle { get; set; } = "";
+    public int AlignmentOrder { get; set; } = -1;
 
     /// <summary>对应的 FormattedTextEntry.Index，用于 Gallery 联动。</summary>
     public int EntryIndex { get; set; } = -1;
@@ -121,7 +122,7 @@ public partial class SegmentRow : ObservableObject, IDisposable
     private bool _hasAudio;
 
     [ObservableProperty]
-    private string _audioFilePath = "";
+    public string _audioFilePath = "";
 
     [ObservableProperty]
     private string _durationText = "";
@@ -134,6 +135,9 @@ public partial class SegmentRow : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isPlaying;
+
+    // 需要传递出去的变量
+    public string AudioHash => Path.GetFileNameWithoutExtension(AudioFilePath);
 
     /// <summary>
     /// P3: 批量更新音频状态，合并为一次 PropertyChanged 通知。

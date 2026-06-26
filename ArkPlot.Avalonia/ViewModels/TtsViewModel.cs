@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
@@ -13,8 +12,8 @@ using ArkPlot.Core.Interfaces;
 using ArkPlot.Core.Model;
 using ArkPlot.Tts;
 using ArkPlot.Tts.Alignment;
-using ArkPlot.Tts.Engines;
 using ArkPlot.Tts.Models;
+using ArkPlot.Video;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -40,6 +39,8 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     private ChapterItem? _selectedChapter;
+    
+    private string _currentChapter => SelectedChapter?.Title ?? Guid.NewGuid().ToString("N");
 
     [ObservableProperty]
     private string _searchText = "";
@@ -58,7 +59,8 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     /// RowDetails 可见性模式：多选时折叠所有详情，单选/无选时按选中行显示。
     /// </summary>
     [ObservableProperty]
-    private DataGridRowDetailsVisibilityMode _rowDetailsVisibilityMode = DataGridRowDetailsVisibilityMode.VisibleWhenSelected;
+    private DataGridRowDetailsVisibilityMode _rowDetailsVisibilityMode =
+        DataGridRowDetailsVisibilityMode.VisibleWhenSelected;
 
     private SegmentRow? _previousSelectedSegment;
 
@@ -98,9 +100,10 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             _previousSelectedSegment = null;
         }
 
-        RowDetailsVisibilityMode = SelectedSegmentRows.Count > 1
-            ? DataGridRowDetailsVisibilityMode.Collapsed
-            : DataGridRowDetailsVisibilityMode.VisibleWhenSelected;
+        RowDetailsVisibilityMode =
+            SelectedSegmentRows.Count > 1
+                ? DataGridRowDetailsVisibilityMode.Collapsed
+                : DataGridRowDetailsVisibilityMode.VisibleWhenSelected;
     }
 
     // ── 状态 ──
@@ -170,7 +173,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        var entry = _allEntries.FirstOrDefault(e =>
+        var entry = _alignmentEntries.FirstOrDefault(e =>
             e.CharacterCode == config.CharacterCode && e.Portraits != null && e.Portraits.Count > 0
         );
 
@@ -209,8 +212,9 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             await Task.Delay(100); // 等待 LoadSegmentsForChapterAsync 完成
             Dispatcher.UIThread.Post(() =>
             {
-                var target = FilteredSegments
-                    .FirstOrDefault(s => s.CharacterName == config.CharacterName);
+                var target = FilteredSegments.FirstOrDefault(s =>
+                    s.CharacterName == config.CharacterName
+                );
                 if (target != null)
                 {
                     SelectedSegment = target;
@@ -226,7 +230,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             return;
 
         // 精确匹配
-        var entry = _allEntries.FirstOrDefault(e => e.EntryIndex == entryIndex);
+        var entry = _alignmentEntries.FirstOrDefault(e => e.EntryIndex == entryIndex);
 
         // 找不到精确匹配时，找同一章节里 EntryIndex 最接近且 >= entryIndex 的对白
         if (entry == null || entry.EntryIndex < 0)
@@ -238,13 +242,13 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             if (!string.IsNullOrEmpty(targetChapter))
             {
                 // 在该章节里找 EntryIndex >= entryIndex 的最近对白
-                entry = _allEntries
+                entry = _alignmentEntries
                     .Where(e => e.ChapterTitle == targetChapter && e.EntryIndex >= entryIndex)
                     .OrderBy(e => e.EntryIndex)
                     .FirstOrDefault();
 
                 // 如果往后找不到，往前找最近的
-                entry ??= _allEntries
+                entry ??= _alignmentEntries
                     .Where(e => e.ChapterTitle == targetChapter && e.EntryIndex >= 0)
                     .OrderByDescending(e => e.EntryIndex)
                     .FirstOrDefault();
@@ -274,8 +278,8 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             await Task.Delay(150);
             Dispatcher.UIThread.Post(() =>
             {
-                var target = FilteredSegments
-                    .FirstOrDefault(s => s.EntryIndex == targetEntryIndex)
+                var target =
+                    FilteredSegments.FirstOrDefault(s => s.EntryIndex == targetEntryIndex)
                     ?? FilteredSegments
                         .Where(s => s.EntryIndex >= 0)
                         .OrderBy(s => Math.Abs(s.EntryIndex - targetEntryIndex))
@@ -294,10 +298,11 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     private string _logText = "";
 
     // ── 内部 ──
+    private readonly string _actName;
     private CancellationTokenSource? _generateCts;
     private CancellationTokenSource? _audioRefreshCts;
     private CancellationTokenSource? _playCts;
-    private List<AlignmentEntry> _allEntries = [];
+    private List<AlignmentEntry> _alignmentEntries = [];
     private List<BackgroundItem> _backgrounds = [];
     private readonly VoiceManagerUnified _voiceManagerUnified;
     private readonly ITtsEngine _ttsEngine;
@@ -315,10 +320,11 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private bool _isDownloadingFfmpeg;
 
-    public TtsViewModel(string outputBaseDir)
+    public TtsViewModel(string actName)
     {
-        _outputBaseDir = outputBaseDir;
-        TtsOutputDir = Path.Combine(outputBaseDir, "tts");
+        _actName = actName;
+        _outputBaseDir = OutputPaths.ActRootAbsolute(actName);
+        TtsOutputDir = OutputPaths.TtsDir(actName);
 
         // 从 TtsSettings 构建统一音色池
         var ttsSettings = AppSettings.Load().Tts ?? TtsSettings.CreateDefaults();
@@ -361,7 +367,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     {
         await Task.Run(() =>
         {
-            var ffmpegPath = FfmpegResolver.FindFfmpeg();
+            var ffmpegPath = AudioNormalizer.FfmpegResolver.FindFfmpeg();
             if (ffmpegPath != null)
             {
                 _normalizer = new LoudnessNormalizer(ffmpegPath, onLog: Log);
@@ -522,7 +528,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             });
 
             // 回到 UI 线程：只做最终的集合赋值
-            _allEntries = newEntries;
+            _alignmentEntries = newEntries;
             _backgrounds = newBackgrounds;
 
             Chapters = new ObservableCollection<ChapterItem>(allChapters);
@@ -531,12 +537,12 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                 SelectedChapter = Chapters[0];
                 await LoadSegmentsForChapterAsync();
             }
-            VoiceConfigPanel.UpdateEntries(_allEntries);
+            VoiceConfigPanel.UpdateEntries(_alignmentEntries);
 
             totalSw.Stop();
             Log(
                 $"[perf] TOTAL LoadAlignmentAsync: {totalSw.ElapsedMilliseconds}ms | "
-                    + $"{allChapters.Count} 章节, {_allEntries.Count} 片段"
+                    + $"{allChapters.Count} 章节, {_alignmentEntries.Count} 片段"
             );
         }
         catch (Exception ex)
@@ -601,7 +607,9 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                 {
                     if (string.IsNullOrEmpty(e.Bg))
                         continue;
-                    if (e.Bg == lastBg)
+                    // 黑场不去重：场景过渡的黑场必须保留为锚点
+                    var isBlack = e.Bg.Contains("bg_black", StringComparison.OrdinalIgnoreCase);
+                    if (e.Bg == lastBg && !isBlack)
                         continue;
                     bgAnchors.Add(new BgAnchorDto(e.PlotId, e.Bg, e.Index, e.CharacterCode));
                     lastBg = e.Bg;
@@ -676,53 +684,64 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
         var chapterTitle = SelectedChapter.Title;
         var searchText = SearchText;
-        var allEntries = _allEntries;
+        var allEntries = _alignmentEntries;
         var backgrounds = _backgrounds;
 
         // 后台线程：LINQ 过滤 + 创建 SegmentRow 对象
         var rows = await Task.Run(() =>
         {
             var sw = Stopwatch.StartNew();
-            var entries = allEntries.Where(e => e.ChapterTitle == chapterTitle);
+            var chapterEntries = allEntries
+                .Where(e => e.ChapterTitle == chapterTitle)
+                .Select((e, order) => (Entry: e, Order: order));
 
             if (!string.IsNullOrWhiteSpace(searchText))
             {
                 var search = searchText.Trim();
-                entries = entries.Where(e =>
-                    (e.NovelText?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false)
+                chapterEntries = chapterEntries.Where(x =>
+                    (
+                        x.Entry.NovelText?.Contains(search, StringComparison.OrdinalIgnoreCase)
+                        ?? false
+                    )
                     || (
-                        e.CharacterName?.Contains(search, StringComparison.OrdinalIgnoreCase)
+                        x.Entry.CharacterName?.Contains(search, StringComparison.OrdinalIgnoreCase)
                         ?? false
                     )
                 );
             }
 
-            var result = entries
-                .Select(
-                    (e, i) =>
-                        new SegmentRow
-                        {
-                            Index = i + 1,
-                            CharacterName = e.IsDialog ? (e.CharacterName ?? "?") : "(旁白)",
-                            SegmentType = e.IsDialog ? "对话" : "旁白",
-                            NovelText = e.NovelText ?? "",
-                            CharacterCode = e.CharacterCode,
-                            Gender = e.Gender,
-                            ChapterTitle = e.ChapterTitle,
-                            EntryIndex = e.EntryIndex,
-                            HasAudio = false,
-                            AudioOpacity = 0.3,
-                            AudioStatus = "— — — — —",
-                        }
-                )
+            var result = chapterEntries
+                .Select(x => new SegmentRow
+                {
+                    Index = 0,
+                    CharacterName = x.Entry.IsDialog ? (x.Entry.CharacterName ?? "?") : "(旁白)",
+                    SegmentType = x.Entry.IsDialog ? "对话" : "旁白",
+                    NovelText = x.Entry.NovelText ?? "",
+                    CharacterCode = x.Entry.CharacterCode,
+                    Gender = x.Entry.Gender,
+                    ChapterTitle = x.Entry.ChapterTitle,
+                    EntryIndex = x.Entry.EntryIndex,
+                    AlignmentOrder = x.Order,
+                    HasAudio = false,
+                    AudioOpacity = 0.3,
+                    AudioStatus = "— — — — —",
+                })
                 .ToList();
 
             // 插入场景占位行：在当前章节的背景图切换处
             var chapterBgs = backgrounds
                 .Where(b => string.Equals(b.ChapterTitle, chapterTitle, StringComparison.Ordinal))
-                .Where(b => !string.IsNullOrEmpty(b.PicDescription)
-                    || (!string.IsNullOrEmpty(b.ImageUrl)
-                        && !string.Equals(b.ImageUrl, "https://media.prts.wiki/8/8a/Avg_bg_bg_black.png", StringComparison.Ordinal)))
+                .Where(b =>
+                    !string.IsNullOrEmpty(b.PicDescription)
+                    || (
+                        !string.IsNullOrEmpty(b.ImageUrl)
+                        && !string.Equals(
+                            b.ImageUrl,
+                            "https://media.prts.wiki/8/8a/Avg_bg_bg_black.png",
+                            StringComparison.Ordinal
+                        )
+                    )
+                )
                 .OrderBy(b => b.EntryIndex)
                 .ToList();
 
@@ -731,7 +750,9 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                 var insertPoints = new List<(int InsertAt, BackgroundItem Bg)>();
                 foreach (var bg in chapterBgs)
                 {
-                    var idx = result.FindIndex(r => r.EntryIndex >= bg.EntryIndex && !r.IsScenePlaceholder);
+                    var idx = result.FindIndex(r =>
+                        r.EntryIndex >= bg.EntryIndex && !r.IsScenePlaceholder
+                    );
                     if (idx >= 0)
                         insertPoints.Add((idx, bg));
                 }
@@ -739,15 +760,19 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                 // 从后往前插入，避免索引偏移
                 foreach (var (insertAt, bg) in insertPoints.OrderByDescending(p => p.InsertAt))
                 {
-                    result.Insert(insertAt, new SegmentRow
-                    {
-                        IsScenePlaceholder = true,
-                        SceneDescription = bg.PicDescription ?? "",
-                        SceneBackground = bg.ImageUrl ?? "",
-                        EntryIndex = bg.EntryIndex,
-                        ChapterTitle = chapterTitle,
-                        SegmentType = "场景",
-                    });
+                    result.Insert(
+                        insertAt,
+                        new SegmentRow
+                        {
+                            IsScenePlaceholder = true,
+                            SceneDescription = bg.PicDescription ?? "",
+                            SceneBackground = bg.ImageUrl ?? "",
+                            EntryIndex = bg.EntryIndex,
+                            AlignmentOrder = -1,
+                            ChapterTitle = chapterTitle,
+                            SegmentType = "场景",
+                        }
+                    );
                 }
             }
 
@@ -827,16 +852,26 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
             var cache = new TtsCacheService(cacheDir);
 
-            using var pipeline = new TtsPipeline(_ttsEngine, new VoiceManager(DbFactory.GetClient()), cache, normalizer: _normalizer);
+            using var pipeline = new TtsPipeline(
+                _ttsEngine,
+                new VoiceManager(DbFactory.GetClient()),
+                cache,
+                normalizer: _normalizer
+            );
 
             var segments = new List<TtsSegment>();
             var segmentIndices = new List<int>();
 
             foreach (var row in FilteredSegments)
             {
-                if (row.IsScenePlaceholder) continue;
+                if (row.IsScenePlaceholder)
+                    continue;
                 var isDialog = row.SegmentType != "旁白";
-                var voice = VoiceConfigPanel.ResolveVoiceSelection(row.CharacterName, row.Gender, isDialog);
+                var voice = VoiceConfigPanel.ResolveVoiceSelection(
+                    row.CharacterName,
+                    row.Gender,
+                    isDialog
+                );
                 segments.Add(
                     new TtsSegment(
                         row.NovelText,
@@ -912,9 +947,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task GenerateSelectedSegmentsAsync()
     {
-        var rows = SelectedSegmentRows
-            .Where(r => !r.IsScenePlaceholder)
-            .ToList();
+        var rows = SelectedSegmentRows.Where(r => !r.IsScenePlaceholder).ToList();
         if (rows.Count == 0 && SelectedSegment != null && !SelectedSegment.IsScenePlaceholder)
             rows.Add(SelectedSegment);
         if (rows.Count == 0)
@@ -930,7 +963,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        if (_allEntries.Count == 0)
+        if (_alignmentEntries.Count == 0)
             await LoadAlignmentAsync();
 
         IsGenerating = true;
@@ -944,7 +977,12 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
             var cache = new TtsCacheService(cacheDir);
 
-            using var pipeline = new TtsPipeline(_ttsEngine, new VoiceManager(DbFactory.GetClient()), cache, normalizer: _normalizer);
+            using var pipeline = new TtsPipeline(
+                _ttsEngine,
+                new VoiceManager(DbFactory.GetClient()),
+                cache,
+                normalizer: _normalizer
+            );
 
             var segments = new List<TtsSegment>();
             var segmentIndices = new List<int>();
@@ -953,7 +991,11 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             foreach (var row in rows)
             {
                 var isDialog = row.SegmentType != "旁白";
-                var voice = VoiceConfigPanel.ResolveVoiceSelection(row.CharacterName, row.Gender, isDialog);
+                var voice = VoiceConfigPanel.ResolveVoiceSelection(
+                    row.CharacterName,
+                    row.Gender,
+                    isDialog
+                );
                 var seg = new TtsSegment(
                     row.NovelText,
                     voice,
@@ -1012,7 +1054,141 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // ════════════════════════════════════════════
+    public List<VideoSegment> OrganizeVideoSegments(
+        List<SegmentRow> rows, Dictionary<int, long> indexToIdMap)
+    {
+        if (rows == null || rows.Count == 0)
+            return [];
+
+        var segments = rows
+            .Where(r => r != null && !r.IsScenePlaceholder && !string.IsNullOrWhiteSpace(r.AudioHash))
+            .Select(row =>
+            {
+                var segmentHash = row.AudioHash;
+
+                return new VideoSegment
+                {
+                    EntryId = indexToIdMap.GetValueOrDefault(row.EntryIndex),
+                    EntryIndex = row.EntryIndex,
+                    SegmentHash = segmentHash,
+                    NovelText = row.NovelText,
+                    IsDialog = string.Equals(row.SegmentType, "对话", StringComparison.Ordinal),
+                    CharacterName = string.Equals(row.SegmentType, "旁白", StringComparison.Ordinal)
+                        ? ""
+                        : row.CharacterName,
+                    AudioFilePath = row.AudioFilePath,
+                    PngOutputPath = Path.Combine(
+                        VideoCachePaths.Pages(_actName),
+                        _currentChapter,
+                        $"{segmentHash}.png"
+                    ),
+                    ClipOutputPath = Path.Combine(
+                        VideoCachePaths.Clips(_actName),
+                        _currentChapter,
+                        $"{segmentHash}.mp4"
+                    ),
+                };
+            })
+            .ToList();
+
+        return segments;
+    }
+    [RelayCommand]
+    private async Task GenerateVideoForSelectedAsync()
+    {
+        var rows = SelectedSegmentRows.Where(r => !r.IsScenePlaceholder).ToList();
+        if (rows.Count == 0 && SelectedSegment != null && !SelectedSegment.IsScenePlaceholder)
+            rows.Add(SelectedSegment);
+        if (rows.Count == 0)
+        {
+            Log("⚠️ 请先选择要生成视频的行");
+            return;
+        }
+
+        var ffmpegPath = AudioNormalizer.FfmpegResolver.FindFfmpeg();
+        if (ffmpegPath == null)
+        {
+            Log("⚠️ 未找到 FFmpeg，请先下载或安装 FFmpeg");
+            return;
+        }
+
+        var chapterTitle = rows[0].ChapterTitle;
+
+        // DAO: Index → Id 映射（解决 Index 不唯一的问题）
+        var indexToIdMap = await Task.Run(() =>
+            VideoEntryDao.GetIndexToIdMap(_actName, chapterTitle));
+
+        var segments = OrganizeVideoSegments(rows, indexToIdMap);
+
+        if (segments.Count == 0)
+        {
+            Log("⚠️ 选中行中无可渲染的视频段（需要已生成音频）");
+            return;
+        }
+
+        var isFullChapter = segments.Count == FilteredSegments.Count(r => !r.IsScenePlaceholder && r.HasAudio);
+        var outputChapterTitle = isFullChapter
+            ? chapterTitle
+            : $"{chapterTitle}__sel_{rows[0].Index:D3}-{rows[^1].Index:D3}";
+
+        var renderer = new VideoRenderer(ffmpegPath, msg => Log(msg));
+        var composer = new VideoComposer(
+            renderer,
+            _actName,
+            msg => Log(msg),
+            (completed, total) =>
+            {
+                ProgressValue = (double)completed / total * 100;
+                ProgressText = $"视频: {completed}/{total} 段";
+            }
+        );
+
+        IsGenerating = true;
+        _generateCts = new CancellationTokenSource();
+        var ct = _generateCts.Token;
+
+        try
+        {
+            ProgressValue = 0;
+            ProgressText = "准备中...";
+            Log($"🎬 开始生成视频: {outputChapterTitle} ({segments.Count} 段)");
+
+            var outputPath = await composer.ComposeChapterAsync(
+                segments,
+                outputChapterTitle,
+                cancellationToken: ct
+            );
+
+            if (!string.IsNullOrEmpty(outputPath))
+            {
+                Log($"✅ 视频已生成: {outputPath}");
+                try
+                {
+                    Process.Start(
+                        new ProcessStartInfo { FileName = outputPath, UseShellExecute = true }
+                    );
+                }
+                catch
+                {
+                    // 打开失败不影响
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Log("⚠️ 视频生成已取消");
+        }
+        catch (Exception ex)
+        {
+            Log($"❌ 视频生成失败: {ex.Message}");
+        }
+        finally
+        {
+            IsGenerating = false;
+            _generateCts = null;
+        }
+    }
+
     // 播放
     // ════════════════════════════════════════════
 
@@ -1357,11 +1533,25 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        // 找到当前片段最近的背景图
-        var bg = chapterBgs
+        // 找到当前片段最近的背景图（不区分颜色）
+        var nearestBg = chapterBgs
             .Where(b => b.EntryIndex <= effectiveEntryIndex)
             .OrderByDescending(b => b.EntryIndex)
-            .FirstOrDefault(b => !IsBlackBg(b.ImageUrl));
+            .FirstOrDefault();
+
+        BackgroundItem? bg;
+        if (nearestBg != null && IsBlackBg(nearestBg.ImageUrl))
+        {
+            // 最近的是黑场 → 向后搜索最近的非黑背景（场景过渡）
+            bg = chapterBgs
+                .Where(b => b.EntryIndex > effectiveEntryIndex)
+                .OrderBy(b => b.EntryIndex)
+                .FirstOrDefault(b => !IsBlackBg(b.ImageUrl));
+        }
+        else
+        {
+            bg = nearestBg;
+        }
 
         if (bg == null)
             bg = chapterBgs
@@ -1429,7 +1619,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     private (string, string, string, string) GetContextTexts(BackgroundItem bg)
     {
         // 从 FormattedTextEntry 获取上下文
-        var nearbyEntries = _allEntries
+        var nearbyEntries = _alignmentEntries
             .Where(e =>
                 e.EntryIndex >= 0
                 && string.Equals(e.ChapterTitle, bg.ChapterTitle, StringComparison.Ordinal)
@@ -1576,7 +1766,11 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                         ct.ThrowIfCancellationRequested();
 
                         var isDialog = seg.SegmentType != "旁白";
-                        var voice = VoiceConfigPanel.ResolveVoiceSelection(seg.CharacterName, seg.Gender, isDialog);
+                        var voice = VoiceConfigPanel.ResolveVoiceSelection(
+                            seg.CharacterName,
+                            seg.Gender,
+                            isDialog
+                        );
                         var sanitizedText = TextSanitizer.Sanitize(seg.NovelText);
                         if (string.IsNullOrWhiteSpace(sanitizedText))
                             continue;
@@ -1648,7 +1842,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
     private AlignmentEntry? FindPortraitEntry(SegmentRow seg)
     {
-        var exactMatch = _allEntries.FirstOrDefault(e =>
+        var exactMatch = _alignmentEntries.FirstOrDefault(e =>
             e.EntryIndex == seg.EntryIndex
             && string.Equals(e.ChapterTitle, seg.ChapterTitle, StringComparison.Ordinal)
             && string.Equals(e.CharacterName, seg.CharacterName, StringComparison.Ordinal)
@@ -1657,7 +1851,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         if (exactMatch != null)
             return exactMatch;
 
-        var chapterMatch = _allEntries.FirstOrDefault(e =>
+        var chapterMatch = _alignmentEntries.FirstOrDefault(e =>
             e.EntryIndex == seg.EntryIndex
             && string.Equals(e.ChapterTitle, seg.ChapterTitle, StringComparison.Ordinal)
             && string.Equals(e.CharacterName, seg.CharacterName, StringComparison.Ordinal)
@@ -1665,7 +1859,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         if (chapterMatch != null)
             return chapterMatch;
 
-        return _allEntries.FirstOrDefault(e => e.EntryIndex == seg.EntryIndex);
+        return _alignmentEntries.FirstOrDefault(e => e.EntryIndex == seg.EntryIndex);
     }
 
     private static string? SelectPortraitUrl(IEnumerable<string>? portraits, string? characterCode)

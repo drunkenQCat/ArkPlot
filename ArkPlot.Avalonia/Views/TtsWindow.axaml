@@ -180,7 +180,10 @@
       <!-- 片段表格 + Gallery + 导出按钮 -->
       <Grid RowDefinitions="*,Auto,Auto">
         <!-- 片段表格 -->
-        <controls:SegmentsDataGrid Grid.Row="0" DataContext="{Binding}"/>
+        <controls:SegmentsDataGrid 
+            x:Name="NovelSegments"
+            Grid.Row="0" 
+            DataContext="{Binding}"/>
 
         <!-- 场景 Gallery -->
         <controls:GalleryPanel Grid.Row="1" DataContext="{Binding GalleryPanel}"/>

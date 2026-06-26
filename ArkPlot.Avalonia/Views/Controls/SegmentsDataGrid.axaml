@@ -58,6 +58,10 @@
         <MenuItem Header="生成选中行"
                   Command="{Binding $parent[DataGrid].((vm:TtsViewModel)DataContext).GenerateSelectedSegmentsCommand}"
                   IsEnabled="{c:Binding !$parent[DataGrid].((vm:TtsViewModel)DataContext).IsGenerating}"/>
+        <Separator/>
+        <MenuItem Header="生成视频"
+                  Command="{Binding $parent[DataGrid].((vm:TtsViewModel)DataContext).GenerateVideoForSelectedCommand}"
+                  IsEnabled="{c:Binding !$parent[DataGrid].((vm:TtsViewModel)DataContext).IsGenerating}"/>
       </ContextMenu>
     </DataGrid.ContextMenu>
 

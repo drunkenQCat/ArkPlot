@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Typst.Net" Version="0.1.3-typst0.13.1" />
+    <PackageReference Include="xFFmpeg.NET" Version="7.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ArkPlot.Core\ArkPlot.Core.csproj" />
+    <ProjectReference Include="..\ArkPlot.Tts\ArkPlot.Tts.csproj" />
+  </ItemGroup>
+
+</Project>
