@@ -16,7 +16,7 @@ namespace ArkPlot.Tts.Alignment;
 /// </summary>
 public class NovelAligner
 {
-    private const int CurrentAlignmentCacheVersion = 6;
+    private const int CurrentAlignmentCacheVersion = 8;
     private readonly SqlSugarClient _db;
     private readonly GenderOverrideProvider? _genderOverrides;
 
@@ -326,6 +326,59 @@ public class NovelAligner
                 }
             }
 
+            // Phase 3.5: 修复被旁白切断的对话碎片
+            // 1) 未对齐碎片 → 检查是否为相邻 DB entry 的子串
+            // 2) 已对齐的短对话 → 检查是否被错配（应为相邻 DB entry 的一部分）
+            int mergeMatches = 0;
+            for (int di = 0; di < dialogs.Count; di++)
+            {
+                var novelNorm = NormalizeLoose(dialogs[di].Text);
+                if (string.IsNullOrEmpty(novelNorm)) continue;
+                bool wasAligned = alignmentMap.ContainsKey(di);
+                int currentDbIdx = wasAligned ? alignmentMap[di] : -1;
+
+                // ── 检查 1: 碎片是否为前一个已对齐 DB entry 的子串 ──
+                if (di > 0 && alignmentMap.TryGetValue(di - 1, out int prevDbIdx)
+                    && prevDbIdx != currentDbIdx)
+                {
+                    var prevDbNorm = NormalizeLoose(plotEntries[prevDbIdx].Dialog ?? "");
+                    if (!string.IsNullOrEmpty(prevDbNorm) && prevDbNorm.Contains(novelNorm))
+                    {
+                        alignmentMap[di] = prevDbIdx;
+                        mergeMatches++;
+                        continue;
+                    }
+                }
+
+                // ── 检查 2: 碎片是否为后一个已对齐 DB entry 的子串 ──
+                if (di + 1 < dialogs.Count && alignmentMap.TryGetValue(di + 1, out int nextDbIdx)
+                    && nextDbIdx != currentDbIdx)
+                {
+                    var nextDbNorm = NormalizeLoose(plotEntries[nextDbIdx].Dialog ?? "");
+                    if (!string.IsNullOrEmpty(nextDbNorm) && nextDbNorm.Contains(novelNorm))
+                    {
+                        alignmentMap[di] = nextDbIdx;
+                        mergeMatches++;
+                        continue;
+                    }
+                }
+
+                // ── 检查 3（仅未对齐）: 合并搜索 ──
+                if (!wasAligned && novelNorm.Length <= 30
+                    && di > 0 && alignmentMap.TryGetValue(di - 1, out int prevDbIdx2))
+                {
+                    var mergedNorm = NormalizeLoose(dialogs[di - 1].Text + dialogs[di].Text);
+                    if (TryFindMergedMatch(mergedNorm, prevDbIdx2, plotEntries, out int mergedDbIdx))
+                    {
+                        alignmentMap[di] = mergedDbIdx;
+                        mergeMatches++;
+                    }
+                }
+            }
+
+            if (mergeMatches > 0)
+                Console.WriteLine($"[Phase3.5] 碎片修复: {mergeMatches} 条 ({novelChapter.Title})");
+
             // Phase 4: 构建结果
             var chapterStart = results.Count;
             int dialogIdx = 0;
@@ -571,6 +624,32 @@ public class NovelAligner
             commonLen++;
 
         return (double)commonLen / Math.Max(a.Length, b.Length);
+    }
+
+    /// <summary>
+    /// 在前一个 DB entry 附近搜索合并后的文本是否匹配。
+    /// </summary>
+    private static bool TryFindMergedMatch(
+        string mergedNorm, int prevDbIdx, List<FormattedTextEntry> plotEntries,
+        out int matchedDbIdx)
+    {
+        matchedDbIdx = -1;
+        // 在前一个 DB entry 及其后续几个 entry 中搜索
+        for (int offset = 0; offset <= 3; offset++)
+        {
+            int candidateIdx = prevDbIdx + offset;
+            if (candidateIdx >= plotEntries.Count) break;
+            var dbNorm = NormalizeLoose(plotEntries[candidateIdx].Dialog ?? "");
+            if (string.IsNullOrEmpty(dbNorm)) continue;
+
+            double score = ComputeSimilarity(mergedNorm, dbNorm);
+            if (score >= WindowMatchThreshold)
+            {
+                matchedDbIdx = candidateIdx;
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>
