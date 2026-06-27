@@ -137,6 +137,29 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private string _totalProgressText = "";
 
+    // ── Debug 模式 ──
+    [ObservableProperty]
+    private bool _isDebugMode;
+
+    [ObservableProperty]
+    private string _debugInfo = "";
+
+    [ObservableProperty]
+    private bool _showUnknownCharactersOnly;
+
+    [ObservableProperty]
+    private bool _showNoAudioOnly;
+
+    partial void OnShowUnknownCharactersOnlyChanged(bool value)
+    {
+        _ = LoadSegmentsForChapterAsync();
+    }
+
+    partial void OnShowNoAudioOnlyChanged(bool value)
+    {
+        _ = LoadSegmentsForChapterAsync();
+    }
+
     // ── 子组件 ViewModel ──
     public PortraitPanelViewModel PortraitPanel { get; } = new();
     public GalleryPanelViewModel GalleryPanel { get; }
@@ -150,6 +173,65 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
         Log($"[诊断] 选中行 #{value.Index}: {value.CharacterName}, EntryIndex={value.EntryIndex}");
         UpdateComponentsForSegment(value);
+
+        if (IsDebugMode)
+            UpdateDebugInfo(value);
+    }
+
+    private void UpdateDebugInfo(SegmentRow seg)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"═══ 选中行 Debug ═══");
+        sb.AppendLine($"Index: {seg.Index} | AlignmentOrder: {seg.AlignmentOrder}");
+        sb.AppendLine($"Type: {seg.SegmentType} | IsScene: {seg.IsScenePlaceholder}");
+        sb.AppendLine($"Character: {seg.CharacterName ?? "(null)"} | Code: {seg.CharacterCode ?? "(null)"} | Gender: {seg.Gender ?? "(null)"}");
+        sb.AppendLine($"EntryIndex: {seg.EntryIndex}");
+        sb.AppendLine($"Chapter: {seg.ChapterTitle}");
+        sb.AppendLine($"Text: {(seg.NovelText?.Length > 100 ? seg.NovelText[..100] + "…" : seg.NovelText)}");
+
+        // 查 DB 对应条目
+        if (seg.EntryIndex >= 0)
+        {
+            try
+            {
+                var actName = Path.GetFileName(
+                    _outputBaseDir.TrimEnd(Path.DirectorySeparatorChar, '/', '\\'));
+                var indexToId = Video.VideoEntryDao.GetIndexToIdMap(actName, seg.ChapterTitle);
+
+                if (indexToId.TryGetValue(seg.EntryIndex, out var entryId))
+                {
+                    var db = DbFactory.GetClient();
+                    var dbEntry = db.Queryable<FormattedTextEntry>()
+                        .Where(e => e.Id == entryId)
+                        .First();
+                    if (dbEntry != null)
+                    {
+                        sb.AppendLine($"\n═══ DB Entry (Id={dbEntry.Id}, Index={dbEntry.Index}) ═══");
+                        sb.AppendLine($"CharacterName: {dbEntry.CharacterName ?? "(empty)"}");
+                        sb.AppendLine($"CharacterCode: {dbEntry.CharacterCode ?? "(null)"}");
+                        sb.AppendLine($"Dialog: {(dbEntry.Dialog?.Length > 80 ? dbEntry.Dialog[..80] + "…" : dbEntry.Dialog)}");
+                        sb.AppendLine($"Bg: {(dbEntry.Bg?.Length > 60 ? "…/" + dbEntry.Bg.Split('/').Last() : dbEntry.Bg ?? "(empty)")}");
+                        sb.AppendLine($"Portraits: {dbEntry.Portraits?.Count ?? 0}");
+                        if (dbEntry.Portraits?.Count > 0)
+                            foreach (var p in dbEntry.Portraits.Take(3))
+                                sb.AppendLine($"  → …/{p.Split('/').Last()}");
+                        sb.AppendLine($"Focus: {dbEntry.PortraitFocus}");
+                        sb.AppendLine($"Type: {dbEntry.Type ?? "(empty)"}");
+                        sb.AppendLine($"OriginalText: {(dbEntry.OriginalText?.Length > 80 ? dbEntry.OriginalText[..80] + "…" : dbEntry.OriginalText)}");
+                    }
+                }
+                else
+                {
+                    sb.AppendLine($"\n⚠ Index {seg.EntryIndex} 在 DB 中未找到 (act={actName}, chapter={seg.ChapterTitle})");
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"\nDB 查询失败: {ex.Message}");
+            }
+        }
+
+        DebugInfo = sb.ToString();
     }
 
     private void UpdateComponentsForSegment(SegmentRow seg)
@@ -710,6 +792,13 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                 );
             }
 
+            // Debug 筛选：只显示未指定角色的对话行
+            if (ShowUnknownCharactersOnly)
+            {
+                chapterEntries = chapterEntries.Where(x =>
+                    x.Entry.IsDialog && string.IsNullOrEmpty(x.Entry.CharacterName));
+            }
+
             var result = chapterEntries
                 .Select(x => new SegmentRow
                 {
@@ -797,6 +886,14 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         }
 
         FilteredSegments = new ObservableCollection<SegmentRow>(rows);
+
+        // Debug 筛选：未指定角色时也排除场景占位行
+        if (ShowUnknownCharactersOnly)
+        {
+            var scenesToRemove = FilteredSegments.Where(r => r.IsScenePlaceholder).ToList();
+            foreach (var r in scenesToRemove)
+                FilteredSegments.Remove(r);
+        }
 
         // 订阅所有音频条的播放事件（互斥）
         // 注意：AudioPlayer 是懒加载的，这里会触发初始化
@@ -1791,6 +1888,16 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             {
                 foreach (var (seg, filePath) in matches)
                     seg.UpdateAudioState(filePath);
+
+                // Debug 筛选：无音频行（排除场景占位行）
+                if (ShowNoAudioOnly)
+                {
+                    var toRemove = FilteredSegments
+                        .Where(r => !r.IsScenePlaceholder && r.HasAudio)
+                        .ToList();
+                    foreach (var r in toRemove)
+                        FilteredSegments.Remove(r);
+                }
             });
 
             swMatch.Stop();

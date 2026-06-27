@@ -43,9 +43,11 @@
           </DockPanel>
         </Border>
 
-        <!-- 角色立绘 -->
-        <controls:PortraitPanel DockPanel.Dock="Top" Margin="0,0,0,10"
-                             DataContext="{Binding PortraitPanel}"/>
+        <!-- 角色立绘 (三击开启 Debug) -->
+        <Border DockPanel.Dock="Top" Margin="0,0,0,10"
+                PointerPressed="PortraitPanel_PointerPressed">
+          <controls:PortraitPanel DataContext="{Binding PortraitPanel}"/>
+        </Border>
 
         <!-- 小说文件选择 -->
         <TextBlock DockPanel.Dock="Top" Text="小说文件" FontSize="12"
@@ -84,6 +86,41 @@
               </Flyout.FlyoutPresenterTheme>
               <controls:VoiceConfigPanel DataContext="{Binding $parent[Window].((vm:TtsViewModel)DataContext).VoiceConfigPanel}"
                                          Width="500" Height="400"/>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
+
+        <!-- Debug 模式 (三击立绘开启) -->
+        <Button DockPanel.Dock="Top" Content="🔍 Debug 🔻" Margin="0,0,0,8"
+                HorizontalAlignment="Stretch" Classes="Rounded"
+                IsVisible="{Binding IsDebugMode}">
+          <Button.Flyout>
+            <Flyout Placement="Top" ShowMode="Standard">
+              <Flyout.FlyoutPresenterTheme>
+                <ControlTheme TargetType="FlyoutPresenter">
+                  <Setter Property="Background"
+                      Value="{DynamicResource SukiInformationForeground}" />
+                  <Setter Property="CornerRadius" Value="8" />
+                  <Setter Property="BorderBrush" Value="Gray" />
+                  <Setter Property="BorderThickness" Value="1" />
+                  <Setter Property="Padding" Value="12" />
+                </ControlTheme>
+              </Flyout.FlyoutPresenterTheme>
+              <DockPanel Width="380" MaxHeight="350">
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8" Spacing="4">
+                  <CheckBox Content="只显示未指定角色 (?)"
+                            IsChecked="{Binding $parent[Window].((vm:TtsViewModel)DataContext).ShowUnknownCharactersOnly}"/>
+                  <CheckBox Content="只显示无音频行"
+                            IsChecked="{Binding $parent[Window].((vm:TtsViewModel)DataContext).ShowNoAudioOnly}"/>
+                </StackPanel>
+                <ScrollViewer>
+                  <TextBlock Text="{Binding $parent[Window].((vm:TtsViewModel)DataContext).DebugInfo}"
+                             FontFamily="Consolas,Mono"
+                             FontSize="12" TextWrapping="Wrap"
+                             Tapped="DebugInfo_Tapped"
+                             Cursor="Hand"/>
+                </ScrollViewer>
+              </DockPanel>
             </Flyout>
           </Button.Flyout>
         </Button>
