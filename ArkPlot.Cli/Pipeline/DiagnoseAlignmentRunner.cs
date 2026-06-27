@@ -69,6 +69,7 @@ public static class DiagnoseAlignmentRunner
             var phase = diag.Phase1?.Matched == true ? "Phase 1 (锚点)"
                 : diag.Phase31Matched ? "Phase 3.1 (高压缩间隙全局回退)"
                 : diag.Phase35Check4Matched ? "Phase 3.5 Check 4 (长文本拆分匹配)"
+                : diag.Phase35Check5Matched ? "Phase 3.5 Check 5 (短文本专用匹配)"
                 : diag.Phase35?.Fixed == true ? "Phase 3.5 (碎片修复)"
                 : "Phase 3 (窗口匹配)";
             Console.WriteLine($"  ✅ 已对齐到 DB EntryIndex={diag.FinalEntryIndex}，来源: {phase}");
@@ -181,7 +182,10 @@ public static class DiagnoseAlignmentRunner
         if (p35.Fixed)
             Console.WriteLine($"  ✅ 碎片修复成功 → DB[{p35.FixedToDbIdx}]");
         else
+        {
+            // Check 4 and Check 5 don't have diagnostic objects, so we just show if they were tried
             Console.WriteLine("  ❌ 碎片修复未命中");
+        }
 
         Console.WriteLine();
     }

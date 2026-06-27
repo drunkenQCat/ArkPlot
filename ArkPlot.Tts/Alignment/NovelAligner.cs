@@ -443,6 +443,18 @@ public class NovelAligner
                         continue;
                     }
                 }
+
+                // ── 检查 5（仅未对齐且文本很短）: 短文本专用匹配 ──
+                if (!wasAligned && dialogs[di].Text.Length < 10)
+                {
+                    var shortMatch = TryShortTextMatch(di, dialogs, plotEntries, alignmentMap);
+                    if (shortMatch >= 0)
+                    {
+                        alignmentMap[di] = shortMatch;
+                        mergeMatches++;
+                        continue;
+                    }
+                }
             }
 
             if (mergeMatches > 0)
@@ -824,6 +836,97 @@ public class NovelAligner
         }
 
         return -1;
+    }
+
+    /// <summary>
+    /// 短文本专用匹配：在已对齐邻居附近搜索包含该短文本的 DB entry。
+    /// </summary>
+    private static int TryShortTextMatch(
+        int dialogIdx, List<NovelSegment> dialogs, 
+        List<FormattedTextEntry> plotEntries, Dictionary<int, int> alignmentMap)
+    {
+        var novelText = dialogs[dialogIdx].Text;
+        var novelNorm = NormalizeNoPunct(novelText);
+        if (string.IsNullOrEmpty(novelNorm) || novelNorm.Length < 2)
+            return -1;
+
+        // 找到最近的已对齐邻居
+        int? prevAligned = null;
+        int? nextAligned = null;
+        
+        for (int i = dialogIdx - 1; i >= Math.Max(0, dialogIdx - 5); i--)
+        {
+            if (alignmentMap.TryGetValue(i, out var dbIdx))
+            {
+                prevAligned = dbIdx;
+                break;
+            }
+        }
+        
+        for (int i = dialogIdx + 1; i < Math.Min(dialogs.Count, dialogIdx + 6); i++)
+        {
+            if (alignmentMap.TryGetValue(i, out var dbIdx))
+            {
+                nextAligned = dbIdx;
+                break;
+            }
+        }
+
+        // 确定搜索范围：在已对齐邻居附近（±10 个 DB entries）
+        int searchStart = 0;
+        int searchEnd = plotEntries.Count - 1;
+        
+        if (prevAligned.HasValue && nextAligned.HasValue)
+        {
+            // 有前后邻居，搜索它们之间的范围
+            searchStart = Math.Max(0, Math.Min(prevAligned.Value, nextAligned.Value) - 3);
+            searchEnd = Math.Min(plotEntries.Count - 1, Math.Max(prevAligned.Value, nextAligned.Value) + 3);
+        }
+        else if (prevAligned.HasValue)
+        {
+            searchStart = Math.Max(0, prevAligned.Value - 5);
+            searchEnd = Math.Min(plotEntries.Count - 1, prevAligned.Value + 15);
+        }
+        else if (nextAligned.HasValue)
+        {
+            searchStart = Math.Max(0, nextAligned.Value - 15);
+            searchEnd = Math.Min(plotEntries.Count - 1, nextAligned.Value + 5);
+        }
+
+        // 在搜索范围内查找包含该短文本的 DB entry
+        int bestMatch = -1;
+        double bestScore = 0;
+
+        for (int di = searchStart; di <= searchEnd; di++)
+        {
+            var dbNorm = NormalizeNoPunct(plotEntries[di].Dialog ?? "");
+            if (string.IsNullOrEmpty(dbNorm) || dbNorm.Length < novelNorm.Length)
+                continue;
+
+            // 检查是否为子串关系
+            if (dbNorm.Contains(novelNorm))
+            {
+                // 计算得分：子串匹配 + 位置接近度
+                double substringScore = (double)novelNorm.Length / dbNorm.Length;
+                double positionScore = 0;
+                
+                if (prevAligned.HasValue)
+                    positionScore = 1.0 / (1.0 + Math.Abs(di - prevAligned.Value));
+                else if (nextAligned.HasValue)
+                    positionScore = 1.0 / (1.0 + Math.Abs(di - nextAligned.Value));
+                
+                double totalScore = substringScore * 0.7 + positionScore * 0.3;
+                
+                if (totalScore > bestScore)
+                {
+                    bestScore = totalScore;
+                    bestMatch = di;
+                }
+            }
+        }
+
+        // 要求最低得分阈值
+        return bestScore >= 0.1 ? bestMatch : -1;
     }
 
     /// <summary>
@@ -1225,6 +1328,19 @@ public class NovelAligner
                 p35.FixedToDbIdx = splitMatch;
                 diag.FinalEntryIndex = splitMatch;
                 diag.Phase35Check4Matched = true;
+            }
+        }
+
+        // ── 检查 5（仅未对齐且文本很短）: 短文本专用匹配 ──
+        if (!p35.Fixed && !wasAligned && targetText.Length < 10)
+        {
+            var shortMatch = TryShortTextMatch(targetIdx, dialogs, plotEntries, alignmentMap);
+            if (shortMatch >= 0)
+            {
+                p35.Fixed = true;
+                p35.FixedToDbIdx = shortMatch;
+                diag.FinalEntryIndex = shortMatch;
+                diag.Phase35Check5Matched = true;
             }
         }
 
