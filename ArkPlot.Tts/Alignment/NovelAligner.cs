@@ -16,7 +16,7 @@ namespace ArkPlot.Tts.Alignment;
 /// </summary>
 public class NovelAligner
 {
-    private const int CurrentAlignmentCacheVersion = 8;
+    private const int CurrentAlignmentCacheVersion = 9;
     private readonly SqlSugarClient _db;
     private readonly GenderOverrideProvider? _genderOverrides;
 

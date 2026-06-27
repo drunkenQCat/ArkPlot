@@ -117,7 +117,12 @@ public static partial class DialogExtractor
     public static string Normalize(string text)
     {
         text = text.Replace("......", "\u2026");
+        text = text.Replace(".....", "\u2026");
+        text = text.Replace("....", "\u2026");
         text = text.Replace("\u2025", "\u2026");
+        // 统一多个连续省略号为单个
+        while (text.Contains("\u2026\u2026"))
+            text = text.Replace("\u2026\u2026", "\u2026");
         text = WhitespaceRegex().Replace(text, " ").Trim();
         return text;
     }
