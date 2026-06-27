@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="ArkPlot.Tts.Tests" />
+    <InternalsVisibleTo Include="ArkPlot.Cli" />
   </ItemGroup>
 
   <ItemGroup>

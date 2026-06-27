@@ -51,23 +51,35 @@ public sealed class Phase35MergeTest : IDisposable
         Console.WriteLine($"\n═══ 对齐统计 ═══");
         Console.WriteLine($"对话: {stats.AlignedDialogs}/{stats.TotalDialogs} 已对齐 " +
                           $"(锚点={stats.AnchorMatches}, 窗口={stats.WindowMatches})");
+        Console.WriteLine($"未对齐: {stats.UnalignedDialogs}");
 
-        // ── 看 CW-ST-1 对齐结果 (idx 68-80 范围附近的对话) ──
-        var cwst1 = entries.Where(e => e.ChapterTitle.Contains("CW-ST-1")).ToList();
-        Console.WriteLine($"\n═══ CW-ST-1 对齐结果 (含 idx 68-80 附近的对话) ═══");
-        foreach (var e in cwst1.Where(e => e.IsDialog && e.EntryIndex >= 68 && e.EntryIndex <= 80))
-        {
-            var text = e.NovelText.Length > 60 ? e.NovelText[..60] + "…" : e.NovelText;
-            Console.WriteLine($"  → idx={e.EntryIndex,3} [{e.CharacterName ?? "?",-10}] \"{text}\"");
-        }
+        // ── 全局未对齐对话分析 ──
+        var allUnaligned = entries.Where(e => e.IsDialog && e.EntryIndex < 0).ToList();
+        Console.WriteLine($"\n═══ 全局未对齐对话 ({allUnaligned.Count} 条) ═══");
 
-        // ── 也看 EntryIndex=-1 的对话 ──
-        var unaligned = cwst1.Where(e => e.IsDialog && e.EntryIndex < 0).ToList();
-        Console.WriteLine($"\n═══ CW-ST-1 未对齐对话 ({unaligned.Count} 条) ═══");
-        foreach (var e in unaligned)
+        if (allUnaligned.Count > 0)
         {
-            var text = e.NovelText.Length > 60 ? e.NovelText[..60] + "…" : e.NovelText;
-            Console.WriteLine($"  → idx={e.EntryIndex,3} [{e.CharacterName ?? "?",-10}] \"{text}\"");
+            // 按长度分布
+            var byLen = allUnaligned
+                .GroupBy(e => e.NovelText.Length switch { <= 10 => "≤10字", <= 20 => "11-20字", <= 40 => "21-40字", _ => "40+字" })
+                .OrderBy(g => g.Key);
+            foreach (var g in byLen)
+                Console.WriteLine($"  {g.Key}: {g.Count()} 条");
+
+            // 按章节分布
+            var byChapter = allUnaligned.GroupBy(e => e.ChapterTitle).OrderBy(g => g.Key);
+            Console.WriteLine($"\n── 按章节分布 ──");
+            foreach (var g in byChapter)
+                Console.WriteLine($"  {g.Key}: {g.Count()} 条");
+
+            // 典型样本
+            Console.WriteLine($"\n── 样本（前 30）──");
+            foreach (var e in allUnaligned.Take(30))
+            {
+                var text = e.NovelText.Replace('\n', ' ');
+                if (text.Length > 70) text = text[..70] + "…";
+                Console.WriteLine($"  [{e.ChapterTitle,-15}] [{e.CharacterName ?? "—",-8}] \"{text}\"");
+            }
         }
     }
 

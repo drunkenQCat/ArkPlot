@@ -36,11 +36,69 @@ public static partial class DialogExtractor
     /// <summary>
     /// 从一段正文中提取旁白/对话交替的片段。
     /// 识别中文弯引号 "" 和 ASCII 直引号 "" 内的内容作为对话。
+    /// 按 \n\n 分段，为每个自然段内的片段分配相同的 Paragraph 索引。
     /// </summary>
     public static List<NovelSegment> ExtractSegments(string text)
     {
         var segments = new List<NovelSegment>();
+        var paragraphs = text.Split("\n\n", StringSplitOptions.RemoveEmptyEntries);
+
+        for (int p = 0; p < paragraphs.Length; p++)
+        {
+            var para = paragraphs[p].Trim();
+            if (string.IsNullOrWhiteSpace(para)) continue;
+
+            var paraSegments = ExtractSegmentsCore(para);
+            foreach (var seg in paraSegments)
+                segments.Add(seg with { Paragraph = p });
+        }
+
+        return segments;
+    }
+
+    /// <summary>
+    /// 从单个自然段中提取旁白/对话交替的片段（不含 Paragraph 分配）。
+    /// </summary>
+    private static List<NovelSegment> ExtractSegmentsCore(string text)
+    {
+        var segments = new List<NovelSegment>();
         int pos = 0;
+        
+        // 预扫描：统计段落中短引号内容的数量
+        int shortQuoteCount = 0;
+        int scanPos = 0;
+        while (scanPos < text.Length)
+        {
+            int curveOpen = text.IndexOf('\u201C', scanPos);
+            int straightOpen = text.IndexOf('"', scanPos);
+            int openIdx = -1;
+            char closeChar = '\0';
+            
+            if (curveOpen >= 0 && (straightOpen < 0 || curveOpen < straightOpen))
+            {
+                openIdx = curveOpen;
+                closeChar = '\u201D';
+            }
+            else if (straightOpen >= 0)
+            {
+                openIdx = straightOpen;
+                closeChar = '"';
+            }
+            
+            if (openIdx < 0) break;
+            
+            int closeIdx = text.IndexOf(closeChar, openIdx + 1);
+            if (closeIdx < 0) break;
+            
+            var dialog = text[(openIdx + 1)..closeIdx].Trim();
+            if (dialog.Length <= 4)
+                shortQuoteCount++;
+            
+            scanPos = closeIdx + 1;
+        }
+        
+        // 如果段落包含多个短引号内容，则所有短引号都视为引用词
+        bool hasMultipleShortQuotes = shortQuoteCount >= 2;
 
         while (pos < text.Length)
         {
@@ -83,9 +141,44 @@ public static partial class DialogExtractor
                 break;
             }
 
+            // 提取引号内的内容
             var dialog = text[(openIdx + 1)..closeIdx].Trim();
+            
+            // 启发式过滤：判断是否为真正的对话
+            // 1. 如果引号内容很短（<=4字符）且段落包含多个短引号，则视为引用词
+            // 2. 如果引号内容很短（<=4字符）且前后都有叙述文本，则视为引用词
+            bool isLikelyDialog = true;
+            if (dialog.Length <= 4)
+            {
+                if (hasMultipleShortQuotes)
+                {
+                    isLikelyDialog = false;
+                }
+                else
+                {
+                    var beforeQuote = text[pos..openIdx].Trim();
+                    var afterQuote = closeIdx + 1 < text.Length ? text[(closeIdx + 1)..].Trim() : "";
+                    
+                    // 如果引号前有文本（>=5字符）且引号后也有文本（>=5字符），则可能是引用词
+                    if (beforeQuote.Length >= 5 && afterQuote.Length >= 5)
+                    {
+                        isLikelyDialog = false;
+                    }
+                }
+            }
+            
             if (!string.IsNullOrWhiteSpace(dialog))
-                segments.Add(new NovelSegment(dialog, IsDialog: true));
+            {
+                if (isLikelyDialog)
+                {
+                    segments.Add(new NovelSegment(dialog, 0, IsDialog: true));
+                }
+                else
+                {
+                    // 将短引号内容作为叙述处理
+                    AddNarration(segments, dialog);
+                }
+            }
 
             pos = closeIdx + 1;
         }
@@ -129,14 +222,9 @@ public static partial class DialogExtractor
 
     private static void AddNarration(List<NovelSegment> segments, string text)
     {
-        // 按段落（双换行）拆分，避免将跨场景的大段旁白合并为一个 segment
-        var paragraphs = text.Split("\n\n", StringSplitOptions.RemoveEmptyEntries);
-        foreach (var para in paragraphs)
-        {
-            var trimmed = para.Trim();
-            if (!string.IsNullOrWhiteSpace(trimmed))
-                segments.Add(new NovelSegment(trimmed, IsDialog: false));
-        }
+        var trimmed = text.Trim();
+        if (!string.IsNullOrWhiteSpace(trimmed))
+            segments.Add(new NovelSegment(trimmed, 0, IsDialog: false));
     }
 
     [GeneratedRegex(@"^#+\s+", RegexOptions.Multiline)]

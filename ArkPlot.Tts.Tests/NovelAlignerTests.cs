@@ -111,10 +111,11 @@ public class NovelAlignerTests
     {
         var dialogs = new List<NovelSegment>
         {
-            new("如若此后百年千年", true),
-            new("先生，您生病了。", true),
-            new("什么？我好得很。", true),
+            new("如若此后百年千年", 0, true),
+            new("先生，您生病了。", 1, true),
+            new("什么？我好得很。", 2, true),
         };
+        var units = NovelAligner.BuildSearchUnits(dialogs);
         var dbEntries = new List<FormattedTextEntry>
         {
             MakeDialog(0, null, "如若此后百年千年"),
@@ -124,7 +125,7 @@ public class NovelAlignerTests
             MakeDialog(11, "监狱负责人", "什么？我好得很。"),
         };
 
-        var anchors = NovelAligner.FindAnchors(dialogs, dbEntries);
+        var anchors = NovelAligner.FindAnchors(units, dbEntries);
 
         Assert.Equal(3, anchors.Count);
         Assert.Equal((0, 0), anchors[0]); // 如若此后百年千年 → entry 0
@@ -138,9 +139,10 @@ public class NovelAlignerTests
         // Novel has 2 dialogs, DB has 5 entries (3 were merged by LLM)
         var dialogs = new List<NovelSegment>
         {
-            new("如若此后百年千年", true),
-            new("先生，您生病了。", true),
+            new("如若此后百年千年", 0, true),
+            new("先生，您生病了。", 1, true),
         };
+        var units = NovelAligner.BuildSearchUnits(dialogs);
         var dbEntries = new List<FormattedTextEntry>
         {
             MakeDialog(0, null, "如若此后百年千年"),
@@ -150,7 +152,7 @@ public class NovelAlignerTests
             MakeDialog(10, "精英打扮的男性", "先生，您生病了。"),
         };
 
-        var anchors = NovelAligner.FindAnchors(dialogs, dbEntries);
+        var anchors = NovelAligner.FindAnchors(units, dbEntries);
 
         Assert.Equal(2, anchors.Count);
         Assert.Equal(0, anchors[0].DbIdx);  // first dialog → entry 0
@@ -162,21 +164,22 @@ public class NovelAlignerTests
     {
         var dialogs = new List<NovelSegment>
         {
-            new("嗯", true),   // too short after normalize
-            new("你好世界今天天气不错", true),
+            new("嗯", 0, true),   // too short after normalize
+            new("你好世界今天天气不错", 1, true),
         };
+        var units = NovelAligner.BuildSearchUnits(dialogs);
         var dbEntries = new List<FormattedTextEntry>
         {
             MakeDialog(0, null, "嗯"),
             MakeDialog(1, null, "你好世界今天天气不错"),
         };
 
-        var anchors = NovelAligner.FindAnchors(dialogs, dbEntries);
+        var anchors = NovelAligner.FindAnchors(units, dbEntries);
 
         // "嗯" is 1 char after normalize → skipped
         // "你好世界今天天气不错" should match
         Assert.Single(anchors);
-        Assert.Equal(1, anchors[0].NovelIdx);
+        Assert.Equal(1, anchors[0].UnitIdx);
     }
 
     [Fact]

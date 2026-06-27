@@ -16,7 +16,7 @@ namespace ArkPlot.Tts.Alignment;
 /// </summary>
 public class NovelAligner
 {
-    private const int CurrentAlignmentCacheVersion = 9;
+    private const int CurrentAlignmentCacheVersion = 14;
     private readonly SqlSugarClient _db;
     private readonly GenderOverrideProvider? _genderOverrides;
 
@@ -222,9 +222,9 @@ public class NovelAligner
     }
 
     // ── 锚点 + 窗口对齐 配置 ──
-    internal const int WindowSize = 5;
-    internal const double WindowMatchThreshold = 0.4;
-    internal const double NarratorMatchThreshold = 0.15;
+    public const int WindowSize = 5;
+    public const double WindowMatchThreshold = 0.4;
+    public const double NarratorMatchThreshold = 0.15;
 
     private static (List<AlignmentEntry> Entries, AlignmentStats Stats) AlignChapters(
         List<NovelChapter> novelChapters,
@@ -255,25 +255,36 @@ public class NovelAligner
             var dialogs = novelChapter.Segments.Where(s => s.IsDialog).ToList();
             totalDialogs += dialogs.Count;
 
-            // Phase 1: 找锚点（高置信度文本匹配）
-            var anchors = FindAnchors(dialogs, plotEntries);
-            anchorMatches += anchors.Count;
+            // 构建搜索单元：同段落连续对话合并
+            var units = BuildSearchUnits(dialogs);
 
-            // Phase 2: 构建对齐映射（novel dialog idx → DB entry idx）
-            var alignmentMap = new Dictionary<int, int>();
-            foreach (var (ni, di) in anchors)
+            #region Phase 1: 锚点匹配（高置信度文本匹配）
+            var anchors = FindAnchors(units, plotEntries);
+            anchorMatches += anchors.Count;
+            #endregion
+
+            #region Phase 2: 构建对齐映射（unit idx → DB entry idx → 展开为 dialog idx）
+            var unitAlignMap = new Dictionary<int, int>();
+            foreach (var (ui, di) in anchors)
             {
                 if (di < 0 || di >= plotEntries.Count)
                     throw new IndexOutOfRangeException(
                         $"Anchor DbIdx out of range: di={di}, plotEntries.Count={plotEntries.Count}, " +
                         $"chapter='{novelChapter.Title}', plot='{plot.Title}', plotId={plot.Id}");
-                alignmentMap[ni] = di;
+                unitAlignMap[ui] = di;
             }
 
-            // Phase 3: 锚点间的窗口匹配
+            // 展开到 dialog 级别
+            var alignmentMap = new Dictionary<int, int>();
+            foreach (var (ui, dbIdx) in unitAlignMap)
+                foreach (var dIdx in units[ui].DialogIndices)
+                    alignmentMap[dIdx] = dbIdx;
+            #endregion
+
+            #region Phase 3: 锚点间的窗口匹配
             var anchorBounds = new List<(int Ni, int Di)> { (-1, -1) };
             anchorBounds.AddRange(anchors);
-            anchorBounds.Add((dialogs.Count, plotEntries.Count));
+            anchorBounds.Add((units.Count, plotEntries.Count));
 
             for (int k = 0; k < anchorBounds.Count - 1; k++)
             {
@@ -287,8 +298,8 @@ public class NovelAligner
                 int dbCursor = 0;
                 for (int i = 0; i < nGap; i++)
                 {
-                    int novelIdx = prevNi + 1 + i;
-                    var novelNorm = NormalizeLoose(dialogs[novelIdx].Text);
+                    int unitIdx = prevNi + 1 + i;
+                    var novelNorm = NormalizeLoose(units[unitIdx].MergedText);
                     if (string.IsNullOrEmpty(novelNorm)) continue;
 
                     int expectedPos = dGap > 1 ? (int)((long)i * dGap / nGap) : 0;
@@ -319,14 +330,55 @@ public class NovelAligner
 
                     if (bestJ >= 0)
                     {
-                        alignmentMap[novelIdx] = prevDi + 1 + bestJ;
+                        var matchedDbIdx = prevDi + 1 + bestJ;
+                        // 展开到 dialog 级别
+                        foreach (var dIdx in units[unitIdx].DialogIndices)
+                            alignmentMap[dIdx] = matchedDbIdx;
                         windowMatches++;
                         dbCursor = bestJ + 1;
                     }
                 }
             }
+            #endregion
 
-            // Phase 3.5: 修复被旁白切断的对话碎片
+            #region Phase 3.1: 高压缩间隙全局回退
+            // 当间隙压缩比 > 2 时，对未对齐的 unit 在整个 plotEntries 中搜索
+            for (int k = 0; k < anchorBounds.Count - 1; k++)
+            {
+                var (prevNi, prevDi) = anchorBounds[k];
+                var (nextNi, nextDi) = anchorBounds[k + 1];
+                int nGap = nextNi - prevNi - 1;
+                int dGap = nextDi - prevDi - 1;
+                if (nGap <= 0 || dGap <= 0) continue;
+                if ((double)nGap / dGap <= 2.0) continue; // 压缩比 <= 2，跳过
+
+                for (int i = 0; i < nGap; i++)
+                {
+                    int unitIdx = prevNi + 1 + i;
+                    if (units[unitIdx].DialogIndices.Any(dIdx => alignmentMap.ContainsKey(dIdx)))
+                        continue; // 已对齐，跳过
+
+                    var unitNorm = NormalizeNoPunct(units[unitIdx].MergedText);
+                    if (unitNorm.Length < 3) continue;
+
+                    // 全局搜索
+                    for (int di = 0; di < plotEntries.Count; di++)
+                    {
+                        var dbNorm = NormalizeNoPunct(plotEntries[di].Dialog ?? "");
+                        if (dbNorm.Length < 3) continue;
+                        if (IsAnchorMatch(unitNorm, dbNorm))
+                        {
+                            foreach (var dIdx in units[unitIdx].DialogIndices)
+                                alignmentMap[dIdx] = di;
+                            anchorMatches++;
+                            break;
+                        }
+                    }
+                }
+            }
+            #endregion
+
+            #region Phase 3.5: 修复被旁白切断的对话碎片
             // 1) 未对齐碎片 → 检查是否为相邻 DB entry 的子串
             // 2) 已对齐的短对话 → 检查是否被错配（应为相邻 DB entry 的一部分）
             int mergeMatches = 0;
@@ -370,16 +422,22 @@ public class NovelAligner
                     var mergedNorm = NormalizeLoose(dialogs[di - 1].Text + dialogs[di].Text);
                     if (TryFindMergedMatch(mergedNorm, prevDbIdx2, plotEntries, out int mergedDbIdx))
                     {
-                        alignmentMap[di] = mergedDbIdx;
-                        mergeMatches++;
+                        // 验证：当前片段必须是匹配到的 DB 条目的子串
+                        var matchedDbNorm = NormalizeNoPunct(plotEntries[mergedDbIdx].Dialog ?? "");
+                        if (!string.IsNullOrEmpty(matchedDbNorm) && matchedDbNorm.Contains(NormalizeNoPunct(dialogs[di].Text)))
+                        {
+                            alignmentMap[di] = mergedDbIdx;
+                            mergeMatches++;
+                        }
                     }
                 }
             }
 
             if (mergeMatches > 0)
                 Console.WriteLine($"[Phase3.5] 碎片修复: {mergeMatches} 条 ({novelChapter.Title})");
+            #endregion
 
-            // Phase 4: 构建结果
+            #region Phase 4: 构建结果
             var chapterStart = results.Count;
             int dialogIdx = 0;
             foreach (var segment in novelChapter.Segments)
@@ -408,8 +466,9 @@ public class NovelAligner
 
                 dialogIdx++;
             }
+            #endregion
 
-            // Phase 5: 旁白对齐 + 继承兜底
+            #region Phase 5: 旁白对齐 + 继承兜底
             // ── Step 5a: 用 BigramJaccard 匹配旁白到 DB 旁白条目 ──
             var dbNarrators = plotEntries
                 .Where(e => string.IsNullOrEmpty(e.CharacterName) && !string.IsNullOrEmpty(e.Dialog))
@@ -519,6 +578,7 @@ public class NovelAligner
                         results[i] = results[i] with { EntryIndex = nextIdx };
                 }
             }
+            #endregion
             }
             catch (IndexOutOfRangeException ex)
             {
@@ -539,29 +599,66 @@ public class NovelAligner
         return (results, stats);
     }
 
+    // ── SearchUnit 构建 ──
+
+    /// <summary>
+    /// 将同段落连续对话合并为搜索单元。
+    /// 限制：合并后的文本长度不超过第一个片段长度的 2 倍，避免过度合并。
+    /// </summary>
+    internal static List<SearchUnit> BuildSearchUnits(List<NovelSegment> dialogs)
+    {
+        var units = new List<SearchUnit>();
+        int i = 0;
+        while (i < dialogs.Count)
+        {
+            var paragraph = dialogs[i].Paragraph;
+            var indices = new List<int>();
+            var texts = new List<string>();
+            var firstLen = dialogs[i].Text.Length;
+            var maxLen = firstLen * 2; // 限制合并长度
+
+            while (i < dialogs.Count && dialogs[i].Paragraph == paragraph)
+            {
+                // 检查合并后是否会超长
+                var newMerged = string.Join("", texts) + dialogs[i].Text;
+                if (indices.Count > 0 && newMerged.Length > maxLen)
+                {
+                    // 超过限制，停止合并（但不包括当前这个）
+                    break;
+                }
+
+                indices.Add(i);
+                texts.Add(dialogs[i].Text);
+                i++;
+            }
+
+            units.Add(new SearchUnit(string.Join("", texts), paragraph, indices));
+        }
+        return units;
+    }
+
     // ── 锚点查找 ──
 
-    internal static List<(int NovelIdx, int DbIdx)> FindAnchors(
-        List<NovelSegment> novelDialogs,
+    internal static List<(int UnitIdx, int DbIdx)> FindAnchors(
+        List<SearchUnit> units,
         List<FormattedTextEntry> dbEntries)
     {
         var anchors = new List<(int, int)>();
         int dbCursor = 0;
 
-        for (int ni = 0; ni < novelDialogs.Count; ni++)
+        for (int ui = 0; ui < units.Count; ui++)
         {
-            var novelNorm = NormalizeStrict(novelDialogs[ni].Text);
+            var novelNorm = NormalizeNoPunct(units[ui].MergedText);
             if (novelNorm.Length < 3) continue;
 
             for (int di = dbCursor; di < dbEntries.Count; di++)
             {
-                var dbText = dbEntries[di].Dialog ?? "";
-                var dbNorm = NormalizeStrict(dbText);
+                var dbNorm = NormalizeNoPunct(dbEntries[di].Dialog ?? "");
                 if (dbNorm.Length < 3) continue;
 
                 if (IsAnchorMatch(novelNorm, dbNorm))
                 {
-                    anchors.Add((ni, di));
+                    anchors.Add((ui, di));
                     dbCursor = di + 1;
                     break;
                 }
@@ -572,6 +669,25 @@ public class NovelAligner
     }
 
     // ── 文本标准化 ──
+
+    /// <summary>
+    /// 去除所有标点符号，只保留字母、数字和中文字符。
+    /// 用于锚点匹配前的预处理，避免标点差异导致匹配失败。
+    /// </summary>
+    internal static string NormalizeNoPunct(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        foreach (var c in text)
+        {
+            // 保留字母、数字、中文字符（CJK Unified Ideographs）
+            if (char.IsLetterOrDigit(c) || (c >= 0x4E00 && c <= 0x9FFF) ||
+                (c >= 0x3400 && c <= 0x4DBF) || (c >= 0x20000 && c <= 0x2A6DF))
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
+    }
 
     internal static string NormalizeStrict(string text)
     {
@@ -731,6 +847,323 @@ public class NovelAligner
         return code;
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    //  Diagnostic: 追踪单个片段在各 Phase 中的匹配过程
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 诊断单个小说片段的对齐过程：追踪目标文本在 Phase 1/3/3.5 中的匹配细节。
+    /// </summary>
+    /// <param name="novelFilePath">小说 md 文件路径。</param>
+    /// <param name="chapterTitle">目标章节标题（如 "CW-1 迷雾重重 行动前"）。</param>
+    /// <param name="targetText">目标小说文本（如 "真有趣，"）。</param>
+    public async Task<AlignmentDiagnostic> DiagnoseChapterAsync(
+        string novelFilePath, string chapterTitle, string targetText)
+    {
+        var fileName = Path.GetFileNameWithoutExtension(novelFilePath);
+        var actName = ExtractActName(fileName);
+        var novelText = await File.ReadAllTextAsync(novelFilePath);
+        var novelChapters = DialogExtractor.ExtractChapters(novelText);
+
+        var novelChapter = novelChapters.FirstOrDefault(c => c.Title == chapterTitle);
+        if (novelChapter == null)
+            throw new InvalidOperationException($"章节 '{chapterTitle}' 未找到。可用章节: {string.Join(", ", novelChapters.Select(c => c.Title))}");
+
+        var dialogs = novelChapter.Segments.Where(s => s.IsDialog).ToList();
+        var targetIdx = dialogs.FindIndex(d => d.Text == targetText || d.Text.Contains(targetText));
+        if (targetIdx < 0)
+            throw new InvalidOperationException($"文本 '{targetText}' 在章节 '{chapterTitle}' 的对话中未找到。");
+
+        var (plots, entriesByPlot, allEntriesByPlot) = await LoadActDataAsync(actName);
+        var plot = plots.FirstOrDefault(p =>
+            p.Title.Contains(chapterTitle) || chapterTitle.Contains(p.Title));
+        if (plot == null)
+            throw new InvalidOperationException($"章节 '{chapterTitle}' 在 DB 中未找到对应 Plot。");
+
+        if (!entriesByPlot.TryGetValue(plot.Id, out var plotEntries))
+            throw new InvalidOperationException($"Plot '{plot.Title}' (Id={plot.Id}) 无 FormattedTextEntry 数据。");
+
+        var diag = new AlignmentDiagnostic
+        {
+            TargetText = targetText,
+            ChapterTitle = chapterTitle,
+            NovelFilePath = novelFilePath,
+            NovelDialogIdx = targetIdx
+        };
+
+        // 构建搜索单元
+        var units = BuildSearchUnits(dialogs);
+        var targetUnitIdx = -1;
+        for (int ui = 0; ui < units.Count; ui++)
+        {
+            if (units[ui].DialogIndices.Contains(targetIdx))
+            {
+                targetUnitIdx = ui;
+                break;
+            }
+        }
+
+        var novelNormStrict = NormalizeStrict(targetText);
+        var novelNormLoose = NormalizeLoose(targetText);
+        var targetUnitNormStrict = targetUnitIdx >= 0 ? NormalizeStrict(units[targetUnitIdx].MergedText) : novelNormStrict;
+        var targetUnitNormLoose = targetUnitIdx >= 0 ? NormalizeLoose(units[targetUnitIdx].MergedText) : novelNormLoose;
+
+        // ── Phase 1: 锚点匹配 ──
+        var anchors = FindAnchors(units, plotEntries);
+        var anchorMatch = anchors.FirstOrDefault(a => a.UnitIdx == targetUnitIdx);
+        var p1 = new Phase1Diag();
+
+        if (anchorMatch != default)
+        {
+            p1.Matched = true;
+            p1.MatchedDbIdx = anchorMatch.DbIdx;
+        }
+        else if (targetUnitNormStrict.Length < 3)
+        {
+            p1.SkipReason = $"NormalizeStrict 后长度 = {targetUnitNormStrict.Length} (< 3)，跳过";
+            if (units[targetUnitIdx].DialogIndices.Count > 1)
+                p1.SkipReason += $" (合并了 {units[targetUnitIdx].DialogIndices.Count} 个同段落对话)";
+        }
+        else
+        {
+            p1.SkipReason = "未命中任何锚点";
+            if (units[targetUnitIdx].DialogIndices.Count > 1)
+                p1.SkipReason += $" (合并文本: \"{TruncateForDiag(units[targetUnitIdx].MergedText, 60)}\")";
+        }
+        diag.Phase1 = p1;
+
+        // ── Phase 2: 构建对齐映射 ──
+        var unitAlignMap = new Dictionary<int, int>();
+        foreach (var (ui, di) in anchors)
+            unitAlignMap[ui] = di;
+
+        var alignmentMap = new Dictionary<int, int>();
+        foreach (var (ui, dbIdx) in unitAlignMap)
+            foreach (var dIdx in units[ui].DialogIndices)
+                alignmentMap[dIdx] = dbIdx;
+
+        // ── Phase 3: 窗口匹配 ──
+        var anchorBounds = new List<(int Ni, int Di)> { (-1, -1) };
+        anchorBounds.AddRange(anchors);
+        anchorBounds.Add((units.Count, plotEntries.Count));
+
+        var p3 = new Phase3Diag();
+        for (int k = 0; k < anchorBounds.Count - 1; k++)
+        {
+            var (prevNi, prevDi) = anchorBounds[k];
+            var (nextNi, nextDi) = anchorBounds[k + 1];
+
+            if (targetUnitIdx <= prevNi || targetUnitIdx >= nextNi)
+                continue;
+
+            int nGap = nextNi - prevNi - 1;
+            int dGap = nextDi - prevDi - 1;
+
+            p3.GapIndex = k;
+            p3.PrevAnchorNi = prevNi;
+            p3.PrevAnchorDi = prevDi;
+            p3.NextAnchorNi = nextNi;
+            p3.NextAnchorDi = nextDi;
+            p3.NGap = nGap;
+            p3.DGap = dGap;
+
+            int i = targetUnitIdx - prevNi - 1;
+            p3.GapPosition = i;
+
+            if (nGap <= 0 || dGap <= 0)
+            {
+                p3.SkipReason = $"间隙为空 (nGap={nGap}, dGap={dGap})";
+                break;
+            }
+
+            int expectedPos = dGap > 1 ? (int)((long)i * dGap / nGap) : 0;
+            p3.ExpectedPos = expectedPos;
+
+            int dbCursor = 0;
+            for (int ii = 0; ii < i; ii++)
+            {
+                var prevNorm = NormalizeLoose(units[prevNi + 1 + ii].MergedText);
+                if (string.IsNullOrEmpty(prevNorm)) continue;
+                int prevExpected = dGap > 1 ? (int)((long)ii * dGap / nGap) : 0;
+                int prevStart = Math.Max(dbCursor, prevExpected - WindowSize);
+                int prevEnd = Math.Min(dGap - 1, prevExpected + WindowSize);
+                for (int j = prevStart; j <= prevEnd; j++)
+                {
+                    int dbIdx = prevDi + 1 + j;
+                    var dbNorm = NormalizeLoose(plotEntries[dbIdx].Dialog ?? "");
+                    if (string.IsNullOrEmpty(dbNorm)) continue;
+                    double score = ComputeSimilarity(prevNorm, dbNorm);
+                    if (score >= WindowMatchThreshold) { dbCursor = j + 1; break; }
+                }
+            }
+
+            int searchStart = Math.Max(dbCursor, expectedPos - WindowSize);
+            int searchEnd = Math.Min(dGap - 1, expectedPos + WindowSize);
+            p3.SearchStart = searchStart;
+            p3.SearchEnd = searchEnd;
+
+            int bestJ = -1;
+            double bestScore = 0;
+            for (int j = searchStart; j <= searchEnd; j++)
+            {
+                int dbIdx = prevDi + 1 + j;
+                var dbNorm = NormalizeLoose(plotEntries[dbIdx].Dialog ?? "");
+                if (string.IsNullOrEmpty(dbNorm)) continue;
+                double score = ComputeSimilarity(targetUnitNormLoose, dbNorm);
+                p3.Candidates.Add(new CandidateScore
+                {
+                    DbIdx = dbIdx,
+                    DbText = plotEntries[dbIdx].Dialog ?? "",
+                    Score = score
+                });
+                if (score > bestScore && score >= WindowMatchThreshold)
+                {
+                    bestJ = j;
+                    bestScore = score;
+                }
+            }
+
+            foreach (var c in p3.Candidates)
+            {
+                if (c.DbIdx == prevDi + 1 + bestJ)
+                    c.IsSelected = true;
+            }
+
+            if (bestJ >= 0)
+            {
+                p3.Matched = true;
+                p3.MatchedDbIdx = prevDi + 1 + bestJ;
+                p3.MatchedScore = bestScore;
+                foreach (var dIdx in units[targetUnitIdx].DialogIndices)
+                    alignmentMap[dIdx] = p3.MatchedDbIdx;
+            }
+
+            int globalStart = Math.Max(0, prevDi + 1);
+            int globalEnd = Math.Min(plotEntries.Count - 1, nextDi - 1);
+            for (int j = globalStart; j <= globalEnd; j++)
+            {
+                int gapJ = j - prevDi - 1;
+                if (gapJ >= searchStart && gapJ <= searchEnd) continue;
+                var dbNorm = NormalizeLoose(plotEntries[j].Dialog ?? "");
+                if (string.IsNullOrEmpty(dbNorm)) continue;
+                double score = ComputeSimilarity(targetUnitNormLoose, dbNorm);
+                if (score >= WindowMatchThreshold)
+                {
+                    p3.OutOfWindowCandidates.Add(new CandidateScore
+                    {
+                        DbIdx = j,
+                        DbText = plotEntries[j].Dialog ?? "",
+                        Score = score
+                    });
+                }
+            }
+
+            break;
+        }
+        diag.Phase3 = p3;
+
+        // ── Phase 3.1: 高压缩间隙全局回退 ──
+        if (!alignmentMap.ContainsKey(targetIdx) && targetUnitIdx >= 0)
+        {
+            // 找到目标 unit 所在的间隙
+            for (int k = 0; k < anchorBounds.Count - 1; k++)
+            {
+                var (prevNi, prevDi) = anchorBounds[k];
+                var (nextNi, nextDi) = anchorBounds[k + 1];
+                if (targetUnitIdx <= prevNi || targetUnitIdx >= nextNi) continue;
+
+                int nGap = nextNi - prevNi - 1;
+                int dGap = nextDi - prevDi - 1;
+                if (nGap > 0 && dGap > 0 && (double)nGap / dGap > 2.0)
+                {
+                    var unitNorm = NormalizeNoPunct(units[targetUnitIdx].MergedText);
+                    if (unitNorm.Length >= 3)
+                    {
+                        for (int di = 0; di < plotEntries.Count; di++)
+                        {
+                            var dbNorm = NormalizeNoPunct(plotEntries[di].Dialog ?? "");
+                            if (dbNorm.Length < 3) continue;
+                            if (IsAnchorMatch(unitNorm, dbNorm))
+                            {
+                                foreach (var dIdx in units[targetUnitIdx].DialogIndices)
+                                    alignmentMap[dIdx] = di;
+                                diag.Phase31Matched = true;
+                                diag.MatchedDbEntryIndex = plotEntries[di].Index;
+                                break;
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+        }
+
+        // ── Phase 3.5: 碎片修复（仍基于原始 dialogs）──
+        bool wasAligned = alignmentMap.ContainsKey(targetIdx);
+        int currentDbIdx = wasAligned ? alignmentMap[targetIdx] : -1;
+        var p35 = new Phase35Diag { WasAligned = wasAligned };
+
+        if (targetIdx > 0 && alignmentMap.TryGetValue(targetIdx - 1, out int prevDbIdx35)
+            && prevDbIdx35 != currentDbIdx)
+        {
+            var prevDbNorm = NormalizeLoose(plotEntries[prevDbIdx35].Dialog ?? "");
+            var c1 = new Check1Diag
+            {
+                PrevDbIdx = prevDbIdx35,
+                PrevDbText = plotEntries[prevDbIdx35].Dialog ?? "",
+                IsSubstring = !string.IsNullOrEmpty(prevDbNorm) && prevDbNorm.Contains(novelNormLoose)
+            };
+            if (!c1.IsSubstring) c1.SkipReason = "前邻 DB entry 不包含此文本";
+            p35.Check1 = c1;
+            if (c1.IsSubstring) { p35.Fixed = true; p35.FixedToDbIdx = prevDbIdx35; diag.FinalEntryIndex = prevDbIdx35; }
+        }
+
+        if (!p35.Fixed && targetIdx + 1 < dialogs.Count
+            && alignmentMap.TryGetValue(targetIdx + 1, out int nextDbIdx35)
+            && nextDbIdx35 != currentDbIdx)
+        {
+            var nextDbNorm = NormalizeLoose(plotEntries[nextDbIdx35].Dialog ?? "");
+            var c2 = new Check2Diag
+            {
+                NextDbIdx = nextDbIdx35,
+                NextDbText = plotEntries[nextDbIdx35].Dialog ?? "",
+                IsSubstring = !string.IsNullOrEmpty(nextDbNorm) && nextDbNorm.Contains(novelNormLoose)
+            };
+            if (!c2.IsSubstring) c2.SkipReason = "后邻 DB entry 不包含此文本";
+            p35.Check2 = c2;
+            if (c2.IsSubstring) { p35.Fixed = true; p35.FixedToDbIdx = nextDbIdx35; diag.FinalEntryIndex = nextDbIdx35; }
+        }
+
+        if (!p35.Fixed && !wasAligned && novelNormLoose.Length <= 30
+            && targetIdx > 0 && alignmentMap.TryGetValue(targetIdx - 1, out int prevDbIdx3))
+        {
+            var mergedNorm = NormalizeLoose(dialogs[targetIdx - 1].Text + targetText);
+            var c3 = new Check3Diag { MergedText = dialogs[targetIdx - 1].Text + targetText };
+            if (TryFindMergedMatch(mergedNorm, prevDbIdx3, plotEntries, out int mergedDbIdx))
+            {
+                // 验证：当前片段必须是匹配到的 DB 条目的子串
+                var matchedDbNorm = NormalizeNoPunct(plotEntries[mergedDbIdx].Dialog ?? "");
+                if (!string.IsNullOrEmpty(matchedDbNorm) && matchedDbNorm.Contains(NormalizeNoPunct(targetText)))
+                {
+                    c3.Matched = true; c3.MatchedDbIdx = mergedDbIdx;
+                    p35.Fixed = true; p35.FixedToDbIdx = mergedDbIdx; diag.FinalEntryIndex = mergedDbIdx;
+                }
+                else
+                {
+                    c3.SkipReason = "合并后匹配到的 DB entry 不包含当前片段";
+                }
+            }
+            else { c3.SkipReason = "合并后未匹配到任何 DB entry"; }
+            p35.Check3 = c3;
+        }
+
+        diag.Phase35 = p35;
+        if (!p35.Fixed)
+            diag.FinalEntryIndex = wasAligned ? currentDbIdx : -1;
+
+        return diag;
+    }
+
     /// <summary>
     /// 推断性别：优先查 override → fallback PicDescription 推断。
     /// </summary>
@@ -773,6 +1206,12 @@ public class NovelAligner
             return "男";
 
         return null;
+    }
+
+    private static string TruncateForDiag(string text, int maxLen)
+    {
+        if (string.IsNullOrEmpty(text)) return "(空)";
+        return text.Length <= maxLen ? text : text[..maxLen] + "…";
     }
 
     /// <summary>

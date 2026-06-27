@@ -173,12 +173,84 @@ if (args.Length > 0 && args[0].Equals("repair-db-portraits", StringComparison.Or
     return;
 }
 
-// 清空旧的 PicDescription 记录
-var db = DbFactory.GetClient();
-var before = db.Queryable<PicDescription>().Count();
-db.Deleteable<PicDescription>().ExecuteCommand();
-Console.WriteLine($"已清空 PicDescription 表（{before} 条旧记录）");
+if (args.Length > 0 && args[0].Equals("diagnose-charslot", StringComparison.OrdinalIgnoreCase))
+{
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("用法: ArkPlot.Cli diagnose-charslot <novel_file.md>");
+        return;
+    }
+    await DiagnoseCharSlotRunner.RunAsync(args[1]);
+    return;
+}
 
-var tagsJson = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tags.json");
-var pipeline = new CliPipeline(tagsJson);
-await pipeline.RunAsync();
+if (args.Length > 0 && args[0].Equals("diagnose-alignment", StringComparison.OrdinalIgnoreCase))
+{
+    if (args.Length < 4)
+    {
+        Console.Error.WriteLine("用法: ArkPlot.Cli diagnose-alignment <novel_file.md> <章节标题> <目标文本> [--db <db_path>]");
+        Console.Error.WriteLine("  追踪单个小说片段在各对齐 Phase 中的匹配过程");
+        Console.Error.WriteLine("  示例: ArkPlot.Cli diagnose-alignment \"xxx_novel.md\" \"CW-1 迷雾重重 行动前\" \"真有趣，\" --db \"path/to/arkplot.db\"");
+        return;
+    }
+
+    string? dbPath = null;
+    for (int i = 4; i < args.Length; i++)
+    {
+        if (args[i] == "--db" && i + 1 < args.Length)
+        {
+            dbPath = args[i + 1];
+            i++;
+        }
+    }
+    await DiagnoseAlignmentRunner.RunAsync(args[1], args[2], args[3], dbPath);
+    return;
+}
+
+if (args.Length > 0 && args[0].Equals("diagnose-alignment-batch", StringComparison.OrdinalIgnoreCase))
+{
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("用法: ArkPlot.Cli diagnose-alignment-batch <novel_file.md> [--db <db_path>] [--threshold <ratio>]");
+        Console.Error.WriteLine("  批量检测对齐异常并汇总问题");
+        Console.Error.WriteLine("  --threshold: 长度比例阈值 (默认 0.3，低于此值视为异常)");
+        Console.Error.WriteLine("  示例: ArkPlot.Cli diagnose-alignment-batch \"xxx_novel.md\" --db \"path/to/arkplot.db\"");
+        return;
+    }
+
+    string? dbPath2 = null;
+    double threshold = 0.3;
+    for (int i = 2; i < args.Length; i++)
+    {
+        if (args[i] == "--db" && i + 1 < args.Length)
+        {
+            dbPath2 = args[i + 1];
+            i++;
+        }
+        else if (args[i] == "--threshold" && i + 1 < args.Length && double.TryParse(args[i + 1], out var t))
+        {
+            threshold = t;
+            i++;
+        }
+    }
+    await DiagnoseAlignmentBatchRunner.RunAsync(args[1], dbPath2, threshold);
+    return;
+}
+
+if (args.Length == 0)
+{
+    // 清空旧的 PicDescription 记录
+    var db = DbFactory.GetClient();
+    var before = db.Queryable<PicDescription>().Count();
+    db.Deleteable<PicDescription>().ExecuteCommand();
+    Console.WriteLine($"已清空 PicDescription 表（{before} 条旧记录）");
+
+    var tagsJson = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tags.json");
+    var pipeline = new CliPipeline(tagsJson);
+    await pipeline.RunAsync();
+}
+else
+{
+    Console.Error.WriteLine($"未知命令: {args[0]}");
+    Console.Error.WriteLine("可用命令: align, dump-db, copy-avalonia-db, show-misaligned, tts-novel, chapter-tts, verify-tts, diagnose-tts-assets, simulate-tts-click, verify-tts-component-inputs, repair-db-portraits, diagnose-charslot, diagnose-alignment, diagnose-alignment-batch");
+}
