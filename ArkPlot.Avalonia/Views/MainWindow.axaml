@@ -194,12 +194,12 @@
                         BorderBrush="#FF326CF3" />
                     <Button Grid.Row="2" Grid.Column="0"
                         Content="生成位置"
-                        Command="{Binding PickOutputFolderCommand}"
+                        Command="{Binding OpenOutputFolderCommand}"
                         VerticalAlignment="Center"
                         HorizontalAlignment="Right"
                         Foreground="#FF326CF3"
-                        BorderBrush="#FF326CF3" 
-                        IsEnabled="False" />
+                        BorderBrush="#FF326CF3"
+                        ToolTip.Tip="点击打开输出文件夹" />
 
                     <ComboBox
                         x:Name="StoryNameCombo"

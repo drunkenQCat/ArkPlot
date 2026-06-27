@@ -753,10 +753,24 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// 在系统文件管理器中打开 <see cref="OutputPath"/> 指向的文件夹。
+    /// 若目录不存在则先创建，避免点击后无任何反馈。
+    /// </summary>
+    [RelayCommand]
     private void OpenOutputFolder()
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(OutputPath))
+            {
+                noticeBlock.RaiseCommonEvent("⚠ 输出路径未设置");
+                return;
+            }
+
+            if (!Directory.Exists(OutputPath))
+                Directory.CreateDirectory(OutputPath);
+
             string command = string.Empty;
             string arguments = OutputPath;
 
