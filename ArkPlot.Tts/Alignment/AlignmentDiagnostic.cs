@@ -21,6 +21,9 @@ public class AlignmentDiagnostic
     /// <summary>是否由 Phase 3.1 全局回退匹配</summary>
     public bool Phase31Matched { get; set; }
 
+    /// <summary>是否由 Phase 3.5 Check 4 (长文本拆分匹配) 修复</summary>
+    public bool Phase35Check4Matched { get; set; }
+
     // ── 各 Phase 的诊断信息 ──
 
     public Phase1Diag? Phase1 { get; set; }

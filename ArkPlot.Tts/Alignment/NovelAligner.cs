@@ -16,7 +16,7 @@ namespace ArkPlot.Tts.Alignment;
 /// </summary>
 public class NovelAligner
 {
-    private const int CurrentAlignmentCacheVersion = 14;
+    private const int CurrentAlignmentCacheVersion = 15;
     private readonly SqlSugarClient _db;
     private readonly GenderOverrideProvider? _genderOverrides;
 
@@ -431,6 +431,18 @@ public class NovelAligner
                         }
                     }
                 }
+
+                // ── 检查 4（仅未对齐且文本较长）: 按标点拆分后逐段匹配 ──
+                if (!wasAligned && dialogs[di].Text.Length > 30)
+                {
+                    var splitMatch = TrySplitAndMatch(dialogs[di].Text, plotEntries);
+                    if (splitMatch >= 0)
+                    {
+                        alignmentMap[di] = splitMatch;
+                        mergeMatches++;
+                        continue;
+                    }
+                }
             }
 
             if (mergeMatches > 0)
@@ -766,6 +778,52 @@ public class NovelAligner
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// 将长文本按标点拆分，逐段尝试匹配 DB entry。
+    /// 用于处理 LLM 合并多个 DB 条目的情况。
+    /// </summary>
+    private static int TrySplitAndMatch(
+        string longText, List<FormattedTextEntry> plotEntries)
+    {
+        // 按中文标点拆分
+        var segments = System.Text.RegularExpressions.Regex.Split(longText, @"[。！？；：……——]+")
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        if (segments.Count <= 1)
+            return -1;
+
+        // 尝试前 1-3 段的组合
+        for (int take = 1; take <= Math.Min(3, segments.Count); take++)
+        {
+            var combined = string.Join("", segments.Take(take));
+            var combinedNorm = NormalizeNoPunct(combined);
+            if (string.IsNullOrEmpty(combinedNorm) || combinedNorm.Length < 4)
+                continue;
+
+            // 在所有 DB entries 中搜索
+            for (int di = 0; di < plotEntries.Count; di++)
+            {
+                var dbNorm = NormalizeNoPunct(plotEntries[di].Dialog ?? "");
+                if (string.IsNullOrEmpty(dbNorm) || dbNorm.Length < 4)
+                    continue;
+
+                // 检查是否为子串关系且比例足够高
+                if (dbNorm.Contains(combinedNorm) || combinedNorm.Contains(dbNorm))
+                {
+                    double ratio = (double)Math.Min(combinedNorm.Length, dbNorm.Length) 
+                                 / Math.Max(combinedNorm.Length, dbNorm.Length);
+                    if (ratio >= 0.6)  // 允许一定程度的差异
+                    {
+                        return di;
+                    }
+                }
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>
@@ -1155,6 +1213,19 @@ public class NovelAligner
             }
             else { c3.SkipReason = "合并后未匹配到任何 DB entry"; }
             p35.Check3 = c3;
+        }
+
+        // ── 检查 4（仅未对齐且文本较长）: 按标点拆分后逐段匹配 ──
+        if (!p35.Fixed && !wasAligned && targetText.Length > 30)
+        {
+            var splitMatch = TrySplitAndMatch(targetText, plotEntries);
+            if (splitMatch >= 0)
+            {
+                p35.Fixed = true;
+                p35.FixedToDbIdx = splitMatch;
+                diag.FinalEntryIndex = splitMatch;
+                diag.Phase35Check4Matched = true;
+            }
         }
 
         diag.Phase35 = p35;
