@@ -579,27 +579,37 @@ public class NovelAligner
                 }
             }
 
-            // ── Step 5b: 前向继承（匹配不上的走继承兜底）──
-            {
-                int lastIdx = -1;
-                for (int i = chapterStart; i < results.Count; i++)
-                {
-                    if (results[i].EntryIndex >= 0)
-                        lastIdx = results[i].EntryIndex;
-                    else if (lastIdx >= 0)
-                        results[i] = results[i] with { EntryIndex = lastIdx };
-                }
-            }
-
-            // ── Step 5c: 后向继承（章节开头的 -1）──
+            // ── Step 5b: 对话后向继承（优先找下一个已对齐的对话）──
             {
                 int nextIdx = -1;
                 for (int i = results.Count - 1; i >= chapterStart; i--)
                 {
                     if (results[i].EntryIndex >= 0)
+                    {
                         nextIdx = results[i].EntryIndex;
-                    else if (nextIdx >= 0 && results[i].EntryIndex < 0)
+                    }
+                    else if (results[i].IsDialog && nextIdx >= 0)
+                    {
+                        // 只对对话执行后向继承
                         results[i] = results[i] with { EntryIndex = nextIdx };
+                    }
+                }
+            }
+
+            // ── Step 5c: 旁白前向继承（找上一个已对齐的条目）──
+            {
+                int lastIdx = -1;
+                for (int i = chapterStart; i < results.Count; i++)
+                {
+                    if (results[i].EntryIndex >= 0)
+                    {
+                        lastIdx = results[i].EntryIndex;
+                    }
+                    else if (!results[i].IsDialog && lastIdx >= 0)
+                    {
+                        // 只对旁白执行前向继承
+                        results[i] = results[i] with { EntryIndex = lastIdx };
+                    }
                 }
             }
             #endregion
