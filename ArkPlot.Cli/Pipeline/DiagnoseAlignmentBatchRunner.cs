@@ -213,6 +213,85 @@ public static class DiagnoseAlignmentBatchRunner
         {
             Console.WriteLine("  ✅ 未检测到明显异常");
         }
+
+        // 导出异常详情到 Markdown 文件
+        if (anomalies.Count > 0)
+        {
+            var outputPath = Path.Combine(
+                Path.GetDirectoryName(novelFilePath) ?? ".",
+                $"{Path.GetFileNameWithoutExtension(novelFilePath)}_alignment_anomalies.md");
+            
+            ExportAnomaliesToMarkdown(anomalies, entries, outputPath);
+            Console.WriteLine();
+            Console.WriteLine($"📄 异常详情已导出到: {outputPath}");
+        }
+    }
+
+    private static void ExportAnomaliesToMarkdown(
+        List<AlignmentAnomaly> anomalies,
+        List<AlignmentEntry> allEntries,
+        string outputPath)
+    {
+        using var writer = new StreamWriter(outputPath, false, System.Text.Encoding.UTF8);
+        
+        writer.WriteLine("# 对齐异常报告");
+        writer.WriteLine();
+        writer.WriteLine($"**生成时间**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        writer.WriteLine($"**异常总数**: {anomalies.Count}");
+        writer.WriteLine();
+
+        // 按章节分组
+        var byChapter = anomalies
+            .GroupBy(a => a.Chapter)
+            .OrderBy(g => g.Key)
+            .ToList();
+
+        foreach (var chapterGroup in byChapter)
+        {
+            writer.WriteLine($"## {chapterGroup.Key}");
+            writer.WriteLine();
+            writer.WriteLine($"异常数量: {chapterGroup.Count()}");
+            writer.WriteLine();
+
+            int index = 1;
+            foreach (var anomaly in chapterGroup.OrderByDescending(a => a.Ratio))
+            {
+                writer.WriteLine($"### 异常 {index}");
+                writer.WriteLine();
+                writer.WriteLine($"**类型**: {anomaly.Type}");
+                writer.WriteLine($"**比例**: {anomaly.Ratio:P0} ({anomaly.NovelLength}/{anomaly.DbLength})");
+                if (!string.IsNullOrEmpty(anomaly.Character))
+                    writer.WriteLine($"**角色**: {anomaly.Character}");
+                writer.WriteLine();
+
+                writer.WriteLine("**小说文本**:");
+                writer.WriteLine("```");
+                writer.WriteLine(anomaly.NovelText);
+                writer.WriteLine("```");
+                writer.WriteLine();
+
+                writer.WriteLine("**DB 文本**:");
+                writer.WriteLine("```");
+                writer.WriteLine(anomaly.DbText);
+                writer.WriteLine("```");
+                writer.WriteLine();
+
+                // 尝试找到上下文
+                var entry = allEntries.FirstOrDefault(e => 
+                    e.ChapterTitle == anomaly.Chapter && 
+                    e.NovelText == anomaly.NovelText);
+                
+                if (entry != null)
+                {
+                    writer.WriteLine($"**EntryIndex**: {entry.EntryIndex}");
+                    writer.WriteLine();
+                }
+
+                writer.WriteLine("---");
+                writer.WriteLine();
+                index++;
+            }
+        }
     }
 
     private static string TruncateText(string text, int maxLen)

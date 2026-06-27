@@ -1419,4 +1419,44 @@ public class NovelAligner
         List<AlignmentEntry> Entries,
         AlignmentStats Stats
     );
+
+    /// <summary>
+    /// 将修改后的对齐结果覆写到指定缓存文件。
+    /// Debug 场景使用：UI 手动修改角色后，把变更持久化回 _align_cache。
+    /// </summary>
+    public static async Task RewriteCacheAsync(
+        string cacheFile,
+        List<AlignmentEntry> entries)
+    {
+        var cacheEntry = new AlignmentCacheEntry(
+            CurrentAlignmentCacheVersion, entries, RecomputeStats(entries));
+        var json = JsonSerializer.Serialize(cacheEntry, new JsonSerializerOptions
+        {
+            WriteIndented = false,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        });
+        Directory.CreateDirectory(Path.GetDirectoryName(cacheFile) ?? ".");
+        await File.WriteAllTextAsync(cacheFile, json);
+    }
+
+    private static AlignmentStats RecomputeStats(List<AlignmentEntry> entries)
+    {
+        var chapterSet = new HashSet<string>(entries.Select(e => e.ChapterTitle).Where(t => !string.IsNullOrEmpty(t)));
+        int totalDialogs = 0;
+        int alignedDialogs = 0;
+        foreach (var e in entries)
+        {
+            if (e.IsDialog)
+            {
+                totalDialogs++;
+                if (e.EntryIndex >= 0) alignedDialogs++;
+            }
+        }
+        return new AlignmentStats(
+            TotalNovelChapters: chapterSet.Count,
+            MatchedChapters: chapterSet.Count,
+            TotalDialogs: totalDialogs,
+            AlignedDialogs: alignedDialogs,
+            UnalignedDialogs: totalDialogs - alignedDialogs);
+    }
 }

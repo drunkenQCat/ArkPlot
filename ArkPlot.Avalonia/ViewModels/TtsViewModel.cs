@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
@@ -158,6 +159,128 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     partial void OnShowNoAudioOnlyChanged(bool value)
     {
         _ = LoadSegmentsForChapterAsync();
+    }
+
+    // ── Debug 模式：角色 flyout 编辑 ──
+    /// <summary>正在被 Debug flyout 修改角色的目标行（flyout 内 DataContext 共享用）。</summary>
+    [ObservableProperty]
+    private SegmentRow? _characterEditTarget;
+
+    /// <summary>Debug 角色 flyout 中的搜索文本。</summary>
+    [ObservableProperty]
+    private string _characterEditFilter = "";
+
+    /// <summary>根据 <see cref="CharacterEditFilter"/> 过滤后的角色候选列表。</summary>
+    [ObservableProperty]
+    private ObservableCollection<string> _filteredCharacterCandidates = [];
+
+    /// <summary>flyout ListBox 的选中角色。setter 触发 Apply + 自我重置。</summary>
+    [ObservableProperty]
+    private string? _selectedCharacterForEdit;
+
+    partial void OnCharacterEditFilterChanged(string value)
+    {
+        RefreshFilteredCharacterCandidates(value);
+    }
+
+    /// <summary>点击角色列的 Button 时：锁定目标行 + 清空筛选 + 候选列表重置。</summary>
+    [RelayCommand]
+    private void OpenCharacterEditFlyout(SegmentRow? row)
+    {
+        if (row == null) return;
+        CharacterEditTarget = row;
+        CharacterEditFilter = "";
+        RefreshFilteredCharacterCandidates("");
+    }
+
+#pragma warning disable MVVMTK0034 // 故意直接写字段以打断 setter 递归；OnPropertyChanged 同步 ListBox。
+    partial void OnSelectedCharacterForEditChanged(string? value)
+    {
+        if (value == null) return;
+        var target = CharacterEditTarget;
+        // 先立即重置字段为 null，避免 setter 再次进入；OnPropertyChanged 会同步 ListBox。
+        _selectedCharacterForEdit = null;
+        OnPropertyChanged(nameof(SelectedCharacterForEdit));
+        CharacterEditTarget = null;
+        CharacterEditFilter = "";
+        RefreshFilteredCharacterCandidates("");
+        _ = ChangeCharacterForSegmentAsync(target, value);
+    }
+#pragma warning restore MVVMTK0034
+
+    private void RefreshFilteredCharacterCandidates(string filter)
+    {
+        var q = string.IsNullOrWhiteSpace(filter) ? "" : filter.Trim();
+        var items = _characterCandidates
+            .Where(n => n.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        FilteredCharacterCandidates = new ObservableCollection<string>(items);
+    }
+
+    /// <summary>Debug 用：将指定行的角色修改为 newName，并回写到对齐缓存。</summary>
+    public async Task ChangeCharacterForSegmentAsync(SegmentRow? row, string? newName)
+    {
+        if (row == null || string.IsNullOrWhiteSpace(newName)) return;
+
+        var entry = _alignmentEntries.FirstOrDefault(e =>
+            e.EntryIndex == row.EntryIndex
+            && string.Equals(e.ChapterTitle, row.ChapterTitle, StringComparison.Ordinal)
+            && string.Equals(e.CharacterName, row.CharacterName, StringComparison.Ordinal)
+            && string.Equals(e.NovelText, row.NovelText, StringComparison.Ordinal));
+
+        if (entry == null)
+        {
+            Log($"[debug-edit] 未找到对应的对齐条目: row={row.Index} {row.CharacterName}");
+            return;
+        }
+
+        var oldName = row.CharacterName;
+        row.CharacterName = newName;
+
+        var newEntry = entry with { CharacterName = newName };
+        var idx = _alignmentEntries.IndexOf(entry);
+        if (idx >= 0)
+        {
+            _alignmentEntries[idx] = newEntry;
+            if (_alignmentEntrySourceFile.TryGetValue(entry, out var sourceFile))
+            {
+                _alignmentEntrySourceFile.Remove(entry);
+                _alignmentEntrySourceFile[newEntry] = sourceFile;
+            }
+        }
+
+        // 刷新角色候选（新增的角色名需要加入列表）
+        if (!_characterCandidates.Contains(newName))
+        {
+            _characterCandidates.Add(newName);
+            _characterCandidates.Sort(StringComparer.CurrentCulture);
+            RefreshFilteredCharacterCandidates(CharacterEditFilter);
+        }
+
+        // 回写对齐缓存
+        if (_alignmentEntrySourceFile.TryGetValue(newEntry, out var cacheFile))
+        {
+            try
+            {
+                var entriesForFile = _alignmentEntries
+                    .Where(e => _alignmentEntrySourceFile.TryGetValue(e, out var f) && f == cacheFile)
+                    .ToList();
+                await NovelAligner.RewriteCacheAsync(cacheFile, entriesForFile);
+                Log($"[debug-edit] ✓ 已保存角色修改到缓存: {Path.GetFileName(cacheFile)}");
+            }
+            catch (Exception ex)
+            {
+                Log($"[debug-edit] ❌ 缓存回写失败: {ex.Message}");
+            }
+        }
+
+        // 刷新依赖角色的组件
+        try { VoiceConfigPanel.UpdateEntries(_alignmentEntries); }
+        catch (Exception ex) { Log($"[debug-edit] VoiceConfigPanel 刷新失败: {ex.Message}"); }
+        try { UpdateComponentsForSegment(row); }
+        catch (Exception ex) { Log($"[debug-edit] 组件刷新失败: {ex.Message}"); }
+
+        Log($"[debug-edit] 行 #{row.Index} 角色: {oldName} → {newName}");
     }
 
     // ── 子组件 ViewModel ──
@@ -386,6 +509,10 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     private CancellationTokenSource? _playCts;
     private List<AlignmentEntry> _alignmentEntries = [];
     private List<BackgroundItem> _backgrounds = [];
+    /// <summary>对齐条目 → 其所属的 _align_cache 缓存文件路径（Debug 手动改角色时回写用）。</summary>
+    private readonly Dictionary<AlignmentEntry, string> _alignmentEntrySourceFile = new(ReferenceEqualityComparer.Instance);
+    /// <summary>当前加载的所有角色的去重有序列表（Debug flyout 选择源）。</summary>
+    private List<string> _characterCandidates = [];
     private readonly VoiceManagerUnified _voiceManagerUnified;
     private readonly ITtsEngine _ttsEngine;
     private readonly string _outputBaseDir;
@@ -559,11 +686,12 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         {
             // P1/P4: 重计算（对齐 + 背景图加载）放到后台线程
             var ttsOutputDir = TtsOutputDir;
-            var (newEntries, newBackgrounds, allChapters) = await Task.Run(async () =>
+            var (newEntries, newBackgrounds, allChapters, newEntrySourceFile) = await Task.Run(async () =>
             {
                 var entries = new List<AlignmentEntry>();
                 var backgrounds = new List<BackgroundItem>();
                 var chapters = new List<ChapterItem>();
+                var entrySourceFile = new Dictionary<AlignmentEntry, string>(ReferenceEqualityComparer.Instance);
 
                 foreach (var file in selectedFiles)
                 {
@@ -583,6 +711,22 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                         $"{Path.GetFileName(file.FilePath)}: "
                             + $"{stats.AlignedDialogs}/{stats.TotalDialogs} 对话已对齐"
                     );
+
+                    // 记录每个 entry 的来源缓存文件（Debug 手动改角色时回写用）
+                    try
+                    {
+                        var novelText = await File.ReadAllTextAsync(file.FilePath);
+                        var contentHash = Convert.ToHexString(
+                            System.Security.Cryptography.MD5.HashData(
+                                System.Text.Encoding.UTF8.GetBytes(novelText))).ToLowerInvariant();
+                        var cacheFile = Path.Combine(alignCacheDir, $"{contentHash}.json");
+                        foreach (var e in fileEntries)
+                            entrySourceFile[e] = cacheFile;
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"[debug-edit] 计算缓存文件路径失败: {ex.Message}");
+                    }
 
                     entries.AddRange(fileEntries);
 
@@ -606,12 +750,24 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                     backgrounds.AddRange(fileBackgrounds);
                 }
 
-                return (entries, backgrounds, chapters);
+                return (entries, backgrounds, chapters, entrySourceFile);
             });
 
             // 回到 UI 线程：只做最终的集合赋值
             _alignmentEntries = newEntries;
             _backgrounds = newBackgrounds;
+            _alignmentEntrySourceFile.Clear();
+            foreach (var kv in newEntrySourceFile)
+                _alignmentEntrySourceFile[kv.Key] = kv.Value;
+
+            // 构建角色候选列表（去重 + 排序）
+            _characterCandidates = _alignmentEntries
+                .Select(e => e.CharacterName ?? "")
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct()
+                .OrderBy(n => n, StringComparer.CurrentCulture)
+                .ToList();
+            RefreshFilteredCharacterCandidates("");
 
             Chapters = new ObservableCollection<ChapterItem>(allChapters);
             if (Chapters.Count > 0)

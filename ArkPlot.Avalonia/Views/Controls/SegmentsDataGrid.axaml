@@ -100,8 +100,56 @@
       <DataGridTemplateColumn Header="角色" Width="100">
         <DataGridTemplateColumn.CellTemplate>
           <DataTemplate x:DataType="models:SegmentRow">
-            <TextBlock Text="{Binding CharacterName}"
-                       VerticalAlignment="Center" Margin="4,0"/>
+            <Panel>
+              <!-- 正常模式：纯文本 -->
+              <TextBlock Text="{Binding CharacterName}"
+                         VerticalAlignment="Center" Margin="4,0"
+                         IsVisible="{Binding !$parent[DataGrid].((vm:TtsViewModel)DataContext).IsDebugMode}"/>
+              <!-- Debug 模式：点击弹出 flyout 手动改角色（带筛选） -->
+              <Button IsVisible="{Binding $parent[DataGrid].((vm:TtsViewModel)DataContext).IsDebugMode}"
+                      Content="{Binding CharacterName}"
+                      VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                      Margin="2,0" Padding="4,2"
+                      Classes="Rounded"
+                      Command="{Binding $parent[DataGrid].((vm:TtsViewModel)DataContext).OpenCharacterEditFlyoutCommand}"
+                      CommandParameter="{Binding}">
+                <Button.Flyout>
+                  <Flyout Placement="Bottom" ShowMode="Standard">
+                    <Flyout.FlyoutPresenterTheme>
+                      <ControlTheme TargetType="FlyoutPresenter">
+                        <Setter Property="Background"
+                                Value="{DynamicResource SukiInformationForeground}"/>
+                        <Setter Property="CornerRadius" Value="8"/>
+                        <Setter Property="BorderBrush" Value="Gray"/>
+                        <Setter Property="BorderThickness" Value="1"/>
+                        <Setter Property="Padding" Value="12"/>
+                      </ControlTheme>
+                    </Flyout.FlyoutPresenterTheme>
+                    <DockPanel Width="240" MaxHeight="320"
+                               DataContext="{Binding $parent[DataGrid].((vm:TtsViewModel)DataContext)}">
+                      <TextBox DockPanel.Dock="Top"
+                               Watermark="搜索角色..."
+                               Text="{Binding CharacterEditFilter}"
+                               Margin="0,0,0,6"/>
+                      <ScrollViewer>
+                        <ListBox ItemsSource="{Binding FilteredCharacterCandidates}">
+                          <ListBox.Styles>
+                            <Style Selector="ListBoxItem">
+                              <Setter Property="Padding" Value="6,4"/>
+                            </Style>
+                          </ListBox.Styles>
+                          <ListBox.ItemTemplate>
+                            <DataTemplate>
+                              <TextBlock Text="{Binding}" Tapped="CharacterCandidate_Tapped"/>
+                            </DataTemplate>
+                          </ListBox.ItemTemplate>
+                        </ListBox>
+                      </ScrollViewer>
+                    </DockPanel>
+                  </Flyout>
+                </Button.Flyout>
+              </Button>
+            </Panel>
           </DataTemplate>
         </DataGridTemplateColumn.CellTemplate>
       </DataGridTemplateColumn>
