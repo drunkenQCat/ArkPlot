@@ -50,6 +50,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         // 订阅 GitHub 连接失败事件，弹出引导对话框
         ArkPlot.Core.Utilities.GitHubProxy.ConnectionFailed += OnGitHubConnectionFailed;
+        WorkflowLog.ToastManager = toastManager;
         SeedSystemLog();
     }
 

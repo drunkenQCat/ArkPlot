@@ -3,10 +3,15 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
+using Avalonia.Controls.Notifications;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ArkPlot.Avalonia.Models;
+using ArkPlot.Avalonia.Services;
+using SukiUI.Toasts;
 
 namespace ArkPlot.Avalonia.ViewModels;
 
@@ -24,6 +29,9 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
 
     /// <summary>系统日志阶段，接纳 pipeline 之外的消息（不显示在时间线）。</summary>
     public WorkflowStage SystemStage { get; }
+
+    /// <summary>Toast 通知管理器（由宿主 ViewModel 注入，用于导出等操作反馈）。</summary>
+    public ISukiToastManager? ToastManager { get; set; }
 
     /// <summary>当前选中的阶段（右侧展示其日志）。</summary>
     [ObservableProperty]
@@ -186,27 +194,54 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ExportLogs()
+    private async Task ExportLogs()
     {
+        var storageProvider = GlobalStorageProvider.StorageProvider;
+        var file = await storageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "导出工作流日志",
+            SuggestedFileName = "workflow-log.txt",
+            DefaultExtension = "txt",
+            FileTypeChoices = new[]
+            {
+                new FilePickerFileType("文本文件") { Patterns = new[] { "*.txt" } },
+            },
+        });
+        if (file == null) return;
+
         try
         {
-            var path = Path.Combine(AppContext.BaseDirectory, "workflow-log.txt");
-            var sb = new StringBuilder();
-            sb.AppendLine("ArkPlot 工作流日志导出");
-            sb.AppendLine("=".PadRight(48, '='));
-            foreach (var s in Stages)
-            {
-                sb.AppendLine($"\n【{s.Number}. {s.Name}】 {s.StatusText}  {s.Duration}");
-                foreach (var e in s.Logs)
-                    sb.AppendLine($"  [{e.Time}] [{e.LevelText}] {e.Message}");
-            }
-            File.WriteAllText(path, sb.ToString());
-            StatusMessage = $"已导出到 {path}";
+            await using var stream = await file.OpenWriteAsync();
+            await using var writer = new StreamWriter(stream);
+            await writer.WriteAsync(BuildExportText());
+            StatusMessage = "日志已导出";
+            ToastManager?.CreateToast()
+                .WithTitle("导出成功")
+                .WithContent($"已导出到 {file.Path.LocalPath}")
+                .OfType(NotificationType.Success)
+                .Dismiss()
+                .After(TimeSpan.FromSeconds(3))
+                .Queue();
         }
         catch (Exception ex)
         {
             StatusMessage = $"导出失败：{ex.Message}";
         }
+    }
+
+    /// <summary>构建导出文本（阶段 + 日志）。</summary>
+    private string BuildExportText()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("ArkPlot 工作流日志导出");
+        sb.AppendLine("=".PadRight(48, '='));
+        foreach (var s in Stages)
+        {
+            sb.AppendLine($"\n【{s.Number}. {s.Name}】 {s.StatusText}  {s.Duration}");
+            foreach (var e in s.Logs)
+                sb.AppendLine($"  [{e.Time}] [{e.LevelText}] {e.Message}");
+        }
+        return sb.ToString();
     }
 
     // ---------- 内部 ----------
