@@ -43,20 +43,17 @@
     </i:Interaction.Behaviors>
 
     <StackPanel>
-        <Canvas Height="30">
+        <Grid Height="70">
             <Image
                 x:Name="BannerImage"
                 Source="avares://ArkPlot.Avalonia/Assets/slogan.jpg"
-                Width="456" Canvas.Left="0" HorizontalAlignment="Center" Canvas.Top="0"
-                VerticalAlignment="Top"
-                Tapped="BannerImage_Tapped">
-                <Image.Clip>
-                    <RectangleGeometry Rect="0,0,400,70" />
-                </Image.Clip>
-            </Image>
-        </Canvas>
+                Stretch="UniformToFill"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                Tapped="BannerImage_Tapped"/>
+        </Grid>
         <Grid
-            Margin="10 42 10 0"
+            Margin="10 10 10 0"
             RowDefinitions="*,*,*,*,*"
         >
             <StackPanel
