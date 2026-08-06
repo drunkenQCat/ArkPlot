@@ -50,18 +50,25 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         // 订阅 GitHub 连接失败事件，弹出引导对话框
         ArkPlot.Core.Utilities.GitHubProxy.ConnectionFailed += OnGitHubConnectionFailed;
+        SeedSystemLog();
+    }
+
+    /// <summary>将使用说明作为系统阶段的初始日志，替代原先的占位文本。</summary>
+    private void SeedSystemLog()
+    {
+        WorkflowLog.SystemStage.Logs.Add(new LogEntry(
+            LogLevel.Info,
+            "这是一个生成明日方舟剧情 markdown/html 文件的生成器。\n" +
+            "- 下载剧情文本需连接 GitHub，请确保网络可用；\n" +
+            "- 若报错【出错的句子:****】，可在“编辑Tags”中添加相应 tag 的正则；\n" +
+            "- 如有改进意见，欢迎 PR。"));
     }
 
     [ObservableProperty]
     private ISukiToastManager toastManager = new SukiToastManager(); // public, 只读属性
 
-    [ObservableProperty]
-    private string consoleOutput =
-        @"这是一个生成明日方舟剧情markdown/html文件的生成器，使用时有以下注意事项:
-
-        - 因为下载剧情文本需要连接GitHub的服务器，所以在使用时务必先科学上网；
-            - 如果遇到报错【出错的句子:****】，如过于影响阅读体验，需要结合报错信息填写相应正则表达式来规整，请点击“编辑Tags”按钮，添加相应tag的项目；
-            - 如果有任何改进意见，欢迎Pr。";
+    /// <summary>工作流日志面板（按阶段组织日志）。</summary>
+    public WorkflowLogPanelViewModel WorkflowLog { get; } = new();
 
     private List<Act> currentActs = new();
 
@@ -341,19 +348,29 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            WorkflowLog.EnterStage(1); // 下载章节
             // GetAllChapters 内部自动处理缓存：
             // - Status=2 章节从 DB 加载
             // - 未缓存章节从 GitHub 下载并写 Status=1
             await content.GetAllChapters(selectedChapters, effectiveCt);
             noticeBlock.RaiseCommonEvent("章节加载完成。");
 
+            WorkflowLog.EnterStage(2); // 预加载资源
             await PreloadResources(content, effectiveCt);
+
+            WorkflowLog.EnterStage(3); // 解析文档
             // StartParseDocuments → PlotManager.StartParseLines 自动将解析结果写为 Status=2
             await StartParseDocuments(content, effectiveCt);
 
+            WorkflowLog.EnterStage(4); // 导出文档
             await ExportDocuments(content, effectiveCt);
+
+            WorkflowLog.EnterStage(5); // 附加处理
             await RunNovelizerIfEnabled(effectiveCt);
+
+            WorkflowLog.EnterStage(6); // 完成
             await CompleteLoading();
+            WorkflowLog.CompletePipeline();
         }
         catch (OperationCanceledException)
         {
@@ -372,7 +389,11 @@ public partial class MainWindowViewModel : ViewModelBase
         IsInitialized = false;
         _connectionFailedHandled = 0;
         HasNetworkError = false;
-        ClearConsoleOutput();
+        WorkflowLog.BeginPipeline(new[]
+        {
+            "初始化加载", "下载章节", "预加载资源", "解析文档", "导出文档", "附加处理", "完成",
+        });
+        WorkflowLog.EnterStage(0);
         noticeBlock.RaiseCommonEvent("初始化加载...");
     }
 
@@ -829,11 +850,6 @@ public partial class MainWindowViewModel : ViewModelBase
         return title + "\n" + testPlot.CurrentPlot.Content;
     }
 
-    private void ClearConsoleOutput()
-    {
-        ConsoleOutput = ""; //先清空这片区域
-    }
-
     private async Task<string> ExportPlots(
         List<PlotManager> allPlots,
         PicDescService? picDescService = null,
@@ -989,16 +1005,15 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void SubscribeCommonNotification()
     {
-        noticeBlock.CommonEventHandler += (_, args) => ConsoleOutput += $"\n{args}";
+        noticeBlock.CommonEventHandler += (_, args) => AppendCommonLog(args);
     }
 
     private void SubscribeNetErrorNotification()
     {
         noticeBlock.NetErrorHappen += (_, args) =>
         {
-            var s =
-                $"\n网络错误：{args.Message}。请检查网络连接，或前往设置页面调整代理/API Key 等配置。";
-            ConsoleOutput += s;
+            WorkflowLog.Append(LogLevel.Error,
+                $"网络错误：{args.Message}。请检查网络连接，或前往设置页面调整代理/API Key 等配置。");
             HasNetworkError = true;
         };
     }
@@ -1007,8 +1022,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         noticeBlock.LineNoMatch += (_, args) =>
         {
-            var s = $"\n警告：请检查tags.json中{args.Tag}是否存在？\n出错的句子:" + args.Line;
-            ConsoleOutput += s;
+            WorkflowLog.Append(LogLevel.Warn,
+                $"警告：请检查tags.json中{args.Tag}是否存在？\n出错的句子: {args.Line}");
         };
     }
 
@@ -1016,9 +1031,22 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         noticeBlock.ChapterLoaded += (_, args) =>
         {
-            var s = "\n" + args.Title.ToString() + "已加载";
-            ConsoleOutput += s;
+            WorkflowLog.Append(LogLevel.Success, $"{args.Title} 已加载");
         };
+    }
+
+    /// <summary>根据消息前缀表情判断日志级别，追加到当前阶段。</summary>
+    private void AppendCommonLog(string message)
+    {
+        var trimmed = message.TrimStart('\n');
+        var level = trimmed switch
+        {
+            _ when trimmed.Contains("❌") => LogLevel.Error,
+            _ when trimmed.Contains("⚠") => LogLevel.Warn,
+            _ when trimmed.Contains("✅") => LogLevel.Success,
+            _ => LogLevel.Info,
+        };
+        WorkflowLog.Append(level, trimmed);
     }
 
     public void SelectJsonFile(string path)

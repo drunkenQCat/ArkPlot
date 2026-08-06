@@ -9,6 +9,7 @@
     xmlns:c="using:CalcBinding"
     xmlns:sukiUi="using:SukiUI.Controls"
     xmlns:ba="using:ArkPlot.Avalonia.Styles"
+    xmlns:controls="using:ArkPlot.Avalonia.Views.Controls"
     mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
     x:Class="ArkPlot.Avalonia.Views.MainWindow"
     x:DataType="vm:MainWindowViewModel"
@@ -278,47 +279,32 @@
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center" />
             </StackPanel>
-            <Border
-                Grid.Row="4" Margin="7" BorderThickness="2" BorderBrush="#7001"
-                VerticalAlignment="Stretch" Height="225">
-                <Grid RowDefinitions="*,Auto">
-                    <ScrollViewer
-                        Grid.Row="0"
-                        x:Name="ConsoleScrollViewer"
-                        HorizontalAlignment="Stretch"
-                        VerticalAlignment="Top"
-                    >
-                        <i:Interaction.Behaviors>
-                            <ba:AutoScrollBehavior Enabled="True" />
-                        </i:Interaction.Behaviors>
-                        <TextBox
-                            Margin="10 12 10 0"
-                            TextWrapping="Wrap"
-                            Background="Transparent"
-                            IsReadOnly="True"
-                            Text="{Binding ConsoleOutput}" />
-                    </ScrollViewer>
-                    <Button
-                        Grid.Row="1"
-                        IsVisible="{Binding HasNetworkError}"
-                        Content="停止生成并前往设置 →"
-                        Command="{Binding NetworkErrorActionCommand}"
-                        Margin="10 4 10 8"
-                        HorizontalAlignment="Left"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        Foreground="#FF326CF3"
-                        Cursor="Hand"
-                        FontSize="13">
-                        <Button.Styles>
-                            <Style Selector="Button:pointerover">
-                                <Setter Property="Foreground" Value="#FF5588FF" />
-                                <Setter Property="TextBlock.TextDecorations" Value="Underline" />
-                            </Style>
-                        </Button.Styles>
-                    </Button>
-                </Grid>
-            </Border>
+            <Grid
+                Grid.Row="4" Margin="7" VerticalAlignment="Stretch"
+                RowDefinitions="*,Auto">
+                <controls:WorkflowLogPanel
+                    Grid.Row="0"
+                    DataContext="{Binding WorkflowLog}"/>
+                <Button
+                    Grid.Row="1"
+                    IsVisible="{Binding HasNetworkError}"
+                    Content="停止生成并前往设置 →"
+                    Command="{Binding NetworkErrorActionCommand}"
+                    Margin="0 4 0 0"
+                    HorizontalAlignment="Left"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Foreground="#FF326CF3"
+                    Cursor="Hand"
+                    FontSize="13">
+                    <Button.Styles>
+                        <Style Selector="Button:pointerover">
+                            <Setter Property="Foreground" Value="#FF5588FF" />
+                            <Setter Property="TextBlock.TextDecorations" Value="Underline" />
+                        </Style>
+                    </Button.Styles>
+                </Button>
+            </Grid>
         </Grid>
     </StackPanel>
 </sukiUi:SukiWindow>
