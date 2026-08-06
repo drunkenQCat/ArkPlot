@@ -73,6 +73,23 @@ public class WorkflowLogPanelViewModelTests
     }
 
     [AvaloniaFact]
+    public void Append_CapturesStageAtCallTime_LogGoesToCorrectStage()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "A", "B", "C" });
+
+        vm.EnterStage(0);
+        vm.Append(LogLevel.Info, "第一阶段日志");
+        vm.EnterStage(1); // 在 Post 延迟执行前推进到 B
+        Dispatcher.UIThread.RunJobs();
+
+        // 日志应进 A（发出时处于的阶段），而不是 Post 执行时的 B
+        Assert.Single(vm.Stages[0].Logs);
+        Assert.Equal("第一阶段日志", vm.Stages[0].Logs[0].Message);
+        Assert.Empty(vm.Stages[1].Logs);
+    }
+
+    [AvaloniaFact]
     public void Append_OutsidePipeline_GoesToSystemStage()
     {
         var vm = new WorkflowLogPanelViewModel();

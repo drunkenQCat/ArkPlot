@@ -363,10 +363,10 @@ public partial class MainWindowViewModel : ViewModelBase
             // StartParseDocuments → PlotManager.StartParseLines 自动将解析结果写为 Status=2
             await StartParseDocuments(content, effectiveCt);
 
-            WorkflowLog.EnterStage(4); // 导出文档
+            WorkflowLog.EnterStage(4); // 导出文档（含图片描述）
             await ExportDocuments(content, effectiveCt);
 
-            WorkflowLog.EnterStage(5); // 附加处理
+            WorkflowLog.EnterStage(5); // 小说化
             await RunNovelizerIfEnabled(effectiveCt);
 
             WorkflowLog.EnterStage(6); // 完成
@@ -392,7 +392,8 @@ public partial class MainWindowViewModel : ViewModelBase
         HasNetworkError = false;
         WorkflowLog.BeginPipeline(new[]
         {
-            "初始化加载", "下载章节", "预加载资源", "解析文档", "导出文档", "附加处理", "完成",
+            "初始化加载", "下载章节", "预加载资源", "解析文档", "导出文档",
+            "小说化", "完成",
         });
         WorkflowLog.EnterStage(0);
         noticeBlock.RaiseCommonEvent("初始化加载...");
@@ -532,6 +533,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
                 picDescService = new PicDescService(describeByUrl, extractFacts);
                 picDescService.InitializeCleanup();
+                WorkflowLog.AddSection("图片描述进行中");
                 noticeBlock.RaiseCommonEvent($"✅ 图片描述已启用（{providerName} {model}）");
 
                 skipVision:

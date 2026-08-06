@@ -31,6 +31,12 @@ public partial class LogEntry : ObservableObject
     /// <summary>是否带行内进度条。</summary>
     public bool HasProgress => Progress.HasValue;
 
+    /// <summary>是否为分段横幅（用于在阶段内标注子流程，如「图片描述进行中」）。</summary>
+    public bool IsSection { get; }
+
+    /// <summary>是否非分段横幅（普通日志）。</summary>
+    public bool IsNotSection => !IsSection;
+
     /// <summary>级别显示文本。</summary>
     public string LevelText => Level switch
     {
@@ -41,11 +47,12 @@ public partial class LogEntry : ObservableObject
         _ => "Error",
     };
 
-    public LogEntry(LogLevel level, string message, int? progress = null)
+    public LogEntry(LogLevel level, string message, int? progress = null, bool isSection = false)
     {
         Level = level;
         Message = message;
         Progress = progress;
+        IsSection = isSection;
         Time = DateTime.Now.ToString("HH:mm:ss");
     }
 }

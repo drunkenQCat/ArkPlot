@@ -105,12 +105,14 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     }
 
     /// <summary>向当前阶段追加一条日志（线程安全）。</summary>
-    public void Append(LogLevel level, string message, int? progress = null)
+    public void Append(LogLevel level, string message, int? progress = null, bool isSection = false)
     {
+        // 在调用点同步捕获当前阶段：Post 是异步的，若延迟后在 Lambda 里才读 _activeStage，
+        // 会读到 UI 线程已推进到的后续阶段，导致日志归属错乱。捕获后即使 Post 延迟也进它该进的阶段。
+        var stage = _activeStage ?? SystemStage;
         Dispatcher.UIThread.Post(() =>
         {
-            var stage = _activeStage ?? SystemStage;
-            stage.Logs.Add(new LogEntry(level, message, progress));
+            stage.Logs.Add(new LogEntry(level, message, progress, isSection));
             if (level == LogLevel.Error)
             {
                 stage.ErrorCount++;
@@ -120,6 +122,9 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
             UpdateProgress();
         });
     }
+
+    /// <summary>在阶段内插入一条醒目的分段横幅，用于标注子流程（如「图片描述进行中」）。</summary>
+    public void AddSection(string text) => Append(LogLevel.Info, text, isSection: true);
 
     /// <summary>结束 pipeline：将未失败阶段全部置为完成，标记整体完成。</summary>
     public void CompletePipeline()
