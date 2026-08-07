@@ -281,7 +281,8 @@ public record VisionSettings(
     string SelectedModel = "qwen3-vl-flash",
     string SystemPrompt = "",
     string OllamaBaseUrl = "http://localhost:11434",
-    ProviderConfig[]? CustomProviders = null
+    ProviderConfig[]? CustomProviders = null,
+    bool UseMockVision = false
 )
 {
     public const string DefaultSystemPrompt = """

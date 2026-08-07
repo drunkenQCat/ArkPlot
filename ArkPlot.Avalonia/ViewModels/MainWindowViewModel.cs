@@ -444,8 +444,16 @@ public partial class MainWindowViewModel : ViewModelBase
                 };
 
                 Func<string, Task<string>> describeByUrl;
+                Func<string, string>? thinkingProvider = null;
 
-                if (providerName == "Ollama")
+                if (vision.UseMockVision)
+                {
+                    var mockClient = new MockVisionClient();
+                    visionDisposable = mockClient;
+                    describeByUrl = url => mockClient.DescribeImageUrlAsync(url);
+                    thinkingProvider = MockVisionClient.BuildThinking;
+                }
+                else if (providerName == "Ollama")
                 {
                     var visionConfig = new VisionConfig
                     {
@@ -531,7 +539,23 @@ public partial class MainWindowViewModel : ViewModelBase
                     }
                 }
 
-                picDescService = new PicDescService(describeByUrl, extractFacts);
+                // 包装描述委托：每次生成一张图的描述，记录「图片 + 描述」到日志（行内缩略图 + 悬停大图）
+                var baseDescribe = describeByUrl;
+                if (baseDescribe != null)
+                {
+                    describeByUrl = async url =>
+                    {
+                        var desc = await baseDescribe(url);
+                        var thinking = thinkingProvider?.Invoke(url);
+                        if (thinking != null)
+                            WorkflowLog.AddThought($"🖼 图片描述（Mock）", thinking, desc, url);
+                        else
+                            WorkflowLog.AddImage(url, desc);
+                        return desc;
+                    };
+                }
+
+                picDescService = new PicDescService(describeByUrl, extractFacts, skipCache: vision.UseMockVision);
                 picDescService.InitializeCleanup();
                 WorkflowLog.AddSection("图片描述进行中");
                 noticeBlock.RaiseCommonEvent($"✅ 图片描述已启用（{providerName} {model}）");
@@ -688,6 +712,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 client,
                 config,
                 onLog: log,
+                onThought: (summary, thinking, answer) =>
+                    WorkflowLog.AddThought(summary, thinking, answer),
                 systemPrompt: systemPrompt,
                 enableMultiTurn: novelizer.EnableMultiTurn,
                 chunkSize: novelizer.ChunkSize,
