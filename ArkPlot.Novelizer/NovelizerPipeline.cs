@@ -11,6 +11,7 @@ public class NovelizerPipeline
     private readonly BailianClient _client;
     private readonly ApiConfig _config;
     private readonly Action<string>? _onLog;
+    private readonly Action<string, string, string>? _onThought;
     private readonly string _systemPrompt;
     private readonly bool _enableMultiTurn;
     private readonly int _chunkSize;
@@ -105,6 +106,7 @@ public class NovelizerPipeline
         BailianClient client,
         ApiConfig config,
         Action<string>? onLog = null,
+        Action<string, string, string>? onThought = null,
         string? systemPrompt = null,
         bool enableMultiTurn = false,
         int chunkSize = 5_000,
@@ -117,6 +119,7 @@ public class NovelizerPipeline
         _client = client;
         _config = config;
         _onLog = onLog;
+        _onThought = onThought;
         _systemPrompt = string.IsNullOrWhiteSpace(systemPrompt)
             ? DefaultSystemPrompt
             : systemPrompt;
@@ -177,6 +180,7 @@ public class NovelizerPipeline
         // 处理所有章节
         var processor = new ChapterProcessor(
             _client, _systemPrompt, Log, LogError,
+            onThought: _onThought,
             enableMultiTurn: _enableMultiTurn,
             chunkSize: _chunkSize,
             compressInterval: _compressInterval);

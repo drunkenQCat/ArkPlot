@@ -9,6 +9,7 @@ public class ChapterProcessor
     private readonly string _systemPrompt;
     private readonly Action<string> _log;
     private readonly Action<string> _logError;
+    private readonly Action<string, string, string>? _onThought;
     private readonly int _maxConcurrency;
     private readonly bool _enableMultiTurn;
     private readonly int _chunkSize;
@@ -35,6 +36,7 @@ public class ChapterProcessor
         string systemPrompt,
         Action<string> log,
         Action<string> logError,
+        Action<string, string, string>? onThought = null,
         int maxConcurrency = 3,
         bool enableMultiTurn = false,
         int chunkSize = 5_000,
@@ -45,12 +47,20 @@ public class ChapterProcessor
         _systemPrompt = systemPrompt;
         _log = log;
         _logError = logError;
+        _onThought = onThought;
         _maxConcurrency = maxConcurrency;
         _enableMultiTurn = enableMultiTurn;
         _chunkSize = chunkSize;
         _compressInterval = compressInterval;
         _compressThresholdTokens = compressThresholdTokens;
     }
+
+    /// <summary>上报某章的一次 LLM 思考过程（summary / thinking / answer）。</summary>
+    private void ReportThought(Chapter chapter, int totalCount, ChatResult chatResult)
+        => _onThought?.Invoke(
+            $"🧠 第 {chapter.Index + 1}/{totalCount} 章「{chapter.Title}」思考",
+            chatResult.ReasoningContent,
+            chatResult.AnswerContent);
 
     /// <summary>
     /// 并发处理所有章节，返回按索引排序的处理结果
@@ -113,6 +123,7 @@ public class ChapterProcessor
                 var chatResult = await _client.ChatAsync(model, _systemPrompt, chapter.Body);
                 sw.Stop();
                 _log($"[DIAG] ChatAsync 返回，耗时 {sw.Elapsed.TotalSeconds:F1}s");
+                ReportThought(chapter, totalCount, chatResult);
 
                 var strippedContent = ChapterSplitter.StripHeadings(chatResult.AnswerContent);
                 results[chapter.Index] = ChapterResult.FromSuccess(
@@ -167,6 +178,7 @@ public class ChapterProcessor
             {
                 var chatResult = await _client.ChatAsync(model, _systemPrompt, chapter.Body);
                 sw.Stop();
+                ReportThought(chapter, totalCount, chatResult);
                 var strippedContent = ChapterSplitter.StripHeadings(chatResult.AnswerContent);
                 results[chapter.Index] = ChapterResult.FromSuccess(chapter.Index, chapter.Title, strippedContent, totalCount);
                 if (chatResult.Usage is not null)
@@ -246,6 +258,7 @@ public class ChapterProcessor
             {
                 var chatResult = await _client.ChatWithHistoryAsync(model, history);
                 turnSw.Stop();
+                ReportThought(chapter, totalCount, chatResult);
 
                 var answer = ChapterSplitter.StripHeadings(chatResult.AnswerContent);
                 turnOutputs.Add(answer);
