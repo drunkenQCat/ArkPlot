@@ -52,6 +52,12 @@ public partial class LogEntry : ObservableObject
     /// <summary>是否有可展开的详情。</summary>
     public bool HasDetail => !string.IsNullOrEmpty(Detail);
 
+    /// <summary>是否有悬停预览（图片大图 或 思考概览）——只有这类日志才飘窗。</summary>
+    public bool HasPreview => HasImage || !string.IsNullOrEmpty(Tooltip);
+
+    /// <summary>是否为普通日志行（非横幅、无预览）——不飘窗。</summary>
+    public bool IsPlain => IsNotSection && !HasPreview;
+
     /// <summary>是否已展开详情（点击切换）。</summary>
     [ObservableProperty]
     private bool _isExpanded;

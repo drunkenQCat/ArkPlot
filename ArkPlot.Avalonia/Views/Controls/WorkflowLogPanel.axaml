@@ -116,19 +116,17 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate DataType="models:LogEntry" x:CompileBindings="False">
                         <Grid>
-                            <!-- 普通日志（可含图片/思考/详情） -->
-                            <Border IsVisible="{Binding IsNotSection}" CornerRadius="4"
+                            <!-- 带预览的日志（图片→悬停大图；思考→悬停概览） -->
+                            <Border IsVisible="{Binding HasPreview}" CornerRadius="4"
                                     Padding="6,3" Margin="0,1"
                                     Background="{Binding Level, Converter={StaticResource LogLevelBackground}}"
                                     Tapped="LogTapped" Cursor="Hand">
                                 <StackPanel>
                                     <Grid ColumnDefinitions="Auto,*">
-                                        <!-- 缩略图 -->
                                         <Image Grid.Column="0" IsVisible="{Binding HasImage}"
                                                Margin="0,0,8,0"
                                                asyncImageLoader:ImageLoader.Source="{Binding ImageUrl}"
                                                Width="38" Height="38" Stretch="UniformToFill"/>
-                                        <!-- 时间 + 级别 + 消息 -->
                                         <Grid Grid.Column="1" ColumnDefinitions="Auto,Auto,*">
                                             <TextBlock Grid.Column="0" Text="{Binding Time}"
                                                        FontFamily="Consolas" FontSize="11" Opacity="0.5"
@@ -148,7 +146,6 @@
                                             </StackPanel>
                                         </Grid>
                                     </Grid>
-                                    <!-- 展开详情（思考过程 + 返回值等） -->
                                     <Border IsVisible="{Binding IsExpanded}" Background="#F3F4F6"
                                             CornerRadius="4" Padding="8" Margin="38,4,0,0"
                                             BorderBrush="#D1D5DB" BorderThickness="1">
@@ -156,7 +153,6 @@
                                                    FontSize="11" TextWrapping="Wrap"/>
                                     </Border>
                                 </StackPanel>
-                                <!-- 悬停：图片大图 或 思考概览 -->
                                 <ToolTip.Tip>
                                     <StackPanel MaxWidth="300">
                                         <Image IsVisible="{Binding HasImage}"
@@ -166,6 +162,39 @@
                                                    TextWrapping="Wrap" FontSize="11"/>
                                     </StackPanel>
                                 </ToolTip.Tip>
+                            </Border>
+                            <!-- 普通日志（无图无详情，不飘窗） -->
+                            <Border IsVisible="{Binding IsPlain}" CornerRadius="4"
+                                    Padding="6,3" Margin="0,1"
+                                    Background="{Binding Level, Converter={StaticResource LogLevelBackground}}"
+                                    Tapped="LogTapped" Cursor="Hand"
+                                    Opacity="0.9">
+                                <StackPanel>
+                                    <Grid ColumnDefinitions="Auto,Auto,*">
+                                        <TextBlock Grid.Column="0" Text="{Binding Time}"
+                                                   FontFamily="Consolas" FontSize="11" Opacity="0.5"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding LevelText}"
+                                                   FontFamily="Consolas" FontSize="11" FontWeight="SemiBold"
+                                                   Margin="8,0" VerticalAlignment="Center"
+                                                   Foreground="{Binding Level, Converter={StaticResource LogLevelBrush}}"/>
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{Binding Message}" FontFamily="Consolas"
+                                                       FontSize="11" TextWrapping="Wrap"
+                                                       VerticalAlignment="Center"/>
+                                            <ProgressBar IsVisible="{Binding HasProgress}"
+                                                         Value="{Binding Progress}" Minimum="0" Maximum="100"
+                                                         Width="80" Height="5" VerticalAlignment="Center"
+                                                         Foreground="#2563EB" Background="#E5E7EB"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <Border IsVisible="{Binding IsExpanded}" Background="#F3F4F6"
+                                            CornerRadius="4" Padding="8" Margin="0,4,0,0"
+                                            BorderBrush="#D1D5DB" BorderThickness="1">
+                                        <TextBlock Text="{Binding Detail}" FontFamily="Consolas"
+                                                   FontSize="11" TextWrapping="Wrap"/>
+                                    </Border>
+                                </StackPanel>
                             </Border>
                             <!-- 分段横幅（醒目标注子流程，如「图片描述进行中」） -->
                             <Border IsVisible="{Binding IsSection}" CornerRadius="4"
