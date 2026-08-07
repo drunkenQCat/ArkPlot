@@ -118,4 +118,60 @@ public class WorkflowLogPanelViewModelTests
         Assert.Single(vm.VisibleLogs);
         Assert.Equal(LogLevel.Error, vm.VisibleLogs[0].Level);
     }
+
+    [AvaloniaFact]
+    public void AddImage_AddsLogWithImageUrlAndDetail()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "A" });
+        vm.EnterStage(0);
+
+        vm.AddImage("http://img/1.png", "角色立于荒野");
+        Dispatcher.UIThread.RunJobs();
+
+        var log = Assert.Single(vm.Stages[0].Logs);
+        Assert.True(log.HasImage);
+        Assert.Equal("http://img/1.png", log.ImageUrl);
+        Assert.True(log.HasDetail);
+    }
+
+    [AvaloniaFact]
+    public void AddThought_AddsLogWithDetailAndTooltip()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "A" });
+        vm.EnterStage(0);
+
+        vm.AddThought("思考", "第一步分析场景\n第二步组织叙事", "正文输出");
+        Dispatcher.UIThread.RunJobs();
+
+        var log = Assert.Single(vm.Stages[0].Logs);
+        Assert.True(log.HasDetail);
+        Assert.Contains("第一步分析场景", log.Detail);
+        Assert.Contains("正文输出", log.Detail);
+        Assert.NotNull(log.Tooltip);
+    }
+
+    [AvaloniaFact]
+    public void ToggleExpand_TogglesOnlyWhenHasDetail()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "A" });
+        vm.EnterStage(0);
+
+        vm.AddImage("http://img/2.png", "场景描述");
+        Dispatcher.UIThread.RunJobs();
+        var withDetail = vm.Stages[0].Logs[0];
+
+        vm.ToggleExpand(withDetail);
+        Assert.True(withDetail.IsExpanded);
+        vm.ToggleExpand(withDetail);
+        Assert.False(withDetail.IsExpanded);
+
+        vm.Append(LogLevel.Info, "无详情");
+        Dispatcher.UIThread.RunJobs();
+        var plain = vm.Stages[0].Logs[1];
+        vm.ToggleExpand(plain);
+        Assert.False(plain.IsExpanded);
+    }
 }
