@@ -21,4 +21,14 @@ public partial class WorkflowLogPanel : UserControl
             vm.SelectStage(stage);
         }
     }
+
+    /// <summary>点击日志条目，展开/收起详细内容（思考过程等）。</summary>
+    private void LogTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is Border { DataContext: LogEntry entry } &&
+            DataContext is WorkflowLogPanelViewModel vm)
+        {
+            vm.ToggleExpand(entry);
+        }
+    }
 }

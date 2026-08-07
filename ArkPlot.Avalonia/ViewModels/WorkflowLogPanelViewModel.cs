@@ -105,14 +105,21 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     }
 
     /// <summary>向当前阶段追加一条日志（线程安全）。</summary>
-    public void Append(LogLevel level, string message, int? progress = null, bool isSection = false)
+    public void Append(
+        LogLevel level,
+        string message,
+        int? progress = null,
+        bool isSection = false,
+        string? imageUrl = null,
+        string? tooltip = null,
+        string? detail = null)
     {
         // 在调用点同步捕获当前阶段：Post 是异步的，若延迟后在 Lambda 里才读 _activeStage，
         // 会读到 UI 线程已推进到的后续阶段，导致日志归属错乱。捕获后即使 Post 延迟也进它该进的阶段。
         var stage = _activeStage ?? SystemStage;
         Dispatcher.UIThread.Post(() =>
         {
-            stage.Logs.Add(new LogEntry(level, message, progress, isSection));
+            stage.Logs.Add(new LogEntry(level, message, progress, isSection, imageUrl, tooltip, detail));
             if (level == LogLevel.Error)
             {
                 stage.ErrorCount++;
@@ -125,6 +132,24 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
 
     /// <summary>在阶段内插入一条醒目的分段横幅，用于标注子流程（如「图片描述进行中」）。</summary>
     public void AddSection(string text) => Append(LogLevel.Info, text, isSection: true);
+
+    /// <summary>记录一条带图片的日志（图片描述）：行内缩略图 + 悬停大图 + 点击展开描述。</summary>
+    public void AddImage(string imageUrl, string description)
+        => Append(LogLevel.Success, description, imageUrl: imageUrl, detail: description);
+
+    /// <summary>记录一条带思考过程的日志（小说化/图片描述）：悬停显示思考概览，点击展开完整思考 + 返回值。</summary>
+    public void AddThought(string summary, string thinking, string answer, string? imageUrl = null)
+    {
+        var brief = thinking.Length <= 200 ? thinking : thinking[..200] + "...";
+        var detail = $"—— 思考过程 ——\n\n{thinking}\n\n—— 返回结果 ——\n\n{answer}";
+        Append(LogLevel.Info, summary, imageUrl: imageUrl, tooltip: brief, detail: detail);
+    }
+
+    /// <summary>切换某条日志的详情展开状态（点击 log 条目触发）。</summary>
+    public void ToggleExpand(LogEntry entry)
+    {
+        if (entry.HasDetail) entry.IsExpanded = !entry.IsExpanded;
+    }
 
     /// <summary>结束 pipeline：将未失败阶段全部置为完成，标记整体完成。</summary>
     public void CompletePipeline()
@@ -244,7 +269,11 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
         {
             sb.AppendLine($"\n【{s.Number}. {s.Name}】 {s.StatusText}  {s.Duration}");
             foreach (var e in s.Logs)
+            {
                 sb.AppendLine($"  [{e.Time}] [{e.LevelText}] {e.Message}");
+                if (e.HasDetail)
+                    sb.AppendLine($"      └ {e.Detail!.Replace("\n", "\n        ")}");
+            }
         }
         return sb.ToString();
     }

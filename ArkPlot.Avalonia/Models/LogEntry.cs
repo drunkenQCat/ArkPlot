@@ -37,6 +37,25 @@ public partial class LogEntry : ObservableObject
     /// <summary>是否非分段横幅（普通日志）。</summary>
     public bool IsNotSection => !IsSection;
 
+    /// <summary>关联图片 URL（图片描述日志：行内缩略图 + 悬停大图）。</summary>
+    public string? ImageUrl { get; }
+
+    /// <summary>是否关联图片。</summary>
+    public bool HasImage => !string.IsNullOrEmpty(ImageUrl);
+
+    /// <summary>悬停预览文本（如模型思考过程概览）。</summary>
+    public string? Tooltip { get; }
+
+    /// <summary>详细内容（点击展开：思考过程 + 返回值等长文本）。</summary>
+    public string? Detail { get; }
+
+    /// <summary>是否有可展开的详情。</summary>
+    public bool HasDetail => !string.IsNullOrEmpty(Detail);
+
+    /// <summary>是否已展开详情（点击切换）。</summary>
+    [ObservableProperty]
+    private bool _isExpanded;
+
     /// <summary>级别显示文本。</summary>
     public string LevelText => Level switch
     {
@@ -47,12 +66,22 @@ public partial class LogEntry : ObservableObject
         _ => "Error",
     };
 
-    public LogEntry(LogLevel level, string message, int? progress = null, bool isSection = false)
+    public LogEntry(
+        LogLevel level,
+        string message,
+        int? progress = null,
+        bool isSection = false,
+        string? imageUrl = null,
+        string? tooltip = null,
+        string? detail = null)
     {
         Level = level;
         Message = message;
         Progress = progress;
         IsSection = isSection;
+        ImageUrl = imageUrl;
+        Tooltip = tooltip;
+        Detail = detail;
         Time = DateTime.Now.ToString("HH:mm:ss");
     }
 }
