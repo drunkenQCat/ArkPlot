@@ -174,4 +174,143 @@ public class WorkflowLogPanelViewModelTests
         vm.ToggleExpand(plain);
         Assert.False(plain.IsExpanded);
     }
+
+    [AvaloniaFact]
+    public void EnterStage_ClosesPreviousStage()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "初始化", "下载", "完成" });
+
+        vm.EnterStage(0);
+        vm.EnterStage(1);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(StageStatus.Done, vm.Stages[0].Status);
+        Assert.Equal(StageStatus.Active, vm.Stages[1].Status);
+    }
+
+    [AvaloniaFact]
+    public void EnterStage_SameIndex_IsNoOp()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "初始化", "下载", "完成" });
+
+        vm.EnterStage(1);
+        vm.EnterStage(1);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(StageStatus.Active, vm.Stages[1].Status);
+        // 未被关闭再重启：不产生 Done，计时也不被重置写 Duration。
+        Assert.Equal(StageStatus.Pending, vm.Stages[0].Status);
+        Assert.Equal(string.Empty, vm.Stages[1].Duration);
+    }
+
+    [AvaloniaFact]
+    public void FailStage_MarksFailed_AndAppendFallsBackToSystemStage()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "初始化", "下载", "完成" });
+
+        vm.EnterStage(1);
+        vm.FailStage("下载失败");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(StageStatus.Failed, vm.Stages[1].Status);
+        var err = Assert.Single(vm.Stages[1].Logs);
+        Assert.Equal(LogLevel.Error, err.Level);
+        Assert.Equal("下载失败", err.Message);
+
+        // FailStage 清空 _activeStage 后，Append 落到系统阶段。
+        vm.Append(LogLevel.Warn, "系统消息");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Single(vm.SystemStage.Logs);
+        Assert.Equal("系统消息", vm.SystemStage.Logs[0].Message);
+    }
+
+    [AvaloniaFact]
+    public void CompletePipeline_SkipsFailedStage()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "初始化", "下载", "完成" });
+
+        vm.EnterStage(0);
+        vm.EnterStage(1);
+        vm.FailStage("下载失败");
+        vm.CompletePipeline();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(vm.IsComplete);
+        Assert.Equal(StageStatus.Failed, vm.Stages[1].Status);
+        Assert.Equal(StageStatus.Done, vm.Stages[0].Status);
+        Assert.Equal(StageStatus.Done, vm.Stages[2].Status);
+    }
+
+    [AvaloniaFact]
+    public void UpdateProgress_IncludesActiveStageFraction()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "A", "B" });
+
+        vm.EnterStage(0);
+        vm.EnterStage(1); // A done，B active
+        vm.Stages[1].Progress = 50;
+        vm.Append(LogLevel.Info, "推进进度"); // 触发 UpdateProgress
+        Dispatcher.UIThread.RunJobs();
+
+        // 1 done + active 50% → (1 + 0.5) / 2 * 100 = 75
+        Assert.Equal(75, vm.TotalProgress);
+    }
+
+    [AvaloniaFact]
+    public void EnterStage_WritesDuration_OnStageClose()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "A", "B" });
+
+        vm.EnterStage(0);
+        vm.EnterStage(1);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(string.IsNullOrEmpty(vm.Stages[0].Duration));
+    }
+
+    [AvaloniaFact]
+    public void LocateErrorCommand_ShowsOnlyErrors_AndNoErrorStatus()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "A", "B" });
+
+        vm.EnterStage(1);
+        vm.Append(LogLevel.Info, "普通消息");
+        vm.Append(LogLevel.Error, "错误消息");
+        Dispatcher.UIThread.RunJobs();
+
+        vm.LocateErrorCommand.Execute(null);
+        var err = Assert.Single(vm.VisibleLogs);
+        Assert.Equal(LogLevel.Error, err.Level);
+
+        // 选中无错误的阶段 → 提示没有错误。
+        vm.SelectStage(vm.Stages[0]);
+        vm.LocateErrorCommand.Execute(null);
+        Assert.Contains("没有错误", vm.StatusMessage);
+    }
+
+    [AvaloniaFact]
+    public void SelectedStageShowErrorHint_FollowsSelection()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "A", "B" });
+
+        vm.EnterStage(0);
+        vm.Append(LogLevel.Error, "错误");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(vm.SelectedStageShowErrorHint);
+
+        vm.EnterStage(1);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(vm.SelectedStageShowErrorHint);
+    }
 }
