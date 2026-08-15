@@ -20,7 +20,7 @@
         <conv:StageStatusToTextBrushConverter x:Key="StageTextBrush"/>
     </UserControl.Resources>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,*">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
 
         <!-- ===== 顶部：进度 + 工具栏 ===== -->
         <DockPanel Grid.Row="0" Margin="4,2,4,6">
@@ -28,6 +28,9 @@
                     Command="{Binding ExportLogsCommand}" Margin="4,0,0,0"/>
             <Button DockPanel.Dock="Right" Content="清空" FontSize="11" Padding="8,2"
                     Command="{Binding ClearLogsCommand}" Margin="4,0,0,0"/>
+            <Button DockPanel.Dock="Right" Content="定位到问题" FontSize="11" Padding="8,2"
+                    Command="{Binding LocateErrorCommand}" Margin="4,0,0,0"
+                    IsVisible="{Binding SelectedStageShowErrorHint}"/>
             <TextBlock DockPanel.Dock="Right" Text="{Binding ProgressText}"
                        VerticalAlignment="Center" Margin="8,0" FontSize="12" Opacity="0.6"/>
             <CheckBox DockPanel.Dock="Right" Content="仅错误"
@@ -48,7 +51,7 @@
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="models:WorkflowStage" x:CompileBindings="False">
+                    <DataTemplate x:DataType="models:WorkflowStage">
                         <StackPanel Orientation="Vertical" VerticalAlignment="Bottom">
                             <Grid ColumnDefinitions="18,Auto,18">
                                 <!-- 左连线 -->
@@ -107,93 +110,73 @@
             </StackPanel>
         </Border>
 
+        <!-- ===== 日志区标题 ===== -->
+        <TextBlock Grid.Row="3" Text="{Binding HeaderText}" FontSize="13" FontWeight="SemiBold"
+                   Margin="4,0,4,4" Opacity="0.85"/>
+
         <!-- ===== 日志流 ===== -->
-        <ScrollViewer Grid.Row="3" x:Name="LogScroll" Margin="4,0,4,0" MaxHeight="260">
+        <ScrollViewer Grid.Row="4" x:Name="LogScroll" Margin="4,0,4,0" MaxHeight="260">
             <i:Interaction.Behaviors>
                 <ba:AutoScrollBehavior Enabled="True"/>
             </i:Interaction.Behaviors>
             <ItemsControl ItemsSource="{Binding VisibleLogs}">
                 <ItemsControl.ItemTemplate>
-                    <DataTemplate DataType="models:LogEntry" x:CompileBindings="False">
+                    <DataTemplate x:DataType="models:LogEntry">
                         <Grid>
-                            <!-- 带预览的日志（图片→悬停大图；思考→悬停概览） -->
-                            <Border IsVisible="{Binding HasPreview}" CornerRadius="4"
+                            <!-- 普通日志行（非分段横幅）：图片/思考日志悬停飘窗，普通日志不飘窗 -->
+                            <Border IsVisible="{Binding IsNotSection}" CornerRadius="4"
                                     Padding="6,3" Margin="0,1"
                                     Background="{Binding Level, Converter={StaticResource LogLevelBackground}}"
-                                    Tapped="LogTapped" Cursor="Hand">
+                                    Tapped="LogTapped" Cursor="Hand"
+                                    Classes.hasPreview="{Binding HasPreview}">
+                                <Border.Styles>
+                                    <Style Selector="Border.hasPreview">
+                                        <Setter Property="ToolTip.Tip">
+                                            <Setter.Value>
+                                                <StackPanel MaxWidth="300">
+                                                    <Image IsVisible="{Binding HasImage}"
+                                                           asyncImageLoader:ImageLoader.Source="{Binding ImageUrl}"
+                                                           Width="280" Stretch="UniformToFill" Margin="0,0,0,4"/>
+                                                    <TextBlock IsVisible="{Binding !HasImage}" Text="{Binding Tooltip}"
+                                                               TextWrapping="Wrap" FontSize="11"/>
+                                                </StackPanel>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Border.Styles>
                                 <StackPanel>
                                     <Grid ColumnDefinitions="Auto,*">
                                         <Image Grid.Column="0" IsVisible="{Binding HasImage}"
                                                Margin="0,0,8,0"
                                                asyncImageLoader:ImageLoader.Source="{Binding ImageUrl}"
                                                Width="38" Height="38" Stretch="UniformToFill"/>
-                                        <Grid Grid.Column="1" ColumnDefinitions="Auto,Auto,*">
-                                            <TextBlock Grid.Column="0" Text="{Binding Time}"
-                                                       FontFamily="Consolas" FontSize="11" Opacity="0.5"
-                                                       VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding LevelText}"
-                                                       FontFamily="Consolas" FontSize="11" FontWeight="SemiBold"
-                                                       Margin="8,0" VerticalAlignment="Center"
-                                                       Foreground="{Binding Level, Converter={StaticResource LogLevelBrush}}"/>
-                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-                                                <TextBlock Text="{Binding Message}" FontFamily="Consolas"
-                                                           FontSize="11" TextWrapping="Wrap"
+                                        <StackPanel Grid.Column="1">
+                                            <Grid ColumnDefinitions="Auto,Auto,*">
+                                                <TextBlock Grid.Column="0" Text="{Binding Time}"
+                                                           FontFamily="Consolas" FontSize="11" Opacity="0.5"
                                                            VerticalAlignment="Center"/>
-                                                <ProgressBar IsVisible="{Binding HasProgress}"
-                                                             Value="{Binding Progress}" Minimum="0" Maximum="100"
-                                                             Width="80" Height="5" VerticalAlignment="Center"
-                                                             Foreground="#2563EB" Background="#E5E7EB"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Grid>
-                                    <Border IsVisible="{Binding IsExpanded}" Background="#F3F4F6"
-                                            CornerRadius="4" Padding="8" Margin="38,4,0,0"
-                                            BorderBrush="#D1D5DB" BorderThickness="1">
-                                        <TextBlock Text="{Binding Detail}" FontFamily="Consolas"
-                                                   FontSize="11" TextWrapping="Wrap"/>
-                                    </Border>
-                                </StackPanel>
-                                <ToolTip.Tip>
-                                    <StackPanel MaxWidth="300">
-                                        <Image IsVisible="{Binding HasImage}"
-                                               asyncImageLoader:ImageLoader.Source="{Binding ImageUrl}"
-                                               Width="280" Stretch="UniformToFill" Margin="0,0,0,4"/>
-                                        <TextBlock IsVisible="{Binding !HasImage}" Text="{Binding Tooltip}"
-                                                   TextWrapping="Wrap" FontSize="11"/>
-                                    </StackPanel>
-                                </ToolTip.Tip>
-                            </Border>
-                            <!-- 普通日志（无图无详情，不飘窗） -->
-                            <Border IsVisible="{Binding IsPlain}" CornerRadius="4"
-                                    Padding="6,3" Margin="0,1"
-                                    Background="{Binding Level, Converter={StaticResource LogLevelBackground}}"
-                                    Tapped="LogTapped" Cursor="Hand"
-                                    Opacity="0.9">
-                                <StackPanel>
-                                    <Grid ColumnDefinitions="Auto,Auto,*">
-                                        <TextBlock Grid.Column="0" Text="{Binding Time}"
-                                                   FontFamily="Consolas" FontSize="11" Opacity="0.5"
-                                                   VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding LevelText}"
-                                                   FontFamily="Consolas" FontSize="11" FontWeight="SemiBold"
-                                                   Margin="8,0" VerticalAlignment="Center"
-                                                   Foreground="{Binding Level, Converter={StaticResource LogLevelBrush}}"/>
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-                                            <TextBlock Text="{Binding Message}" FontFamily="Consolas"
-                                                       FontSize="11" TextWrapping="Wrap"
-                                                       VerticalAlignment="Center"/>
-                                            <ProgressBar IsVisible="{Binding HasProgress}"
-                                                         Value="{Binding Progress}" Minimum="0" Maximum="100"
-                                                         Width="80" Height="5" VerticalAlignment="Center"
-                                                         Foreground="#2563EB" Background="#E5E7EB"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding LevelText}"
+                                                           FontFamily="Consolas" FontSize="11" FontWeight="SemiBold"
+                                                           Margin="8,0" VerticalAlignment="Center"
+                                                           Foreground="{Binding Level, Converter={StaticResource LogLevelBrush}}"/>
+                                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding Message}" FontFamily="Consolas"
+                                                               FontSize="11" TextWrapping="Wrap"
+                                                               VerticalAlignment="Center"/>
+                                                    <ProgressBar IsVisible="{Binding HasProgress}"
+                                                                 Value="{Binding Progress}" Minimum="0" Maximum="100"
+                                                                 Width="80" Height="5" VerticalAlignment="Center"
+                                                                 Foreground="#2563EB" Background="#E5E7EB"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Border IsVisible="{Binding IsExpanded}" Background="#F3F4F6"
+                                                    CornerRadius="4" Padding="8" Margin="0,4,0,0"
+                                                    BorderBrush="#D1D5DB" BorderThickness="1">
+                                                <TextBlock Text="{Binding Detail}" FontFamily="Consolas"
+                                                           FontSize="11" TextWrapping="Wrap"/>
+                                            </Border>
                                         </StackPanel>
                                     </Grid>
-                                    <Border IsVisible="{Binding IsExpanded}" Background="#F3F4F6"
-                                            CornerRadius="4" Padding="8" Margin="0,4,0,0"
-                                            BorderBrush="#D1D5DB" BorderThickness="1">
-                                        <TextBlock Text="{Binding Detail}" FontFamily="Consolas"
-                                                   FontSize="11" TextWrapping="Wrap"/>
-                                    </Border>
                                 </StackPanel>
                             </Border>
                             <!-- 分段横幅（醒目标注子流程，如「图片描述进行中」） -->
@@ -209,6 +192,11 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
+
+        <!-- ===== 底部状态行 ===== -->
+        <TextBlock Grid.Row="5" Text="{Binding StatusMessage}" FontSize="11" Opacity="0.5"
+                   Margin="4,2,4,0" TextWrapping="Wrap"
+                   IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
     </Grid>
 </UserControl>
