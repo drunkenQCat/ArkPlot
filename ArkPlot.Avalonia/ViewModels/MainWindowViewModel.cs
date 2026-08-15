@@ -375,7 +375,13 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (OperationCanceledException)
         {
+            WorkflowLog.FailStage("生成已被取消");
             noticeBlock.RaiseCommonEvent("⚠️ 生成已被取消。");
+        }
+        catch (Exception ex)
+        {
+            WorkflowLog.FailStage($"生成失败：{ex.Message}");
+            noticeBlock.RaiseCommonEvent($"❌ 生成失败：{ex.Message}");
         }
         finally
         {
