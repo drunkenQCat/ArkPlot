@@ -69,6 +69,9 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     /// <summary>当前活动阶段（新日志追加到它下面）。</summary>
     private WorkflowStage? _activeStage;
 
+    /// <summary>当前活动阶段的计时器（进入时启动，关闭/失败/完成时停止并写入 Duration）。</summary>
+    private Stopwatch? _stageStopwatch;
+
     public WorkflowLogPanelViewModel()
     {
         SystemStage = new WorkflowStage("系统", 0) { IsSystem = true };
@@ -99,14 +102,28 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
         RefreshVisibleLogs();
     }
 
-    /// <summary>进入指定阶段（按索引），将其标为进行中并设为选中。</summary>
+    /// <summary>进入指定阶段（按索引），关闭上一个活动阶段并将其标为进行中、设为选中。</summary>
     public void EnterStage(int index)
     {
         if (index < 0 || index >= Stages.Count) return;
-        _activeStage = Stages[index];
-        _activeStage.Status = StageStatus.Active;
-        SelectedStage = _activeStage;
+        var stage = Stages[index];
+
+        // 幂等：重复进入当前活动阶段时不做任何事（避免关闭再重启、计时被重置）。
+        if (ReferenceEquals(_activeStage, stage)) return;
+
+        // 关闭上一个活动阶段（失败阶段已由 FailStage 收尾，保持不变）。
+        if (_activeStage is { } previous && previous.Status != StageStatus.Failed)
+        {
+            previous.Status = StageStatus.Done;
+            StopStageTiming(previous);
+        }
+
+        _activeStage = stage;
+        stage.Status = StageStatus.Active;
+        StartStageTiming(stage);
+        SelectedStage = stage;
         RefreshVisibleLogs();
+        UpdateProgress();
     }
 
     /// <summary>向当前阶段追加一条日志（线程安全）。</summary>
@@ -164,6 +181,11 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     {
         Dispatcher.UIThread.Post(() =>
         {
+            // 停止当前活动阶段计时并写入 Duration（pending 阶段保持空字符串）。
+            if (_activeStage is { } active)
+            {
+                StopStageTiming(active);
+            }
             foreach (var s in Stages)
             {
                 if (s.Status != StageStatus.Failed) s.Status = StageStatus.Done;
@@ -195,6 +217,7 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
                 stage.ErrorCount++;
             }
             stage.ShowErrorHint = true;
+            StopStageTiming(stage);
             _activeStage = null;
             UpdateProgress();
             RefreshVisibleLogs();
@@ -314,6 +337,30 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     }
 
     // ---------- 内部 ----------
+
+    /// <summary>启动当前阶段的计时。</summary>
+    private void StartStageTiming(WorkflowStage stage)
+    {
+        _stageStopwatch?.Stop();
+        _stageStopwatch = Stopwatch.StartNew();
+    }
+
+    /// <summary>停止当前阶段的计时并写入其 Duration。</summary>
+    private void StopStageTiming(WorkflowStage stage)
+    {
+        if (_stageStopwatch == null) return;
+        _stageStopwatch.Stop();
+        stage.Duration = FormatDuration(_stageStopwatch.Elapsed);
+        _stageStopwatch = null;
+    }
+
+    /// <summary>格式化耗时：小于 1 秒显示毫秒（如 203ms），否则显示秒（如 1.24s）。</summary>
+    private static string FormatDuration(TimeSpan elapsed)
+    {
+        return elapsed.TotalSeconds < 1
+            ? $"{(int)elapsed.TotalMilliseconds}ms"
+            : $"{elapsed.TotalSeconds:0.00}s";
+    }
 
     /// <summary>根据已完成阶段与当前活动阶段进度推算总进度（由 _activeStage 驱动，而非遍历首个 Active）。</summary>
     private void UpdateProgress()
