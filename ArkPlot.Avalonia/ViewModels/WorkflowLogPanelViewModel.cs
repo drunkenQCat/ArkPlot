@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -61,6 +62,10 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     [ObservableProperty]
     private string _statusMessage = string.Empty;
 
+    /// <summary>当前选中阶段是否存在未处理错误（控制「定位到问题」按钮显隐）。</summary>
+    [ObservableProperty]
+    private bool _selectedStageShowErrorHint;
+
     /// <summary>当前活动阶段（新日志追加到它下面）。</summary>
     private WorkflowStage? _activeStage;
 
@@ -117,13 +122,16 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
         // 在调用点同步捕获当前阶段：Post 是异步的，若延迟后在 Lambda 里才读 _activeStage，
         // 会读到 UI 线程已推进到的后续阶段，导致日志归属错乱。捕获后即使 Post 延迟也进它该进的阶段。
         var stage = _activeStage ?? SystemStage;
+        // 在调用点构造 LogEntry：Time 取事件发生时刻，而非 UI 线程真正处理（队列排空）时刻。
+        var entry = new LogEntry(level, message, progress, isSection, imageUrl, tooltip, detail);
         Dispatcher.UIThread.Post(() =>
         {
-            stage.Logs.Add(new LogEntry(level, message, progress, isSection, imageUrl, tooltip, detail));
+            stage.Logs.Add(entry);
             if (level == LogLevel.Error)
             {
                 stage.ErrorCount++;
                 stage.ShowErrorHint = true;
+                if (stage == SelectedStage) SelectedStageShowErrorHint = true;
             }
             if (stage == SelectedStage) RefreshVisibleLogs();
             UpdateProgress();
@@ -168,6 +176,31 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
         });
     }
 
+    /// <summary>将当前阶段标记为失败（用于管线异常/网络错误等收尾路径），可附带一条错误日志。</summary>
+    public void FailStage(string? message = null)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var stage = _activeStage;
+            if (stage == null)
+            {
+                if (message != null)
+                    SystemStage.Logs.Add(new LogEntry(LogLevel.Error, message));
+                return;
+            }
+            stage.Status = StageStatus.Failed;
+            if (message != null)
+            {
+                stage.Logs.Add(new LogEntry(LogLevel.Error, message));
+                stage.ErrorCount++;
+            }
+            stage.ShowErrorHint = true;
+            _activeStage = null;
+            UpdateProgress();
+            RefreshVisibleLogs();
+        });
+    }
+
     // ---------- 对外交互 ----------
 
     /// <summary>点击阶段节点，切换右侧展示其日志。</summary>
@@ -178,7 +211,8 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     }
 
     /// <summary>「定位到问题」：将当前阶段错误日志置顶展示。</summary>
-    public void LocateError()
+    [RelayCommand]
+    private void LocateError()
     {
         if (SelectedStage == null) return;
         var errors = SelectedStage.Logs.Where(e => e.Level == LogLevel.Error).ToList();
@@ -197,6 +231,7 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     partial void OnSelectedStageChanged(WorkflowStage? value)
     {
         HeaderText = value == null ? "工作流日志" : $"{value.Name} · 阶段日志";
+        SelectedStageShowErrorHint = value?.ShowErrorHint ?? false;
         RefreshVisibleLogs();
     }
 
@@ -280,16 +315,17 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
 
     // ---------- 内部 ----------
 
-    /// <summary>根据已完成/进行中阶段推算总进度。</summary>
+    /// <summary>根据已完成阶段与当前活动阶段进度推算总进度（由 _activeStage 驱动，而非遍历首个 Active）。</summary>
     private void UpdateProgress()
     {
         var total = Stages.Count;
         if (total == 0) return;
         var done = Stages.Count(s => s.Status == StageStatus.Done);
-        var active = Stages.FirstOrDefault(s => s.Status == StageStatus.Active);
+        var active = _activeStage is { Status: StageStatus.Active } ? _activeStage : null;
         var fraction = active?.Progress / 100.0 ?? 0;
         TotalProgress = (done + fraction) / total * 100.0;
-        var shown = Math.Min(done + (active != null ? 1 : 0), total);
-        ProgressText = active != null || done == total ? $"阶段 {shown}/{total}" : $"阶段 {done}/{total}";
+        ProgressText = active != null
+            ? $"阶段 {Math.Min(done + 1, total)}/{total}"
+            : $"阶段 {done}/{total}";
     }
 }
