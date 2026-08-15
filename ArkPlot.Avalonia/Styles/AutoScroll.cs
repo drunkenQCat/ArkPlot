@@ -66,7 +66,7 @@ public static class ScrollViewerExtensions
 {
     public static void ScrollToEnd(this ScrollViewer scroll)
     {
-        scroll.Offset = new Vector(scroll.Offset.X, scroll.ScrollBarMaximum.X);
+        scroll.Offset = new Vector(scroll.Offset.X, scroll.ScrollBarMaximum.Y);
     }
 }
 
