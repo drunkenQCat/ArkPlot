@@ -150,6 +150,6 @@ pwsh -File Scripts/log-panel/Invoke-LogPanelVerify.ps1 -Repo <主工作树>
 
 ## 12. 遗留项（后续迭代候选）
 
-- `RunNovelizerIfEnabled` 内层 `catch (Exception)` 会吞 `OperationCanceledException` → 小说化阶段取消后仍走到 CompletePipeline。建议内层先 `if (ex is OperationCanceledException) throw;`。属既有行为，按最小改动原则本轮未动。
+- ~~`RunNovelizerIfEnabled` 内层 `catch (Exception)` 会吞 `OperationCanceledException` → 小说化阶段取消后仍走到 CompletePipeline。~~ **已修复**：内层 try 增加 `catch (OperationCanceledException) { throw; }`（置于 BailianException 之前），取消现在会冒泡到 LoadMd 的 OCE catch → FailStage("生成已被取消")。修复于 2026-08，随 fix/oce 合并入 log-refine（see fix/oce 提交）。未加 VM 层测试：触发路径需改共享 settings.json 或造真实小说文件目录，成本/污染风险高于一行修复的价值；由 layer-1 证据 `BatchProcessAsync_CancelledToken_Throws`（管线遇取消 token 抛 OCE）+ 相关类测试（24 通过 + 1 跳过）保证。
 - `WorkflowStage.Progress` 暂无赋值点（`UpdateProgress` 的 fraction 分支已就绪）→ 有真实 0-100 进度时在驱动方传 `Append(…, progress: n)`。
 - 两个基线测试为 TTS 侧既有问题（画廊背景断言 / `FormattedTextEntry` 建表顺序，见 `ArkPlot.Adapters/context.md` 第九节），修复后可移出基线。

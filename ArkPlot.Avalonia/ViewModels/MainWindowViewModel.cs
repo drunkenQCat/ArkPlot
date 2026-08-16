@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
@@ -767,6 +767,12 @@ public partial class MainWindowViewModel : ViewModelBase
                 LogDiag("[RunNovelizer] HTML 生成过程异常: {0}", ex.Message);
                 noticeBlock.RaiseCommonEvent($"⚠️ 小说HTML生成失败: {ex.Message}");
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // 关键：取消必须先 rethrow，绝不能被下面的兜底 catch (Exception) 吞掉，
+            // 否则在小说化期间取消后 LoadMd 会继续走到 CompletePipeline，误报"全部完成"。
+            throw;
         }
         catch (BailianException ex)
         {
