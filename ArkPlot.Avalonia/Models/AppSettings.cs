@@ -142,7 +142,8 @@ public record NovelizerSettings(
     int ChunkSize = 5_000,
     int CompressInterval = 2,
     bool EnableSectionSplitter = false,
-    bool UseMock = false
+    bool UseMock = false,
+    bool ShowClearCacheButton = false
 )
 {
     public const string DefaultSystemPrompt = """

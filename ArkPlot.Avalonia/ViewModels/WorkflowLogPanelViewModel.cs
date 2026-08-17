@@ -12,6 +12,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ArkPlot.Avalonia.Models;
 using ArkPlot.Avalonia.Services;
+using ArkPlot.Core.Infrastructure;
+using ArkPlot.Core.Model;
+using ArkPlot.Core.Services;
 using SukiUI.Toasts;
 
 namespace ArkPlot.Avalonia.ViewModels;
@@ -231,6 +234,46 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     {
         SelectedStage = stage;
         RefreshVisibleLogs();
+    }
+
+    // ---------- 清除缓存（开发开关控制显隐） ----------
+
+    /// <summary>是否显示「清除缓存」按钮（由 DevOptionsPanel 开关控制，持久化于 settings.json）。</summary>
+    [ObservableProperty]
+    private bool isClearCacheVisible;
+
+    /// <summary>当前故事输出目录（由宿主 VM 注入，指向主界面 OutputPath/{当前活动}）。</summary>
+    public string? StoryOutputDir { get; set; }
+
+    /// <summary>当前勾选的章节名（由宿主 VM 在 LoadMd 时注入，清除缓存按这些章节粒度执行）。</summary>
+    public List<string> CurrentChapterNames { get; set; } = new();
+
+    /// <summary>当前勾选章节的解析条目（由宿主 VM 注入，用于还原该章节的图片描述缓存 key）。</summary>
+    public List<ScriptLine> CurrentChapterEntries { get; set; } = new();
+
+    /// <summary>「清除缓存」：按当前勾选章节清除图片描述缓存（DB）与小说化缓存（json + 输出文件）。</summary>
+    [RelayCommand]
+    private void ClearCache()
+    {
+        try
+        {
+            var picDescCount = CacheCleanupDao.DeletePicDescriptions(CurrentChapterEntries);
+            var (novelEntries, novelFiles) = CacheCleanupDao.DeleteNovelizerCache(
+                StoryOutputDir ?? string.Empty, CurrentChapterNames);
+
+            var parts = new List<string>();
+            if (picDescCount > 0) parts.Add($"图片描述缓存 {picDescCount} 条");
+            if (novelEntries > 0 || novelFiles > 0)
+                parts.Add($"小说化缓存 {novelEntries} 条 / {novelFiles} 个文件");
+
+            StatusMessage = parts.Count > 0
+                ? $"已清除：{string.Join("、", parts)}（重新生成后将重新调用 API）"
+                : "未发现可清除的缓存（请先选择并生成章节）";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"清除缓存失败：{ex.Message}";
+        }
     }
 
     /// <summary>「定位到问题」：将当前阶段错误日志置顶展示。</summary>

@@ -51,6 +51,7 @@ public partial class MainWindowViewModel : ViewModelBase
         // 订阅 GitHub 连接失败事件，弹出引导对话框
         ArkPlot.Core.Utilities.GitHubProxy.ConnectionFailed += OnGitHubConnectionFailed;
         WorkflowLog.ToastManager = toastManager;
+        WorkflowLog.IsClearCacheVisible = AppSettings.Load().Novelizer.ShowClearCacheButton;
         SeedSystemLog();
     }
 
@@ -185,6 +186,21 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             chapter.IsSelected = false;
         }
+    }
+
+    /// <summary>
+    /// 收集当前勾选章节的已解析条目（从 Plot 缓存读取），供日志面板的「清除缓存」按章节还原图片描述 DedupKey。
+    /// </summary>
+    private async Task<List<ScriptLine>> CollectChapterEntriesForClearCache(Act act, IReadOnlyList<string> chapterNames)
+    {
+        var result = new List<ScriptLine>();
+        foreach (var name in chapterNames)
+        {
+            var cached = await PlotCache<FormattedTextEntry>.TryLoadAsync(act.Id, name);
+            if (cached != null)
+                result.AddRange(cached.Value.Entries);
+        }
+        return result;
     }
 
     [RelayCommand]
@@ -334,6 +350,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
         PrepareLoading();
         activeTitle = CurrentAct.Name;
+        var selectedChapterNames = Chapters
+            .Where(c => c.IsSelected)
+            .Select(c => c.ChapterName)
+            .ToList();
+
+        // 向日志面板注入清除缓存所需的上下文（按勾选章节粒度）
+        WorkflowLog.StoryOutputDir = outputPathOfCurrentStory;
+        WorkflowLog.CurrentChapterNames = selectedChapterNames;
+        WorkflowLog.CurrentChapterEntries = await CollectChapterEntriesForClearCache(CurrentAct, selectedChapterNames);
+
         var chapters = storySync.GetChaptersByActId(CurrentAct.Id);
 
         var content = new AkpStoryLoader(CurrentAct, chapters,

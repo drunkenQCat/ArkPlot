@@ -1,5 +1,8 @@
-using ArkPlot.Avalonia.Models;
+﻿using ArkPlot.Avalonia.Models;
 using ArkPlot.Avalonia.ViewModels;
+using ArkPlot.Arknights;
+using ArkPlot.Core.Infrastructure;
+using ArkPlot.Core.Model;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Xunit;
@@ -312,5 +315,106 @@ public class WorkflowLogPanelViewModelTests
         Dispatcher.UIThread.RunJobs();
 
         Assert.False(vm.SelectedStageShowErrorHint);
+    }
+
+    [AvaloniaFact]
+    public void ClearCache_DeletesOnlyCurrentChaptersPicDescAndNovelFiles()
+    {
+        DbFactory.ConfigureForTesting("Data Source=:memory:");
+        ArknightsDbInitializer.Init();
+        var db = DbFactory.GetClient();
+
+        // 当前章节用到的图：立绘 code（char_muersai）与场景 URL
+        db.Insertable(new PicDescription
+        {
+            DedupKey = "char_muersai",                    // 立绘：本章用到 → 应删
+            ImageUrl = "https://a/1.png",
+            PicDesc = "缪尔赛思立绘",
+            Source = "Vision",
+        }).ExecuteCommand();
+        db.Insertable(new PicDescription
+        {
+            DedupKey = "https://a/bg1.png",               // 本章场景 → 应删
+            ImageUrl = "https://a/bg1.png",
+            PicDesc = "场景",
+            Source = "Vision",
+        }).ExecuteCommand();
+        // 其他章节独占的缓存：不应删除
+        db.Insertable(new PicDescription
+        {
+            DedupKey = "char_aphris",
+            ImageUrl = "https://a/2.png",
+            PicDesc = "洛伦茨立绘",
+            Source = "Vision",
+        }).ExecuteCommand();
+        // Placeholder 记录：保留（可重试语义）
+        db.Insertable(new PicDescription
+        {
+            DedupKey = "char_skadi",
+            ImageUrl = "https://a/3.png",
+            PicDesc = "占位",
+            Source = "Placeholder",
+        }).ExecuteCommand();
+
+        // 当前章节条目：characterCode + ResourceUrls 中带有上述图
+        var entries = new List<ScriptLine>
+        {
+            new() { CharacterCode = "char_muersai", ResourceUrls = ["https://a/1.png"] },
+            new() { CharacterCode = null, ResourceUrls = ["https://a/bg1.png"] },
+        };
+
+        // 造当前章节输出目录：.novelizer-cache.json 含本章 + 其他章节 key；输出文件同样两类
+        var outputDir = Path.Combine(Path.GetTempPath(), $"clear_cache_test_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(outputDir);
+        var cacheMap = new Dictionary<string, string>
+        {
+            [$"{Path.Combine(outputDir, "孤星_第1章.md")}::deepseek-v4-flash"] = "hash1",
+            [$"{Path.Combine(outputDir, "孤星_第2章.md")}::deepseek-v4-flash"] = "hash2",
+        };
+        var cacheJson = System.Text.Json.JsonSerializer.Serialize(cacheMap);
+        File.WriteAllText(Path.Combine(outputDir, ".novelizer-cache.json"), cacheJson);
+        File.WriteAllText(Path.Combine(outputDir, "孤星_第1章_novel_deepseek-v4-flash.md"), "第1章小说");
+        File.WriteAllText(Path.Combine(outputDir, "孤星_第2章_novel_deepseek-v4-flash.md"), "第2章小说");
+
+        var vm = new WorkflowLogPanelViewModel
+        {
+            StoryOutputDir = outputDir,
+            CurrentChapterNames = ["孤星_第1章"],
+            CurrentChapterEntries = entries,
+        };
+        vm.ClearCacheCommand.Execute(null);
+
+        // 本章的 2 条图片描述被删（剩余 1 条 Vision = 其他章节的 char_aphris）；Placeholder 保留
+        Assert.Equal(1, db.Queryable<PicDescription>().Count(it => it.Source == "Vision"));
+        Assert.Null(db.Queryable<PicDescription>().First(it => it.Source == "Vision" && it.DedupKey == "char_muersai"));
+        Assert.NotNull(db.Queryable<PicDescription>().First(it => it.DedupKey == "char_aphris"));
+        Assert.NotNull(db.Queryable<PicDescription>().First(it => it.Source == "Placeholder"));
+
+        // 小说缓存：本章 key 与文件删除，其他章节保留（json 反序列化读回，规避 \uXXXX 转义干扰）
+        var remaining = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(
+            File.ReadAllText(Path.Combine(outputDir, ".novelizer-cache.json")))!;
+        Assert.DoesNotContain(remaining.Keys, k => k.Contains("孤星_第1章.md"));
+        Assert.Contains(remaining.Keys, k => k.Contains("孤星_第2章.md"));
+        Assert.False(File.Exists(Path.Combine(outputDir, "孤星_第1章_novel_deepseek-v4-flash.md")));
+        Assert.True(File.Exists(Path.Combine(outputDir, "孤星_第2章_novel_deepseek-v4-flash.md")));
+        Assert.Contains("图片描述缓存 2 条", vm.StatusMessage);
+        Assert.Contains("小说化缓存 1 条 / 1 个文件", vm.StatusMessage);
+
+        DbFactory.Reset();
+        try { Directory.Delete(outputDir, recursive: true); } catch { }
+    }
+
+    [AvaloniaFact]
+    public void ClearCache_WithNoContext_ReportsNothingToClear()
+    {
+        DbFactory.ConfigureForTesting("Data Source=:memory:");
+        ArknightsDbInitializer.Init();
+
+        var vm = new WorkflowLogPanelViewModel { StoryOutputDir = null, CurrentChapterNames = [] };
+        vm.ClearCacheCommand.Execute(null);
+
+        Assert.Contains("未发现可清除的缓存", vm.StatusMessage);
+
+        DbFactory.Reset();
     }
 }

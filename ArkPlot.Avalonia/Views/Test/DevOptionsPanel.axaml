@@ -18,5 +18,14 @@
               FontWeight="Bold" Margin="0,12,0,0"/>
     <TextBlock Text="开启后，图片描述不调用真实视觉 API，返回确定性假描述与思考过程，用于开发调试流程。"
                FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+
+
+    <!-- 开发开关：日志面板显示「清除缓存」按钮 -->
+    <CheckBox Content="显示部分清除缓存按钮"
+              IsChecked="{Binding ShowClearCacheButton}"
+              FontWeight="Bold" Margin="0,12,0,0"/>
+    <TextBlock Text="开启后，日志面板在导出、清空之外，加一个清除选中章节图片描述/小说化缓存标签的按钮，用于开发调试流程。"
+            FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+    <!-- 开发开关 -->
   </StackPanel>
 </UserControl>
