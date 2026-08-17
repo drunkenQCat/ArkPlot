@@ -14,8 +14,8 @@
     x:Class="ArkPlot.Avalonia.Views.MainWindow"
     x:DataType="vm:MainWindowViewModel"
     Title="ArkPlot"
-    Height="860"
-    Width="400">
+    Height="710"
+    Width="780">
     <Window.DataContext>
         <vm:MainWindowViewModel />
     </Window.DataContext>
@@ -43,18 +43,27 @@
     </i:Interaction.Behaviors>
 
     <StackPanel>
-        <Grid Height="70">
-            <Image
+        <Grid ColumnDefinitions="400,*">
+        <!-- ============ Column A：banner + 主操作区 ============ -->
+        <StackPanel Grid.Column="0">
+            <!-- <Column A> -->
+            <Grid Height="100">
+            <Border
                 x:Name="BannerImage"
-                Source="avares://ArkPlot.Avalonia/Assets/slogan.jpg"
-                Stretch="UniformToFill"
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Stretch"
-                Tapped="BannerImage_Tapped"/>
+                Tapped="BannerImage_Tapped">
+                <Border.Background>
+                    <ImageBrush Source="avares://ArkPlot.Avalonia/Assets/slogan.jpg"
+                                Stretch="UniformToFill"
+                                AlignmentY="Top"
+                    />
+                </Border.Background>
+            </Border>
         </Grid>
         <Grid
             Margin="10 10 10 0"
-            RowDefinitions="*,*,*,*,*"
+            RowDefinitions="*,*,*,*"
         >
             <StackPanel
                 Spacing="6"
@@ -127,62 +136,10 @@
                         <RowDefinition Height="*" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
-                    <Button Grid.Row="0" Grid.Column="0"
-                        Content="当前活动🔻"
-                        VerticalAlignment="Center"
-                        HorizontalAlignment="Right"
-                        IsEnabled="{c:Binding IsInitialized}"
-                        Command="{Binding LoadChaptersCommand}">
-                        <Button.Flyout>
-                            <Flyout>
-                                <Flyout.FlyoutPresenterTheme>
-                                    <ControlTheme TargetType="FlyoutPresenter">
-                                        <Setter Property="Background"
-                                            Value="{DynamicResource SukiInformationForeground}" />
-                                        <Setter Property="CornerRadius" Value="8" />
-                                        <Setter Property="BorderBrush" Value="Gray" />
-                                        <Setter Property="BorderThickness" Value="1" />
-                                        <Setter Property="Padding" Value="10" />
-                                    </ControlTheme>
-                                </Flyout.FlyoutPresenterTheme>
-                                <StackPanel Margin="15" MaxWidth="300">
-                                    <TextBlock Text="选择导出章节" FontSize="16" FontWeight="Bold"
-                                        Margin="0,0,0,10" />
-                                    <StackPanel Orientation="Horizontal" Spacing="10"
-                                        HorizontalAlignment="Center" Margin="0,0,0,10">
-                                        <Button Content="全选" Classes="Rounded Flat"
-                                            Command="{Binding SelectAllChaptersCommand}"
-                                            FontSize="12" />
-                                        <Button Content="取消全选" Classes="Rounded Flat"
-                                            Command="{Binding DeselectAllChaptersCommand}"
-                                            FontSize="12" />
-                                    </StackPanel>
-                                    <Border BorderThickness="1" BorderBrush="LightGray"
-                                        MaxHeight="400">
-                                        <ScrollViewer>
-                                            <ItemsControl ItemsSource="{Binding Chapters}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <ToggleButton
-                                                            IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                            FontSize="14"
-                                                            Margin="2"
-                                                            HorizontalAlignment="Stretch">
-                                                            <DockPanel>
-                                                                <TextBlock
-                                                                    Text="{Binding ChapterName}"
-                                                                    VerticalAlignment="Center" />
-                                                            </DockPanel>
-                                                        </ToggleButton>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </ScrollViewer>
-                                    </Border>
-                                </StackPanel>
-                            </Flyout>
-                        </Button.Flyout>
-                    </Button>
+                    <controls:ChapterSelectionFlyout
+                        Grid.Row="0"
+                        Grid.Column="0"
+                        DataContext="{Binding}" />
                     <Button Grid.Row="1" Grid.Column="0"
                         Content="Tags文件"
                         Command="{Binding PickTagFileCommand}"
@@ -276,12 +233,16 @@
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center" />
             </StackPanel>
-            <Grid
-                Grid.Row="4" Margin="7" VerticalAlignment="Stretch"
-                RowDefinitions="*,Auto">
-                <controls:WorkflowLogPanel
-                    Grid.Row="0"
-                    DataContext="{Binding WorkflowLog}"/>
+            <!-- </Column A> -->
+        </Grid>
+        </StackPanel>
+        <!-- ============ Column B：日志面板 ============ -->
+        <Grid
+            Grid.Column="1" Margin="7" VerticalAlignment="Stretch"
+            RowDefinitions="*,Auto">
+            <controls:WorkflowLogPanel
+                Grid.Row="0"
+                DataContext="{Binding WorkflowLog}"/>
                 <Button
                     Grid.Row="1"
                     IsVisible="{Binding HasNetworkError}"
@@ -301,7 +262,8 @@
                         </Style>
                     </Button.Styles>
                 </Button>
-            </Grid>
+        </Grid>
+        <!-- </Column B> -->
         </Grid>
     </StackPanel>
 </sukiUi:SukiWindow>
