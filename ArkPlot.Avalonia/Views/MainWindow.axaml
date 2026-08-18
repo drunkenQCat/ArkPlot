@@ -42,7 +42,7 @@
         </ia:EventTriggerBehavior>
     </i:Interaction.Behaviors>
 
-    <StackPanel>
+    <Grid RowDefinitions="*">
         <Grid ColumnDefinitions="400,*">
         <!-- ============ Column A：banner + 主操作区 ============ -->
         <StackPanel Grid.Column="0">
@@ -265,5 +265,5 @@
         </Grid>
         <!-- </Column B> -->
         </Grid>
-    </StackPanel>
+    </Grid>
 </sukiUi:SukiWindow>

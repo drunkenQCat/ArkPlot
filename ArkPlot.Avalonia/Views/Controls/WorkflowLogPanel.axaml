@@ -140,7 +140,7 @@
         <!-- ===== 日志流 ===== -->
         <Border Grid.Row="5" Margin="4,0,4,0" CornerRadius="6" Padding="3,2"
                 Background="#FDFDFD" BorderBrush="#D1D5DB" BorderThickness="1">
-            <ScrollViewer x:Name="LogScroll" MaxHeight="260">
+            <ScrollViewer x:Name="LogScroll">
             <i:Interaction.Behaviors>
                 <ba:AutoScrollBehavior Enabled="True"/>
             </i:Interaction.Behaviors>
@@ -186,15 +186,17 @@
                                                            FontFamily="Consolas" FontSize="11" FontWeight="SemiBold"
                                                            Margin="8,0" VerticalAlignment="Center"
                                                            Foreground="{Binding Level, Converter={StaticResource LogLevelBrush}}"/>
-                                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                                                <Grid Grid.Column="2" ColumnDefinitions="*,Auto">
                                                     <TextBlock Text="{Binding Message}" FontFamily="Consolas"
                                                                FontSize="11" TextWrapping="Wrap"
-                                                               VerticalAlignment="Center"/>
-                                                    <ProgressBar IsVisible="{Binding HasProgress}"
+                                                               VerticalAlignment="Center"
+                                                               Grid.Column="0"/>
+                                                    <ProgressBar Grid.Column="1"
+                                                                 IsVisible="{Binding HasProgress}"
                                                                  Value="{Binding Progress}" Minimum="0" Maximum="100"
                                                                  Width="80" Height="5" VerticalAlignment="Center"
                                                                  Foreground="#2563EB" Background="#E5E7EB"/>
-                                                </StackPanel>
+                                                </Grid>
                                             </Grid>
                                             <Border IsVisible="{Binding IsExpanded}" Background="#F3F4F6"
                                                     CornerRadius="4" Padding="8" Margin="0,4,0,0"

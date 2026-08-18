@@ -540,34 +540,57 @@ public partial class MainWindowViewModel : ViewModelBase
                 if (IsNovelizerEnabled)
                 {
                     var novelizerSettings = AppSettings.Load().Novelizer;
-                    var nProviderName = novelizerSettings.SelectedProvider;
-                    var nApiKey = novelizerSettings.GetApiKeyForProvider(nProviderName);
-                    var nBaseUrl = novelizerSettings.GetBaseUrlForProvider(nProviderName);
-                    var nProvider = nProviderName switch
+                    // Mock 图片描述模式下，YAML 提取同样 Mock：不调真实 API，返回确定性假 YAML。
+                    // 否则一张图 = 描述（30ms）+ 真实文本提取（20-30s），Mock 就失去意义。
+                    if (vision.UseMockVision)
                     {
-                        "DeepSeek" => ApiProvider.DeepSeek,
-                        "百炼" => ApiProvider.Bailian,
-                        _ => ApiProvider.Custom,
-                    };
-                    if (!string.IsNullOrEmpty(nApiKey))
+                        extractFacts = prose =>
+                        {
+                            WorkflowLog.Append(
+                                LogLevel.Info,
+                                "[Mock] YAML 提取已跳过真实 API（图片描述为 Mock 模式）");
+                            return Task.FromResult(
+                                """
+hair: [银色, 腰际, 长发]
+clothing: [衣摆, 上装, 下装]
+equipment: [无, 无]
+posture: [伫立, 静默]
+features: [肩头微颤, 凝望方向]
+colors: [银色, 黑色, 深蓝]
+""");
+                        };
+                    }
+                    else
                     {
-                        var nConfig = new ApiConfig
+                        var nProviderName = novelizerSettings.SelectedProvider;
+                        var nApiKey = novelizerSettings.GetApiKeyForProvider(nProviderName);
+                        var nBaseUrl = novelizerSettings.GetBaseUrlForProvider(nProviderName);
+                        var nProvider = nProviderName switch
                         {
-                            Provider = nProvider,
-                            ApiKey = nApiKey,
-                            BaseUrl = nBaseUrl,
+                            "DeepSeek" => ApiProvider.DeepSeek,
+                            "百炼" => ApiProvider.Bailian,
+                            _ => ApiProvider.Custom,
                         };
-                        var nHttp = new HttpClient();
-                        var nClient = new BailianClient(nHttp, nConfig);
-                        extractFacts = async prose =>
+                        if (!string.IsNullOrEmpty(nApiKey))
                         {
-                            var result = await nClient.ChatAsync(
-                                novelizerSettings.SelectedModel,
-                                PicDescService.YamlExtractionPrompt,
-                                prose
-                            );
-                            return result.AnswerContent;
-                        };
+                            var nConfig = new ApiConfig
+                            {
+                                Provider = nProvider,
+                                ApiKey = nApiKey,
+                                BaseUrl = nBaseUrl,
+                            };
+                            var nHttp = new HttpClient();
+                            var nClient = new BailianClient(nHttp, nConfig);
+                            extractFacts = async prose =>
+                            {
+                                var result = await nClient.ChatAsync(
+                                    novelizerSettings.SelectedModel,
+                                    PicDescService.YamlExtractionPrompt,
+                                    prose
+                                );
+                                return result.AnswerContent;
+                            };
+                        }
                     }
                 }
 
