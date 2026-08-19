@@ -9,7 +9,10 @@ public class ChapterProcessor
     private readonly string _systemPrompt;
     private readonly Action<string> _log;
     private readonly Action<string> _logError;
-    private readonly Action<string, string, string>? _onThought;
+    /// <summary>上报一次 LLM 调用：(轮次标签, 完整输入 prompt, 思考过程, 输出)。</summary>
+    private readonly Action<string, string, string, string>? _onThought;
+    /// <summary>可选：复盘收集器，记录每次调用的结构化数据。</summary>
+    private readonly NovelizerTraceCollector? _traceCollector;
     private readonly int _maxConcurrency;
     private readonly bool _enableMultiTurn;
     private readonly int _chunkSize;
@@ -36,7 +39,8 @@ public class ChapterProcessor
         string systemPrompt,
         Action<string> log,
         Action<string> logError,
-        Action<string, string, string>? onThought = null,
+        Action<string, string, string, string>? onThought = null,
+        NovelizerTraceCollector? traceCollector = null,
         int maxConcurrency = 3,
         bool enableMultiTurn = false,
         int chunkSize = 5_000,
@@ -48,6 +52,7 @@ public class ChapterProcessor
         _log = log;
         _logError = logError;
         _onThought = onThought;
+        _traceCollector = traceCollector;
         _maxConcurrency = maxConcurrency;
         _enableMultiTurn = enableMultiTurn;
         _chunkSize = chunkSize;
@@ -55,12 +60,27 @@ public class ChapterProcessor
         _compressThresholdTokens = compressThresholdTokens;
     }
 
-    /// <summary>上报某章的一次 LLM 思考过程（summary / thinking / answer）。</summary>
-    private void ReportThought(Chapter chapter, int totalCount, ChatResult chatResult)
-        => _onThought?.Invoke(
-            $"🧠 第 {chapter.Index + 1}/{totalCount} 章「{chapter.Title}」思考",
+    /// <summary>上报一次 LLM 调用：轮次标签 / 完整输入 prompt / 思考过程 / 输出。</summary>
+    private void ReportThought(
+        Chapter chapter,
+        int totalCount,
+        string turnLabel,
+        string promptText,
+        ChatResult chatResult,
+        bool isCompress = false)
+    {
+        var label = isCompress
+            ? $"🔄 第 {chapter.Index + 1}/{totalCount} 章「{chapter.Title}」上下文压缩"
+            : $"🧠 第 {chapter.Index + 1}/{totalCount} 章「{chapter.Title}」思考 {turnLabel}";
+        _onThought?.Invoke(label, promptText, chatResult.ReasoningContent, chatResult.AnswerContent);
+        _traceCollector?.Add(
+            label,
+            promptText,
             chatResult.ReasoningContent,
-            chatResult.AnswerContent);
+            chatResult.AnswerContent,
+            chapterTitle: chapter.Title,
+            isCompress: isCompress);
+    }
 
     /// <summary>
     /// 并发处理所有章节，返回按索引排序的处理结果
@@ -123,7 +143,11 @@ public class ChapterProcessor
                 var chatResult = await _client.ChatAsync(model, _systemPrompt, chapter.Body);
                 sw.Stop();
                 _log($"[DIAG] ChatAsync 返回，耗时 {sw.Elapsed.TotalSeconds:F1}s");
-                ReportThought(chapter, totalCount, chatResult);
+                var promptText = string.Join(
+                    "\n\n",
+                    $"—— system ——\n\n{_systemPrompt}",
+                    $"—— user ——\n\n{FirstTurnPrefix}{chapter.Body}");
+                ReportThought(chapter, totalCount, "单轮", promptText, chatResult);
 
                 var strippedContent = ChapterSplitter.StripHeadings(chatResult.AnswerContent);
                 results[chapter.Index] = ChapterResult.FromSuccess(
@@ -178,7 +202,11 @@ public class ChapterProcessor
             {
                 var chatResult = await _client.ChatAsync(model, _systemPrompt, chapter.Body);
                 sw.Stop();
-                ReportThought(chapter, totalCount, chatResult);
+                var fallbackPrompt = string.Join(
+                    "\n\n",
+                    $"—— system ——\n\n{_systemPrompt}",
+                    $"—— user ——\n\n{FirstTurnPrefix}{chapter.Body}");
+                ReportThought(chapter, totalCount, "降级单轮", fallbackPrompt, chatResult);
                 var strippedContent = ChapterSplitter.StripHeadings(chatResult.AnswerContent);
                 results[chapter.Index] = ChapterResult.FromSuccess(chapter.Index, chapter.Title, strippedContent, totalCount);
                 if (chatResult.Usage is not null)
@@ -228,6 +256,11 @@ public class ChapterProcessor
                     _log($"  压缩完成: {compressed.Length} 字符, 耗时 {compressSw.Elapsed.TotalSeconds:F1}s");
                     _log($"  📋 压缩摘要:\n{compressed}");
 
+                    var compressPromptText = string.Join(
+                        "\n\n",
+                        compressMessages.Select(m => $"—— {m.Role} ——\n\n{m.Content}"));
+                    ReportThought(chapter, totalCount, $"第 {i + 1} 轮前", compressPromptText, compressResult, isCompress: true);
+
                     if (compressResult.Usage is not null)
                     {
                         totalPromptTokens += compressResult.Usage.PromptTokens;
@@ -258,7 +291,10 @@ public class ChapterProcessor
             {
                 var chatResult = await _client.ChatWithHistoryAsync(model, history);
                 turnSw.Stop();
-                ReportThought(chapter, totalCount, chatResult);
+                var turnPromptText = string.Join(
+                    "\n\n",
+                    history.Select(m => $"—— {m.Role} ——\n\n{m.Content}"));
+                ReportThought(chapter, totalCount, turnLabel, turnPromptText, chatResult);
 
                 var answer = ChapterSplitter.StripHeadings(chatResult.AnswerContent);
                 turnOutputs.Add(answer);

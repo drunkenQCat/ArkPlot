@@ -11,7 +11,10 @@ public class NovelizerPipeline
     private readonly BailianClient _client;
     private readonly ApiConfig _config;
     private readonly Action<string>? _onLog;
-    private readonly Action<string, string, string>? _onThought;
+    /// <summary>上报一次 LLM 调用：(轮次标签, 完整输入 prompt, 思考过程, 输出)。</summary>
+    private readonly Action<string, string, string, string>? _onThought;
+    /// <summary>可选：复盘收集器（由调用方创建并传入，BatchProcessAsync 结束后由调用方负责落盘）。</summary>
+    private readonly NovelizerTraceCollector? _traceCollector;
     private readonly string _systemPrompt;
     private readonly bool _enableMultiTurn;
     private readonly int _chunkSize;
@@ -114,7 +117,8 @@ public class NovelizerPipeline
         BailianClient client,
         ApiConfig config,
         Action<string>? onLog = null,
-        Action<string, string, string>? onThought = null,
+        Action<string, string, string, string>? onThought = null,
+        NovelizerTraceCollector? traceCollector = null,
         string? systemPrompt = null,
         bool enableMultiTurn = false,
         int chunkSize = 5_000,
@@ -128,6 +132,7 @@ public class NovelizerPipeline
         _config = config;
         _onLog = onLog;
         _onThought = onThought;
+        _traceCollector = traceCollector;
         _systemPrompt = string.IsNullOrWhiteSpace(systemPrompt)
             ? DefaultSystemPrompt
             : systemPrompt;
@@ -189,6 +194,7 @@ public class NovelizerPipeline
         var processor = new ChapterProcessor(
             _client, _systemPrompt, Log, LogError,
             onThought: _onThought,
+            traceCollector: _traceCollector,
             enableMultiTurn: _enableMultiTurn,
             chunkSize: _chunkSize,
             compressInterval: _compressInterval);
@@ -299,6 +305,8 @@ public class NovelizerPipeline
             $"[DIAG] BatchProcessAsync 开始。dir={inputDir}, models=[{string.Join(", ", models)}], force={force}"
         );
 
+        _traceCollector?.BeginRun(models.FirstOrDefault() ?? "");
+
         var cache = new ChapterCache(outputDir);
 
         Log($"[DIAG] 扫描 .md 文件: {inputDir}");
@@ -360,6 +368,8 @@ public class NovelizerPipeline
 
         Log("\n🏁 批处理完成");
         Log("[DIAG] BatchProcessAsync 执行完毕，即将生成 epub");
+
+        _traceCollector?.Save(outputDir);
 
         // 为每个小说 md 生成 epub
         await GenerateEpubsForNovelsAsync(outputDir);
