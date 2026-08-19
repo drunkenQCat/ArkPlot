@@ -332,13 +332,16 @@ public class NovelizerPipeline
             {
                 Log($"[DIAG] Batch 处理: file={fn}, model={model}");
 
-                var cached = cache.Check(mdFile, model, force);
+                var cached = _useMock ? null : cache.Check(mdFile, model, force);
                 if (cached is not null)
                 {
                     Log($"⏭️  跳过（缓存命中）: {Path.GetFileName(cached)}");
                     Log($"[DIAG] 缓存命中，跳过: {fn}");
                     continue;
                 }
+
+                if (_useMock)
+                    Log($"[DIAG] Mock 模式：无视缓存，完整走一遍管线");
 
                 Log($"[DIAG] 调用 ProcessMdFileAsync: {fn}, {model}");
                 try

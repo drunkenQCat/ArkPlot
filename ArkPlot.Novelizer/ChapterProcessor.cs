@@ -72,14 +72,12 @@ public class ChapterProcessor
         var label = isCompress
             ? $"🔄 第 {chapter.Index + 1}/{totalCount} 章「{chapter.Title}」上下文压缩"
             : $"🧠 第 {chapter.Index + 1}/{totalCount} 章「{chapter.Title}」思考 {turnLabel}";
+        // 先写入 collector 再通知 UI：UI 侧从 collector.Turns.Count-1 取当前序号，顺序颠倒会导致
+        // 第一次调用 turnKey=null（点击退化为展开详情）、后续调用序号整体前移一位（定位错轮）。
+        var turnKey = _traceCollector is null
+            ? null
+            : $"{_traceCollector.RunId}:{_traceCollector.Add(label, promptText, chatResult.ReasoningContent, chatResult.AnswerContent, chapter.Title, isCompress)}";
         _onThought?.Invoke(label, promptText, chatResult.ReasoningContent, chatResult.AnswerContent);
-        _traceCollector?.Add(
-            label,
-            promptText,
-            chatResult.ReasoningContent,
-            chatResult.AnswerContent,
-            chapterTitle: chapter.Title,
-            isCompress: isCompress);
     }
 
     /// <summary>
