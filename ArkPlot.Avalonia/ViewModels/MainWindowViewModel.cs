@@ -52,6 +52,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ArkPlot.Core.Utilities.GitHubProxy.ConnectionFailed += OnGitHubConnectionFailed;
         WorkflowLog.ToastManager = toastManager;
         WorkflowLog.IsClearCacheVisible = AppSettings.Load().Novelizer.ShowClearCacheButton;
+        WorkflowLog.OpenTraceRequested += turnKey => OpenTraceReview(turnKey);
         SeedSystemLog();
     }
 
@@ -120,6 +121,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private string storyType = "ACTIVITY_STORY";
     private string? activeTitle;
+
+    /// <summary>小说化 LLM 调用复盘收集器（主窗口共享：pipeline 写入，复盘面板实时读取）。</summary>
+    private NovelizerTraceCollector _traceCollector => App.TraceCollector;
 
     private Act CurrentAct => currentActs[SelectedIndex];
 
@@ -603,7 +607,7 @@ colors: [银色, 黑色, 深蓝]
                         var desc = await baseDescribe(url);
                         var thinking = thinkingProvider?.Invoke(url);
                         if (thinking != null)
-                            WorkflowLog.AddThought($"🖼 图片描述（Mock）", thinking, desc, url);
+                            WorkflowLog.AddThought($"🖼 图片描述（Mock）", $"图片：{url}", thinking, desc, url);
                         else
                             WorkflowLog.AddImage(url, desc);
                         return desc;
@@ -740,6 +744,8 @@ colors: [银色, 黑色, 深蓝]
 
         var model = novelizer.SelectedModel;
         var systemPrompt = novelizer.SystemPrompt;
+        // 新一次小说化运行：开始新的复盘运行（turnKey 序号从 0 重新计）
+        _traceCollector.BeginRun(model);
         LogDiag("[RunNovelizer] model={0}，useMock={1}，outputDir={2}", model, useMock, outputPathOfCurrentStory);
         noticeBlock.RaiseCommonEvent(
             useMock ? $"正在使用 {model} 生成小说（Mock 模式，不调用真实 API）..." : $"正在使用 {model} 生成小说...");
@@ -767,8 +773,15 @@ colors: [银色, 黑色, 深蓝]
                 client,
                 config,
                 onLog: log,
-                onThought: (summary, thinking, answer) =>
-                    WorkflowLog.AddThought(summary, thinking, answer),
+                onThought: (summary, prompt, thinking, answer) =>
+                {
+                    // collector 已由 ChapterProcessor 同步追加，此处直接取最新序号构造定位键
+                    var turnKey = _traceCollector.Turns.Count > 0
+                        ? $"{_traceCollector.RunId}:{_traceCollector.Turns.Count - 1}"
+                        : null;
+                    WorkflowLog.AddThought(summary, prompt, thinking, answer, turnKey: turnKey);
+                },
+                traceCollector: _traceCollector,
                 systemPrompt: systemPrompt,
                 enableMultiTurn: novelizer.EnableMultiTurn,
                 chunkSize: novelizer.ChunkSize,
@@ -1091,6 +1104,14 @@ colors: [银色, 黑色, 深蓝]
 
         var messenger = WeakReferenceMessenger.Default;
         messenger.Send(new OpenWindowMessage("TtsWindow", currentActName: actName));
+    }
+
+    /// <summary>打开小说化复盘窗口。turnKey 非空时定位到对应轮次（从日志点击进入）。</summary>
+    [RelayCommand]
+    private void OpenTraceReview(string? turnKey = null)
+    {
+        var actName = CurrentAct?.Name ?? activeTitle;
+        WeakReferenceMessenger.Default.Send(new OpenWindowMessage("TraceReviewWindow", currentActName: actName, turnKey: turnKey));
     }
 
     private void SubscribeCommonNotification()

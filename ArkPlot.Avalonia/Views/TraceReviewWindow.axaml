@@ -1,0 +1,130 @@
+<sukiUi:SukiWindow xmlns="https://github.com/avaloniaui"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                  xmlns:vm="using:ArkPlot.Avalonia.ViewModels"
+                  xmlns:sukiUi="using:SukiUI.Controls"
+                  mc:Ignorable="d"
+                  x:Class="ArkPlot.Avalonia.Views.TraceReviewWindow"
+                  x:DataType="vm:TraceReviewViewModel"
+                  Title="小说化复盘"
+                  Width="1100" Height="720"
+                  d:DesignWidth="1100" d:DesignHeight="720">
+    <sukiUi:SukiWindow.DataContext>
+        <vm:TraceReviewViewModel />
+    </sukiUi:SukiWindow.DataContext>
+
+    <Grid RowDefinitions="Auto,*" Margin="10">
+        <!-- ===== 顶部：目录 + 刷新 ===== -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8"
+                        VerticalAlignment="Center">
+                <TextBlock Text="trace 目录：" FontSize="12" VerticalAlignment="Center"
+                           Opacity="0.7"/>
+                <TextBox Text="{Binding TraceRoot}" MinWidth="420" FontSize="12"
+                         VerticalAlignment="Center"/>
+            </StackPanel>
+            <Button Grid.Column="1" Content="刷新" FontSize="12" Padding="14,4"
+                    Command="{Binding RefreshRunsCommand}" VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- ===== 三栏：运行 / 轮次 / 四段详情 ===== -->
+        <Grid Grid.Row="1" ColumnDefinitions="300,320,*">
+            <!-- 左栏：运行列表 -->
+            <Border Grid.Column="0" Margin="0,0,4,0" CornerRadius="6"
+                    Background="#FAFAFA" BorderBrush="#E5E7EB" BorderThickness="1">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="运行记录"
+                               FontSize="13" FontWeight="SemiBold" Margin="10,8,10,4" Opacity="0.8"/>
+                    <ListBox ItemsSource="{Binding Runs}"
+                             SelectedItem="{Binding SelectedRun}"
+                             Margin="6" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:TraceReviewViewModel+RunRow">
+                                <TextBlock Text="{Binding Display}" FontSize="12"
+                                           TextWrapping="Wrap" Margin="2,3"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- 中栏：轮次列表 -->
+            <Border Grid.Column="1" Margin="4,0,4,0" CornerRadius="6"
+                    Background="#FAFAFA" BorderBrush="#E5E7EB" BorderThickness="1">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="LLM 调用"
+                               FontSize="13" FontWeight="SemiBold" Margin="10,8,10,4" Opacity="0.8"/>
+                    <ListBox ItemsSource="{Binding Turns}"
+                             SelectedItem="{Binding SelectedTurn}"
+                             Margin="6" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:TraceReviewViewModel+TurnRow">
+                                <StackPanel Margin="2,3">
+                                    <TextBlock Text="{Binding Label}" FontSize="12"
+                                               FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding ChapterTitle}" FontSize="11"
+                                               Opacity="0.55"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- 右栏：四段详情 -->
+            <Border Grid.Column="2" Margin="4,0,0,0" CornerRadius="6"
+                    Background="#FAFAFA" BorderBrush="#E5E7EB" BorderThickness="1">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="详情"
+                               FontSize="13" FontWeight="SemiBold" Margin="10,8,10,4" Opacity="0.8"/>
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding SelectedTurn.Label}"
+                               FontSize="12" FontWeight="Bold" Margin="10,0,10,8"
+                               TextWrapping="Wrap"/>
+                    <ScrollViewer Margin="8">
+                        <Grid>
+                            <StackPanel Spacing="10" IsVisible="{Binding HasSelectedTurn}">
+                            <StackPanel>
+                                <TextBlock Text="① 输入 Prompt" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="#1D4ED8"/>
+                                <Border Background="White" CornerRadius="4" Padding="8" Margin="0,4,0,0"
+                                        BorderBrush="#D1D5DB" BorderThickness="1">
+                                    <TextBlock Text="{Binding SelectedTurn.Prompt}"
+                                               FontFamily="Consolas" FontSize="11"
+                                               TextWrapping="Wrap"/>
+                                </Border>
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="② 思考过程" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="#B45309"/>
+                                <Border Background="White" CornerRadius="4" Padding="8" Margin="0,4,0,0"
+                                        BorderBrush="#D1D5DB" BorderThickness="1">
+                                    <TextBlock Text="{Binding SelectedTurn.Thinking}"
+                                               FontFamily="Consolas" FontSize="11"
+                                               TextWrapping="Wrap"/>
+                                </Border>
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="③ 输出内容" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="#15803D"/>
+                                <Border Background="White" CornerRadius="4" Padding="8" Margin="0,4,0,0"
+                                        BorderBrush="#D1D5DB" BorderThickness="1">
+                                    <TextBlock Text="{Binding SelectedTurn.Answer}"
+                                               FontFamily="Consolas" FontSize="11"
+                                               TextWrapping="Wrap"/>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                        <TextBlock Text="未选择调用记录" FontSize="12" Opacity="0.5"
+                                   IsVisible="{Binding !HasSelectedTurn}"/>
+                            </Grid>
+                        </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- ===== 状态行 ===== -->
+        <TextBlock Grid.Row="2" Text="{Binding Status}" FontSize="11" Opacity="0.5"
+                   Margin="2,6,0,0" IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+    </Grid>
+</sukiUi:SukiWindow>

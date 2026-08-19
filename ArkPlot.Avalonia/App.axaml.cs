@@ -1,7 +1,10 @@
+using System.IO;
 using ArkPlot.Avalonia.Services;
 using ArkPlot.Avalonia.ViewModels;
 using ArkPlot.Avalonia.Views;
+using ArkPlot.Core.Infrastructure;
 using ArkPlot.Core.Services;
+using ArkPlot.Novelizer;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -12,6 +15,8 @@ namespace ArkPlot.Avalonia;
 
 public partial class App : Application
 {
+    /// <summary>小说化 LLM 调用复盘收集器（进程级共享：主窗口写入，复盘面板读取）。</summary>
+    public static NovelizerTraceCollector TraceCollector { get; } = new();
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -36,6 +41,22 @@ public partial class App : Application
                     var ttsViewModel = new TtsViewModel(message.ActName!);
                     ttsView.DataContext = ttsViewModel;
                     ttsView.Show();
+                }
+                else if (message.WindowName == "TraceReviewWindow")
+                {
+                    var view = new TraceReviewWindow();
+                    var viewModel = new TraceReviewViewModel
+                    {
+                        TraceRoot = message.ActName is { } act
+                            ? Path.Combine(OutputPaths.ActRootAbsolute(act), "novelizer-traces")
+                            : null,
+                        LiveCollector = TraceCollector,
+                    };
+                    view.DataContext = viewModel;
+                    viewModel.RefreshRuns();
+                    if (!string.IsNullOrEmpty(message.TurnKey))
+                        viewModel.SelectTurnByKey(message.TurnKey);
+                    view.Show();
                 }
             }
         );

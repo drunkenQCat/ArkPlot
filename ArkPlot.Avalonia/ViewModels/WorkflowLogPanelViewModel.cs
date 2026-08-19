@@ -37,6 +37,10 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     /// <summary>Toast 通知管理器（由宿主 ViewModel 注入，用于导出等操作反馈）。</summary>
     public ISukiToastManager? ToastManager { get; set; }
 
+    /// <summary>点击带 turnKey 的日志（小说化思考/压缩）时触发，交由宿主打开复盘面板并定位。参数为 turnKey。
+/// 使用委托属性而非 event，便于在 UserControl code-behind 中直接调用。</summary>
+    public Action<string>? OpenTraceRequested;
+
     /// <summary>当前选中的阶段（右侧展示其日志）。</summary>
     [ObservableProperty]
     private WorkflowStage? _selectedStage;
@@ -137,13 +141,14 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
         bool isSection = false,
         string? imageUrl = null,
         string? tooltip = null,
-        string? detail = null)
+        string? detail = null,
+        string? turnKey = null)
     {
         // 在调用点同步捕获当前阶段：Post 是异步的，若延迟后在 Lambda 里才读 _activeStage，
         // 会读到 UI 线程已推进到的后续阶段，导致日志归属错乱。捕获后即使 Post 延迟也进它该进的阶段。
         var stage = _activeStage ?? SystemStage;
         // 在调用点构造 LogEntry：Time 取事件发生时刻，而非 UI 线程真正处理（队列排空）时刻。
-        var entry = new LogEntry(level, message, progress, isSection, imageUrl, tooltip, detail);
+        var entry = new LogEntry(level, message, progress, isSection, imageUrl, tooltip, detail, turnKey);
         Dispatcher.UIThread.Post(() =>
         {
             stage.Logs.Add(entry);
@@ -165,12 +170,13 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     public void AddImage(string imageUrl, string description)
         => Append(LogLevel.Success, description, imageUrl: imageUrl, detail: description);
 
-    /// <summary>记录一条带思考过程的日志（小说化/图片描述）：悬停显示思考概览，点击展开完整思考 + 返回值。</summary>
-    public void AddThought(string summary, string thinking, string answer, string? imageUrl = null)
+    /// <summary>记录一条带完整上下文的日志（小说化）：悬停显示思考概览，点击展开「输入 Prompt / 思考 / 输出」。
+/// turnKey 关联复盘面板中对应轮次，点击日志可定位。</summary>
+    public void AddThought(string summary, string prompt, string thinking, string answer, string? imageUrl = null, string? turnKey = null)
     {
         var brief = thinking.Length <= 200 ? thinking : thinking[..200] + "...";
-        var detail = $"—— 思考过程 ——\n\n{thinking}\n\n—— 返回结果 ——\n\n{answer}";
-        Append(LogLevel.Info, summary, imageUrl: imageUrl, tooltip: brief, detail: detail);
+        var detail = $"—— 输入 Prompt ——\n\n{prompt}\n\n—— 思考过程 ——\n\n{thinking}\n\n—— 返回结果 ——\n\n{answer}";
+        Append(LogLevel.Info, summary, imageUrl: imageUrl, tooltip: brief, detail: detail, turnKey: turnKey);
     }
 
     /// <summary>切换某条日志的详情展开状态（点击 log 条目触发）。</summary>

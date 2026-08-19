@@ -62,6 +62,9 @@ public partial class LogEntry : ObservableObject
     [ObservableProperty]
     private bool _isExpanded;
 
+    /// <summary>关联的复盘轮次键（小说化 LLM 调用在 trace 中的标识，用于点击日志定位复盘面板）。</summary>
+    public string? TurnKey { get; }
+
     /// <summary>级别显示文本。</summary>
     public string LevelText => Level switch
     {
@@ -79,7 +82,8 @@ public partial class LogEntry : ObservableObject
         bool isSection = false,
         string? imageUrl = null,
         string? tooltip = null,
-        string? detail = null)
+        string? detail = null,
+        string? turnKey = null)
     {
         Level = level;
         Message = message;
@@ -88,6 +92,7 @@ public partial class LogEntry : ObservableObject
         ImageUrl = imageUrl;
         Tooltip = tooltip;
         Detail = detail;
+        TurnKey = turnKey;
         Time = DateTime.Now.ToString("HH:mm:ss");
     }
 }

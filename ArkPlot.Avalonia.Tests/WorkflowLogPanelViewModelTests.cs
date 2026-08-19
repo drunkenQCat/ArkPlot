@@ -145,11 +145,12 @@ public class WorkflowLogPanelViewModelTests
         vm.BeginPipeline(new[] { "A" });
         vm.EnterStage(0);
 
-        vm.AddThought("思考", "第一步分析场景\n第二步组织叙事", "正文输出");
+        vm.AddThought("思考", "请继续小说化：第一步分析场景", "第一步分析场景\n第二步组织叙事", "正文输出");
         Dispatcher.UIThread.RunJobs();
 
         var log = Assert.Single(vm.Stages[0].Logs);
         Assert.True(log.HasDetail);
+        Assert.Contains("—— 输入 Prompt ——", log.Detail);
         Assert.Contains("第一步分析场景", log.Detail);
         Assert.Contains("正文输出", log.Detail);
         Assert.NotNull(log.Tooltip);
