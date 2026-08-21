@@ -137,4 +137,134 @@ public class TraceReviewViewModelTests
             try { Directory.Delete(traceDir, recursive: true); } catch { }
         }
     }
+
+    // ---------- 详情区：阶段条翻页 / 折叠 / prompt 拆分 ----------
+
+    private static TraceReviewViewModel VmWithTurn(string prompt, string thinking = "t", string answer = "a")
+    {
+        var traceDir = NewTraceDir();
+        Directory.CreateDirectory(traceDir);
+        var collector = new NovelizerTraceCollector();
+        collector.BeginRun("model");
+        collector.Add("🧠 Turn0", prompt, thinking, answer, "孤星", false);
+        var vm = new TraceReviewViewModel { TraceRoot = traceDir, LiveCollector = collector };
+        vm.RefreshRuns();
+        vm.SelectedRun = vm.Runs[0];
+        vm.SelectedTurn = vm.Turns[0];
+        return vm;
+    }
+
+    [Fact]
+    public void SelectPage_Think_OnlyThinkPageVisible()
+    {
+        var vm = VmWithTurn("p");
+        try
+        {
+            Assert.True(vm.IsInputPageVisible);
+            Assert.False(vm.IsThinkPageVisible);
+
+            vm.SelectPageCommand.Execute("Think");
+
+            Assert.True(vm.IsThinkActive);
+            Assert.True(vm.IsThinkPageVisible);
+            Assert.True(vm.IsThinkShellVisible);
+            Assert.False(vm.IsInputPageVisible);
+            Assert.False(vm.IsInputShellVisible);
+
+            vm.SelectPageCommand.Execute("Output");
+            Assert.True(vm.IsOutputPageVisible);
+            Assert.False(vm.IsThinkPageVisible);
+        }
+        finally { Cleanup(vm); }
+    }
+
+    [Fact]
+    public void ToggleFold_InputCollapses_HeaderKeepsVisibleAndShowsHint()
+    {
+        var vm = VmWithTurn("p");
+        try
+        {
+            vm.ToggleFoldCommand.Execute("Input");
+
+            Assert.True(vm.IsInputCollapsed);
+            Assert.True(vm.IsInputHintVisible);
+            Assert.False(vm.IsInputPageVisible);
+            // 折叠头本身仍可见，保证可再展开
+            Assert.True(vm.IsInputShellVisible);
+            Assert.Contains("已折叠", vm.InputFoldHeader);
+
+            vm.ToggleFoldCommand.Execute("Input");
+            Assert.False(vm.IsInputCollapsed);
+            Assert.True(vm.IsInputPageVisible);
+            Assert.False(vm.IsInputHintVisible);
+        }
+        finally { Cleanup(vm); }
+    }
+
+    [Fact]
+    public void ToggleSubFold_SystemCollapse_TogglesContentOnly()
+    {
+        var vm = VmWithTurn("—— system ——\n\n系统指令\n\n—— user ——\n\n正文");
+        try
+        {
+            Assert.True(vm.IsSystemHeadVisible);
+            Assert.True(vm.IsSystemContentVisible);
+
+            vm.ToggleSubFoldCommand.Execute("System");
+
+            Assert.False(vm.IsSystemContentVisible);
+            // 子部头仍在（可再展开）
+            Assert.True(vm.IsSystemHeadVisible);
+            Assert.Contains("已折叠", vm.SystemSubHeader);
+
+            vm.ToggleSubFoldCommand.Execute("System");
+            Assert.True(vm.IsSystemContentVisible);
+        }
+        finally { Cleanup(vm); }
+    }
+
+    [Fact]
+    public void PromptSplitter_SplitsSystemAndUser()
+    {
+        var (sys, usr) = TracePromptSplitter.Split("—— system ——\n\n系统提示词\n\n—— user ——\n\n请小说化下文");
+        Assert.Equal("系统提示词", sys);
+        Assert.Equal("请小说化下文", usr);
+    }
+
+    [Fact]
+    public void PromptSplitter_MergesMultipleSystemSections()
+    {
+        var (sys, usr) = TracePromptSplitter.Split("—— system ——\n\nA\n\n—— system ——\n\nB\n\n—— user ——\n\nC");
+        Assert.Equal("A\n\nB", sys);
+        Assert.Equal("C", usr);
+    }
+
+    [Fact]
+    public void PromptSplitter_NoMarkers_AllInUser()
+    {
+        var (sys, usr) = TracePromptSplitter.Split("随便的文本");
+        Assert.Equal("", sys);
+        Assert.Equal("随便的文本", usr);
+    }
+
+    [Fact]
+    public void TurnRow_SystemUser_AreSplitFromPrompt()
+    {
+        var vm = VmWithTurn("—— system ——\n\nsys\n\n—— user ——\n\nusr");
+        try
+        {
+            var turn = vm.SelectedTurn!;
+            Assert.Equal("sys", turn.System);
+            Assert.Equal("usr", turn.User);
+            Assert.Contains("system 3 字", vm.InputFoldHeader);
+            Assert.Contains("user 3 字", vm.InputFoldHeader);
+        }
+        finally { Cleanup(vm); }
+    }
+
+    /// <summary>清理 VmWithTurn 创建的临时 trace 目录。</summary>
+    private static void Cleanup(TraceReviewViewModel vm)
+    {
+        try { Directory.Delete(vm.TraceRoot!, recursive: true); } catch { }
+    }
 }
