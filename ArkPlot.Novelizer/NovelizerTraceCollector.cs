@@ -32,8 +32,12 @@ public sealed class NovelizerTraceCollector
     /// <summary>本次运行的唯一标识（开始时间 yyyyMMdd_HHmmss），作为 turnKey 前缀。</summary>
     public string RunId => _startedAt == default ? "" : _startedAt.ToString("yyyyMMdd_HHmmss");
 
-    /// <summary>标记一次运行的开始。</summary>
-    public void BeginRun(string model) => (_model, _startedAt) = (model, DateTime.Now);
+    /// <summary>标记一次运行的开始（清空上次运行的残留 turns，保证一次 Save 对应一次运行）。</summary>
+    public void BeginRun(string model)
+    {
+        (_model, _startedAt) = (model, DateTime.Now);
+        _turns.Clear();
+    }
 
     /// <summary>追加一次 LLM 调用记录，返回该记录在本运行内的序号（0 起），供日志与复盘面板定位。</summary>
     public int Add(string label, string prompt, string thinking, string answer, string chapterTitle = "", bool isCompress = false)
