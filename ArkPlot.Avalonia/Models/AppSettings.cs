@@ -141,6 +141,7 @@ public record NovelizerSettings(
     bool EnableMultiTurn = false,
     int ChunkSize = 5_000,
     int CompressInterval = 2,
+    int CompressThresholdTokens = 0,
     bool EnableSectionSplitter = false,
     bool UseMock = false,
     bool ShowClearCacheButton = false
@@ -268,6 +269,7 @@ public record NovelizerSettings(
             EnableMultiTurn: false,
             ChunkSize: 5_000,
             CompressInterval: 2,
+            CompressThresholdTokens: 0,
             EnableSectionSplitter: false
         );
     }

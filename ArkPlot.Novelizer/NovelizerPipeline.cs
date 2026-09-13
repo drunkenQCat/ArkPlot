@@ -12,13 +12,14 @@ public class NovelizerPipeline
     private readonly ApiConfig _config;
     private readonly Action<string>? _onLog;
     /// <summary>上报一次 LLM 调用：(轮次标签, 完整输入 prompt, 思考过程, 输出)。</summary>
-    private readonly Action<string, string, string, string>? _onThought;
+    private readonly Action<string, string, string, string, string?>? _onThought;
     /// <summary>可选：复盘收集器（由调用方创建并传入，BatchProcessAsync 结束后由调用方负责落盘）。</summary>
     private readonly NovelizerTraceCollector? _traceCollector;
     private readonly string _systemPrompt;
     private readonly bool _enableMultiTurn;
     private readonly int _chunkSize;
     private readonly int _compressInterval;
+    private readonly int _compressThresholdTokens;
     private readonly bool _enableSectionSplitter;
     private readonly string _sectionSplitterModel;
     private readonly bool _useMock;
@@ -117,12 +118,13 @@ public class NovelizerPipeline
         BailianClient client,
         ApiConfig config,
         Action<string>? onLog = null,
-        Action<string, string, string, string>? onThought = null,
+        Action<string, string, string, string, string?>? onThought = null,
         NovelizerTraceCollector? traceCollector = null,
         string? systemPrompt = null,
         bool enableMultiTurn = false,
         int chunkSize = 5_000,
         int compressInterval = 0,
+        int compressThresholdTokens = 0,
         bool enableSectionSplitter = false,
         string? sectionSplitterModel = null,
         bool useMock = false
@@ -139,6 +141,7 @@ public class NovelizerPipeline
         _enableMultiTurn = enableMultiTurn;
         _chunkSize = chunkSize;
         _compressInterval = compressInterval;
+        _compressThresholdTokens = compressThresholdTokens;
         _enableSectionSplitter = enableSectionSplitter;
         _sectionSplitterModel = sectionSplitterModel ?? "";
         _useMock = useMock;
@@ -197,7 +200,8 @@ public class NovelizerPipeline
             traceCollector: _traceCollector,
             enableMultiTurn: _enableMultiTurn,
             chunkSize: _chunkSize,
-            compressInterval: _compressInterval);
+            compressInterval: _compressInterval,
+            compressThresholdTokens: _compressThresholdTokens);
         var results = await processor.ProcessAllAsync(chapters, model, ct);
 
         // Pass 2: TTS 分节（每章独立调用 SectionSplitter）

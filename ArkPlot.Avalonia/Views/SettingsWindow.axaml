@@ -142,6 +142,12 @@
                                                      Width="100"
                                                      ToolTip.Tip="每 N 轮对已有小说内容做一次摘要压缩，清空对话历史以节省上下文空间。0=不压缩。建议 2"/>
                                         </StackPanel>
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="压缩阈值（Token）" FontSize="12"/>
+                                            <TextBox Text="{Binding CompressThresholdTokens}"
+                                                     Width="120"
+                                                     ToolTip.Tip="累计输入 Token 达到此值时也压缩上下文。0=仅按轮次间隔压缩。"/>
+                                        </StackPanel>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>

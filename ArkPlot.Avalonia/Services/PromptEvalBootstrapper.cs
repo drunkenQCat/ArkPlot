@@ -374,7 +374,8 @@ public sealed class PromptEvalBootstrapper
             systemPrompt: novelizer.SystemPrompt,
             enableMultiTurn: novelizer.EnableMultiTurn,
             chunkSize: novelizer.ChunkSize,
-            compressInterval: novelizer.CompressInterval);
+            compressInterval: novelizer.CompressInterval,
+            compressThresholdTokens: novelizer.CompressThresholdTokens);
         await pipeline.BatchProcessAsync(outputDir, [novelizer.SelectedModel], force: false);
 
         return Directory.GetFiles(outputDir, "*_novel_*.md")

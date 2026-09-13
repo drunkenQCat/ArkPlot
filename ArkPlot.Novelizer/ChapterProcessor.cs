@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace ArkPlot.Novelizer;
 
 /// <summary>
@@ -10,7 +12,7 @@ public class ChapterProcessor
     private readonly Action<string> _log;
     private readonly Action<string> _logError;
     /// <summary>上报一次 LLM 调用：(轮次标签, 完整输入 prompt, 思考过程, 输出)。</summary>
-    private readonly Action<string, string, string, string>? _onThought;
+    private readonly Action<string, string, string, string, string?>? _onThought;
     /// <summary>可选：复盘收集器，记录每次调用的结构化数据。</summary>
     private readonly NovelizerTraceCollector? _traceCollector;
     private readonly int _maxConcurrency;
@@ -39,7 +41,7 @@ public class ChapterProcessor
         string systemPrompt,
         Action<string> log,
         Action<string> logError,
-        Action<string, string, string, string>? onThought = null,
+        Action<string, string, string, string, string?>? onThought = null,
         NovelizerTraceCollector? traceCollector = null,
         int maxConcurrency = 3,
         bool enableMultiTurn = false,
@@ -77,7 +79,7 @@ public class ChapterProcessor
         var turnKey = _traceCollector is null
             ? null
             : $"{_traceCollector.RunId}:{_traceCollector.Add(label, promptText, chatResult.ReasoningContent, chatResult.AnswerContent, chapter.Title, isCompress)}";
-        _onThought?.Invoke(label, promptText, chatResult.ReasoningContent, chatResult.AnswerContent);
+        _onThought?.Invoke(label, promptText, chatResult.ReasoningContent, chatResult.AnswerContent, turnKey);
     }
 
     /// <summary>
@@ -89,7 +91,7 @@ public class ChapterProcessor
         CancellationToken ct = default)
     {
         var semaphore = new SemaphoreSlim(_maxConcurrency);
-        var results = new Dictionary<int, ChapterResult>();
+        var results = new ConcurrentDictionary<int, ChapterResult>();
         var tasks = new List<Task>();
         var tokenTracker = new TokenTracker();
 
@@ -117,7 +119,7 @@ public class ChapterProcessor
         int totalCount,
         string model,
         SemaphoreSlim semaphore,
-        Dictionary<int, ChapterResult> results,
+        ConcurrentDictionary<int, ChapterResult> results,
         TokenTracker tokenTracker,
         CancellationToken ct)
     {
@@ -138,13 +140,14 @@ public class ChapterProcessor
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                var chatResult = await _client.ChatAsync(model, _systemPrompt, chapter.Body);
+                var userContent = FirstTurnPrefix + chapter.Body;
+                var chatResult = await _client.ChatAsync(model, _systemPrompt, userContent);
                 sw.Stop();
                 _log($"[DIAG] ChatAsync 返回，耗时 {sw.Elapsed.TotalSeconds:F1}s");
                 var promptText = string.Join(
                     "\n\n",
                     $"—— system ——\n\n{_systemPrompt}",
-                    $"—— user ——\n\n{FirstTurnPrefix}{chapter.Body}");
+                    $"—— user ——\n\n{userContent}");
                 ReportThought(chapter, totalCount, "单轮", promptText, chatResult);
 
                 var strippedContent = ChapterSplitter.StripHeadings(chatResult.AnswerContent);
@@ -182,7 +185,7 @@ public class ChapterProcessor
         Chapter chapter,
         int totalCount,
         string model,
-        Dictionary<int, ChapterResult> results,
+        ConcurrentDictionary<int, ChapterResult> results,
         TokenTracker tokenTracker)
     {
         _log($"\n--- 🔄 第 {chapter.Index + 1}/{totalCount} 章（多轮）: {chapter.Title} ({chapter.Body.Length} 字符) ---");
@@ -198,12 +201,13 @@ public class ChapterProcessor
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                var chatResult = await _client.ChatAsync(model, _systemPrompt, chapter.Body);
+                var userContent = FirstTurnPrefix + chapter.Body;
+                var chatResult = await _client.ChatAsync(model, _systemPrompt, userContent);
                 sw.Stop();
                 var fallbackPrompt = string.Join(
                     "\n\n",
                     $"—— system ——\n\n{_systemPrompt}",
-                    $"—— user ——\n\n{FirstTurnPrefix}{chapter.Body}");
+                    $"—— user ——\n\n{userContent}");
                 ReportThought(chapter, totalCount, "降级单轮", fallbackPrompt, chatResult);
                 var strippedContent = ChapterSplitter.StripHeadings(chatResult.AnswerContent);
                 results[chapter.Index] = ChapterResult.FromSuccess(chapter.Index, chapter.Title, strippedContent, totalCount);
@@ -230,10 +234,10 @@ public class ChapterProcessor
         for (int i = 0; i < chunks.Count; i++)
         {
             // 检查是否需要压缩历史（compressInterval > 0 且已处理 compressInterval 轮之后）
-            bool shouldCompress = _compressInterval > 0
-                && i > 0
-                && i % _compressInterval == 0
-                && i < chunks.Count - 1; // 最后一轮不压缩
+            bool shouldCompress = i > 0
+                && i < chunks.Count - 1 // 最后一轮不压缩
+                && ((_compressInterval > 0 && i % _compressInterval == 0)
+                    || (_compressThresholdTokens > 0 && totalPromptTokens >= _compressThresholdTokens));
 
             if (shouldCompress)
             {

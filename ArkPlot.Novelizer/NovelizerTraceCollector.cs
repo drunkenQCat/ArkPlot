@@ -10,6 +10,7 @@ namespace ArkPlot.Novelizer;
 public sealed class NovelizerTraceCollector
 {
     private readonly List<TurnTrace> _turns = new();
+    private readonly object _sync = new();
 
     /// <summary>当前运行元信息（开始时间、模型，由 BeginRun 设置）。</summary>
     private string _model = "";
@@ -27,7 +28,11 @@ public sealed class NovelizerTraceCollector
         string? FilePath = null  // 输出文件路径（非序列化，仅 UI 提示用）
     );
 
-    public IReadOnlyList<TurnTrace> Turns => _turns;
+    /// <summary>当前记录的线程安全快照，避免并发章节写入时 UI 枚举原始 List。</summary>
+    public IReadOnlyList<TurnTrace> Turns
+    {
+        get { lock (_sync) return _turns.ToArray(); }
+    }
 
     /// <summary>本次运行的唯一标识（开始时间 yyyyMMdd_HHmmss），作为 turnKey 前缀。</summary>
     public string RunId => _startedAt == default ? "" : _startedAt.ToString("yyyyMMdd_HHmmss");
@@ -35,15 +40,21 @@ public sealed class NovelizerTraceCollector
     /// <summary>标记一次运行的开始（清空上次运行的残留 turns，保证一次 Save 对应一次运行）。</summary>
     public void BeginRun(string model)
     {
-        (_model, _startedAt) = (model, DateTime.Now);
-        _turns.Clear();
+        lock (_sync)
+        {
+            (_model, _startedAt) = (model, DateTime.Now);
+            _turns.Clear();
+        }
     }
 
     /// <summary>追加一次 LLM 调用记录，返回该记录在本运行内的序号（0 起），供日志与复盘面板定位。</summary>
     public int Add(string label, string prompt, string thinking, string answer, string chapterTitle = "", bool isCompress = false)
     {
-        _turns.Add(new TurnTrace(label, prompt, thinking, answer, chapterTitle, isCompress, DateTime.Now));
-        return _turns.Count - 1;
+        lock (_sync)
+        {
+            _turns.Add(new TurnTrace(label, prompt, thinking, answer, chapterTitle, isCompress, DateTime.Now));
+            return _turns.Count - 1;
+        }
     }
 
     /// <summary>
@@ -53,7 +64,8 @@ public sealed class NovelizerTraceCollector
     /// <returns>落盘文件完整路径；无记录时返回 null。</returns>
     public string? Save(string storyOutputDir)
     {
-        if (_turns.Count == 0 || string.IsNullOrWhiteSpace(storyOutputDir))
+        var turns = Turns;
+        if (turns.Count == 0 || string.IsNullOrWhiteSpace(storyOutputDir))
             return null;
 
         var dir = Path.Combine(storyOutputDir, "novelizer-traces");
@@ -66,8 +78,8 @@ public sealed class NovelizerTraceCollector
         {
             model = _model,
             startedAt = _startedAt.ToString("yyyy-MM-dd HH:mm:ss"),
-            turnCount = _turns.Count,
-            turns = _turns,
+            turnCount = turns.Count,
+            turns,
         };
 
         var json = JsonSerializer.Serialize(runDoc, new JsonSerializerOptions

@@ -773,12 +773,8 @@ colors: [银色, 黑色, 深蓝]
                 client,
                 config,
                 onLog: log,
-                onThought: (summary, prompt, thinking, answer) =>
+                onThought: (summary, prompt, thinking, answer, turnKey) =>
                 {
-                    // collector 已由 ChapterProcessor 同步追加，此处直接取最新序号构造定位键
-                    var turnKey = _traceCollector.Turns.Count > 0
-                        ? $"{_traceCollector.RunId}:{_traceCollector.Turns.Count - 1}"
-                        : null;
                     WorkflowLog.AddThought(summary, prompt, thinking, answer, turnKey: turnKey);
                 },
                 traceCollector: _traceCollector,
@@ -786,6 +782,7 @@ colors: [银色, 黑色, 深蓝]
                 enableMultiTurn: novelizer.EnableMultiTurn,
                 chunkSize: novelizer.ChunkSize,
                 compressInterval: novelizer.CompressInterval,
+                compressThresholdTokens: novelizer.CompressThresholdTokens,
                 enableSectionSplitter: novelizer.EnableSectionSplitter,
                 sectionSplitterModel: model,
                 useMock: useMock
