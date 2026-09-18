@@ -21,17 +21,4 @@ public partial class WorkflowLogPanel : UserControl
             vm.SelectStage(stage);
         }
     }
-
-    /// <summary>点击日志条目：有关联复盘轮次的（小说化思考/压缩）→ 请求打开复盘面板定位；否则展开/收起详情。</summary>
-    private void LogTapped(object? sender, TappedEventArgs e)
-    {
-        if (sender is not Border { DataContext: LogEntry entry } ||
-            DataContext is not WorkflowLogPanelViewModel vm)
-            return;
-
-        if (!string.IsNullOrEmpty(entry.TurnKey))
-            vm.OpenTraceRequested?.Invoke(entry.TurnKey);
-        else
-            vm.ToggleExpand(entry);
-    }
 }

@@ -1,0 +1,104 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:i="using:Avalonia.Xaml.Interactivity"
+             xmlns:ba="using:ArkPlot.Avalonia.Styles"
+             xmlns:vm="using:ArkPlot.Avalonia.ViewModels"
+             xmlns:models="using:ArkPlot.Avalonia.Models"
+             xmlns:conv="using:ArkPlot.Avalonia.Converters"
+             xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="300"
+             x:Class="ArkPlot.Avalonia.Views.Controls.WorkflowLogStream"
+             x:DataType="vm:WorkflowLogPanelViewModel">
+
+    <UserControl.Resources>
+        <conv:LogLevelToBrushConverter x:Key="LogLevelBrush"/>
+        <conv:LogLevelToBackgroundConverter x:Key="LogLevelBackground"/>
+    </UserControl.Resources>
+
+    <Border CornerRadius="6" Padding="3,2"
+            Background="#FDFDFD" BorderBrush="#D1D5DB" BorderThickness="1">
+        <ScrollViewer x:Name="LogScroll">
+            <i:Interaction.Behaviors>
+                <ba:AutoScrollBehavior Enabled="True"/>
+            </i:Interaction.Behaviors>
+            <ItemsControl ItemsSource="{Binding VisibleLogs}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:LogEntry">
+                        <Grid>
+                            <!-- 普通日志行（非分段横幅）：图片/思考日志悬停飘窗，普通日志不飘窗 -->
+                            <Border IsVisible="{Binding IsNotSection}" CornerRadius="4"
+                                    Padding="6,3" Margin="0,1"
+                                    Background="{Binding Level, Converter={StaticResource LogLevelBackground}}"
+                                    Tapped="LogTapped" Cursor="Hand"
+                                    Classes.hasPreview="{Binding HasPreview}">
+                                <Border.Styles>
+                                    <Style Selector="Border.hasPreview">
+                                        <Setter Property="ToolTip.Tip">
+                                            <Setter.Value>
+                                                <Template>
+                                                    <StackPanel MaxWidth="300">
+                                                        <Image IsVisible="{Binding HasImage}"
+                                                               asyncImageLoader:ImageLoader.Source="{Binding ImageUrl}"
+                                                               Width="280" Stretch="UniformToFill" Margin="0,0,0,4"/>
+                                                        <TextBlock IsVisible="{Binding !HasImage}" Text="{Binding Tooltip}"
+                                                                   TextWrapping="Wrap" FontSize="11"/>
+                                                    </StackPanel>
+                                                </Template>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Border.Styles>
+                                <StackPanel>
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <Image Grid.Column="0" IsVisible="{Binding HasImage}"
+                                               Margin="0,0,8,0"
+                                               asyncImageLoader:ImageLoader.Source="{Binding ImageUrl}"
+                                               Width="38" Height="38" Stretch="UniformToFill"/>
+                                        <StackPanel Grid.Column="1">
+                                            <Grid ColumnDefinitions="Auto,Auto,*">
+                                                <TextBlock Grid.Column="0" Text="{Binding Time}"
+                                                           FontFamily="Consolas" FontSize="11" Opacity="0.5"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding LevelText}"
+                                                           FontFamily="Consolas" FontSize="11" FontWeight="SemiBold"
+                                                           Margin="8,0" VerticalAlignment="Center"
+                                                           Foreground="{Binding Level, Converter={StaticResource LogLevelBrush}}"/>
+                                                <Grid Grid.Column="2" ColumnDefinitions="*,Auto">
+                                                    <TextBlock Text="{Binding Message}" FontFamily="Consolas"
+                                                               FontSize="11" TextWrapping="Wrap"
+                                                               VerticalAlignment="Center"
+                                                               Grid.Column="0"/>
+                                                    <ProgressBar Grid.Column="1"
+                                                                 IsVisible="{Binding HasProgress}"
+                                                                 Value="{Binding Progress}" Minimum="0" Maximum="100"
+                                                                 Width="80" Height="5" VerticalAlignment="Center"
+                                                                 Foreground="#2563EB" Background="#E5E7EB"/>
+                                                </Grid>
+                                            </Grid>
+                                            <Border IsVisible="{Binding IsExpanded}" Background="#F3F4F6"
+                                                    CornerRadius="4" Padding="8" Margin="0,4,0,0"
+                                                    BorderBrush="#D1D5DB" BorderThickness="1">
+                                                <TextBlock Text="{Binding Detail}" FontFamily="Consolas"
+                                                           FontSize="11" TextWrapping="Wrap"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                            <!-- 分段横幅（醒目标注子流程，如「图片描述进行中」） -->
+                            <Border IsVisible="{Binding IsSection}" CornerRadius="4"
+                                    Padding="8,4" Margin="0,3"
+                                    Background="#EFF6FF" BorderBrush="#2563EB" BorderThickness="1">
+                                <TextBlock Text="{Binding Message}" FontSize="12" FontWeight="Bold"
+                                           Foreground="#1D4ED8" HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Border>
+</UserControl>
