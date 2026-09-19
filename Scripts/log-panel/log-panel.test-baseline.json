@@ -1,0 +1,7 @@
+{
+  "rationale": "2026-08 可视化日志面板修复流程基线。两个失败均经 base-pivot 对照实验证实（在合并前提交 687e45f + 干净子模块的 worktree 中同样失败）为既有问题：Gallery 为 TtsViewModel 画廊背景断言（期望 bg_a 实得 bg_b）；TtsComponentInput 为 FormattedTextEntry 建表顺序缺失（见 ArkPlot.Adapters/context.md 第九节已知问题）。在修复这些既有问题前，回归门禁不计入它们。",
+  "knownBad": [
+    "ArkPlot.Avalonia.Tests.GalleryBackgroundSelectionTests.Gallery_FiltersBlackBackground",
+    "ArkPlot.Avalonia.Tests.TtsComponentInputTests.ClickCharacterRow_PortraitPanel_ReceivesCorrectInput"
+  ]
+}

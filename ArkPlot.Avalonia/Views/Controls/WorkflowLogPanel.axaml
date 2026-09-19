@@ -1,0 +1,147 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:i="using:Avalonia.Xaml.Interactivity"
+             xmlns:ba="using:ArkPlot.Avalonia.Styles"
+             xmlns:vm="using:ArkPlot.Avalonia.ViewModels"
+             xmlns:models="using:ArkPlot.Avalonia.Models"
+             xmlns:conv="using:ArkPlot.Avalonia.Converters"
+             xmlns:controls="using:ArkPlot.Avalonia.Views.Controls"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="300"
+             x:Class="ArkPlot.Avalonia.Views.Controls.WorkflowLogPanel"
+             x:DataType="vm:WorkflowLogPanelViewModel">
+
+    <UserControl.Resources>
+        <conv:StageStatusToBrushConverter x:Key="StageBrush"/>
+        <conv:StageStatusToLineBrushConverter x:Key="StageLineBrush"/>
+        <conv:StageStatusToTextBrushConverter x:Key="StageTextBrush"/>
+        <!-- DockPanel 相邻元素间距：Avalonia 无独立间距属性，间距由后一个元素的 Margin 决定。
+             调整下面的 Thickness 数值即可控制对应位置的水平间距。 -->
+        <Thickness x:Key="GapBeforeProgressText">10,0,0,0</Thickness>
+        <Thickness x:Key="GapBeforeProgressBar">10,0,12,0</Thickness>
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,Auto, Auto,Auto,Auto,*,Auto">
+
+        <!-- ===== 顶部：进度 + 工具栏 ===== -->
+        <!-- two rows -->
+        <DockPanel Grid.Row="0" Margin="0,2,4,6">
+            <Button DockPanel.Dock="Right" Content="导出" FontSize="11" Padding="8,2"
+                    Command="{Binding ExportLogsCommand}" Margin="4,0,0,0"/>
+            <Button DockPanel.Dock="Right" Content="清空" FontSize="11" Padding="8,2"
+                    Command="{Binding ClearLogsCommand}" Margin="4,0,0,0"/>
+                <!-- todo: (开发)清除缓存按钮 -->
+            <Button DockPanel.Dock="Right" Content="定位到问题" FontSize="11" Padding="8,2"
+                    Command="{Binding LocateErrorCommand}" Margin="4,0,0,0"
+                    IsVisible="{Binding SelectedStageShowErrorHint}"/>
+            <!-- 开发开关控制显隐的「清除缓存」按钮 -->
+            <Button DockPanel.Dock="Right" Content="清除缓存" FontSize="11" Padding="8,2"
+                    Command="{Binding ClearCacheCommand}" Margin="4,0,0,0"
+                    IsVisible="{Binding IsClearCacheVisible}"
+                    ToolTip.Tip="按当前勾选的章节清除缓存，仅影响本章：
+· 图片描述缓存：删除本章立绘/场景图对应的 PicDescriptions 记录（重新生成时会重新调用视觉 API）
+· 小说化缓存：删除本章对应的 .novelizer-cache.json 条目与 *_novel_*.md 输出（重新小说化时重新调用 API）
+其他章节的缓存不受影响。清除前请确认已勾选目标章节。"/>
+        </DockPanel>
+        <DockPanel Grid.Row="1">
+            <!-- margin（可调：GapBeforeProgressText 资源） -->
+            <TextBlock DockPanel.Dock="Right" Text="{Binding ProgressText}"
+                       VerticalAlignment="Center" Margin="{StaticResource GapBeforeProgressText}" FontSize="12" Opacity="0.6"/>
+            <CheckBox DockPanel.Dock="Right" Content="仅错误"
+                  IsChecked="{Binding ShowErrorsOnly}"
+                  VerticalAlignment="Center" Margin="8,0" FontSize="12" Opacity="0.8"/>
+            <!-- margin（可调：GapBeforeProgressBar 资源） -->
+            <ProgressBar Height="6" VerticalAlignment="Center" Maximum="100"
+                         Value="{Binding TotalProgress}"
+                         Margin="{StaticResource GapBeforeProgressBar}"
+                         Background="#E5E7EB" Foreground="#2563EB"/>
+        </DockPanel>
+        <!-- two rows -->
+
+        <!-- ===== 横向阶段时间线 ===== -->
+        <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled" Margin="0,0,0,6">
+            <ItemsControl ItemsSource="{Binding Stages}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:WorkflowStage">
+                        <StackPanel Orientation="Vertical" VerticalAlignment="Bottom">
+                            <Grid ColumnDefinitions="18,Auto,18">
+                                <!-- 左连线 -->
+                                <Border Grid.Column="0" Height="3" VerticalAlignment="Center"
+                                        Background="{Binding Status, Converter={StaticResource StageLineBrush}}"
+                                        IsVisible="{Binding IsNotFirst}"/>
+                                <!-- 圆点 -->
+                                <Border Grid.Column="1" Width="24" Height="24" CornerRadius="12"
+                                        Background="{Binding Status, Converter={StaticResource StageBrush}}"
+                                        Tapped="StageTapped" Cursor="Hand"
+                                        Classes.active="{Binding IsActive}"
+                                        BoxShadow="0 0 0 0 #4060A5FA">
+                                    <Border.Styles>
+                                        <Style Selector="Border.active">
+                                            <Style.Animations>
+                                                <Animation Duration="0:0:1.2" IterationCount="INFINITE">
+                                                    <KeyFrame Cue="0%">
+                                                        <Setter Property="BoxShadow" Value="0 0 0 0 #4060A5FA"/>
+                                                    </KeyFrame>
+                                                    <KeyFrame Cue="100%">
+                                                        <Setter Property="BoxShadow" Value="0 0 0 8 #0060A5FA"/>
+                                                    </KeyFrame>
+                                                </Animation>
+                                            </Style.Animations>
+                                        </Style>
+                                    </Border.Styles>
+                                    <TextBlock Text="{Binding CircleGlyph}" FontSize="12"
+                                               FontWeight="Bold" Foreground="White"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <!-- 右连线 -->
+                                <Border Grid.Column="2" Height="3" VerticalAlignment="Center"
+                                        Background="{Binding Status, Converter={StaticResource StageLineBrush}}"
+                                        IsVisible="{Binding IsNotLast}"/>
+                            </Grid>
+                            <TextBlock Text="{Binding Name}" FontSize="12" Margin="0,3,0,0"
+                                       HorizontalAlignment="Center"
+                                       Foreground="{Binding Status, Converter={StaticResource StageTextBrush}}"/>
+                            <TextBlock Text="{Binding Duration}" FontSize="10" Margin="0,1,0,0"
+                                       HorizontalAlignment="Center" Opacity="0.5"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- ===== 全部完成横幅 ===== -->
+        <Border Grid.Row="3" IsVisible="{Binding IsComplete}"
+                Margin="4,0,4,6" CornerRadius="6" Padding="10,6"
+                BorderBrush="#22C55E" BorderThickness="1">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="✓" FontSize="14" FontWeight="Bold" Foreground="#16A34A"
+                           VerticalAlignment="Center"/>
+                <TextBlock Text="全部完成" FontSize="13" FontWeight="SemiBold"
+                           Foreground="#16A34A" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+            <!-- ===== 日志区标题 ===== -->
+        <Border Grid.Row="4" Margin="4,2,4,2" CornerRadius="6" Padding="8,5"
+                Background="#F9FAFB" BorderBrush="#D1D5DB" BorderThickness="1">
+            <TextBlock Text="{Binding HeaderText}" FontSize="13" FontWeight="SemiBold"
+                       Opacity="0.85" VerticalAlignment="Center"/>
+        </Border>
+
+        <!-- ===== 日志流（模板与交互已拆至 WorkflowLogStream 子控件） ===== -->
+        <controls:WorkflowLogStream Grid.Row="5" Margin="4,0,4,0"/>
+
+        <!-- ===== 底部状态行 ===== -->
+        <TextBlock Grid.Row="6" Text="{Binding StatusMessage}" FontSize="11" Opacity="0.5"
+                   Margin="4,2,4,0" TextWrapping="Wrap"
+                   IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+    </Grid>
+</UserControl>

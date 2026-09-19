@@ -44,7 +44,11 @@ public static class PicDescRunner
         }
 
         // 不 using — 生命周期交给 caller（CliPipeline）管理
-        var picDescService = new PicDescService(describeByUrl, debugMode: CliOptions.DebugMode);
+        // Mock 模式下跳过写库，避免将假描述污染真实缓存
+        var picDescService = new PicDescService(
+            describeByUrl,
+            debugMode: CliOptions.DebugMode,
+            skipCache: CliOptions.UseMockVision);
         picDescService.InitializeCleanup();
 
         var dbStats = picDescService.GetStats();

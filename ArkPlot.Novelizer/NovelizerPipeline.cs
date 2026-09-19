@@ -11,10 +11,15 @@ public class NovelizerPipeline
     private readonly BailianClient _client;
     private readonly ApiConfig _config;
     private readonly Action<string>? _onLog;
+    /// <summary>上报一次 LLM 调用：(轮次标签, 完整输入 prompt, 思考过程, 输出)。</summary>
+    private readonly Action<string, string, string, string, string?, bool>? _onThought;
+    /// <summary>可选：复盘收集器（由调用方创建并传入，BatchProcessAsync 结束后由调用方负责落盘）。</summary>
+    private readonly NovelizerTraceCollector? _traceCollector;
     private readonly string _systemPrompt;
     private readonly bool _enableMultiTurn;
     private readonly int _chunkSize;
     private readonly int _compressInterval;
+    private readonly int _compressThresholdTokens;
     private readonly bool _enableSectionSplitter;
     private readonly string _sectionSplitterModel;
     private readonly bool _useMock;
@@ -32,6 +37,14 @@ public class NovelizerPipeline
 ### 二、 角色标签的铁律
 
 **输入文本中每段对话前的粗体角色名是该角色的唯一标识。你必须在叙事中使用这些原始名称来指代对应角色，严禁自行替换、合并或混淆角色标签。不同名称的角色是不同的人。**
+
+**跨名同一人的识别**：同一角色可能因身份揭露而更换名字（如「精英打扮的男性」实为「小贾斯汀」）。输入中会以 `（后文作“XX”）`、`（即前文“XX”）` 或 aside 的 `data-character` 显式标注这种对应关系。凡被标注为同一角色的名字，必须当作同一人处理，在叙事中统一指代，不得写成两个角色。
+
+**玩家台词的认领**：`**博士**（玩家可选台词）：……` 是玩家（博士/Dr.）可能说出口的候选台词，不是旁白，也不是其他角色的台词。小说化时：
+* 若多条候选能构成一段自然连贯的追问/应答，按叙事顺序逐句融入，NPC 回应紧随其后。
+* 若候选为平行互斥的选项（择一而选），选择最贴合后文剧情的一句说出口，其余不叙述、不罗列。
+* `[可选分支：N]（此处为博士/玩家讲话）` 是游戏分支标记，只用于提示玩家曾在 N 中抉择，不直接输出为台词。
+* 严禁把选项文本塞进其他角色之口，或把玩家台词当作动作/心理描写而丢弃。
 
 ### 三、 视听语言的叙事转化
 
@@ -105,10 +118,13 @@ public class NovelizerPipeline
         BailianClient client,
         ApiConfig config,
         Action<string>? onLog = null,
+        Action<string, string, string, string, string?, bool>? onThought = null,
+        NovelizerTraceCollector? traceCollector = null,
         string? systemPrompt = null,
         bool enableMultiTurn = false,
         int chunkSize = 5_000,
         int compressInterval = 0,
+        int compressThresholdTokens = 0,
         bool enableSectionSplitter = false,
         string? sectionSplitterModel = null,
         bool useMock = false
@@ -117,12 +133,15 @@ public class NovelizerPipeline
         _client = client;
         _config = config;
         _onLog = onLog;
+        _onThought = onThought;
+        _traceCollector = traceCollector;
         _systemPrompt = string.IsNullOrWhiteSpace(systemPrompt)
             ? DefaultSystemPrompt
             : systemPrompt;
         _enableMultiTurn = enableMultiTurn;
         _chunkSize = chunkSize;
         _compressInterval = compressInterval;
+        _compressThresholdTokens = compressThresholdTokens;
         _enableSectionSplitter = enableSectionSplitter;
         _sectionSplitterModel = sectionSplitterModel ?? "";
         _useMock = useMock;
@@ -177,9 +196,12 @@ public class NovelizerPipeline
         // 处理所有章节
         var processor = new ChapterProcessor(
             _client, _systemPrompt, Log, LogError,
+            onThought: _onThought,
+            traceCollector: _traceCollector,
             enableMultiTurn: _enableMultiTurn,
             chunkSize: _chunkSize,
-            compressInterval: _compressInterval);
+            compressInterval: _compressInterval,
+            compressThresholdTokens: _compressThresholdTokens);
         var results = await processor.ProcessAllAsync(chapters, model, ct);
 
         // Pass 2: TTS 分节（每章独立调用 SectionSplitter）
@@ -272,28 +294,47 @@ public class NovelizerPipeline
     }
 
     /// <summary>
-    /// 批量处理目录下所有 .md 文件
+    /// 批量处理目录下所有 .md 文件；传 <paramref name="onlyFile"/> 时只处理该文件。
+    /// GUI 场景必须传 onlyFile：输出目录里可能残留历史全量快照（如 *_original.md），
+    /// 扫全目录会把用户没选的章节也一并小说化（表现即「选了一个章节、所有章节都被导出」）。
     /// </summary>
     public async Task BatchProcessAsync(
         string inputDir,
         string[] models,
         bool force,
         string? outputDir = null,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        string? onlyFile = null
     )
     {
         outputDir ??= inputDir;
         Log(
-            $"[DIAG] BatchProcessAsync 开始。dir={inputDir}, models=[{string.Join(", ", models)}], force={force}"
+            $"[DIAG] BatchProcessAsync 开始。dir={inputDir}, models=[{string.Join(", ", models)}], force={force}, onlyFile={onlyFile ?? "(扫描目录)"}"
         );
+
+        _traceCollector?.BeginRun(models.FirstOrDefault() ?? "", outputDir);
 
         var cache = new ChapterCache(outputDir);
 
-        Log($"[DIAG] 扫描 .md 文件: {inputDir}");
-        var mdFiles = Directory
-            .GetFiles(inputDir, "*.md", SearchOption.TopDirectoryOnly)
-            .Where(f => !Path.GetFileNameWithoutExtension(f).Contains("_novel_"))
-            .ToArray();
+        string[] mdFiles;
+        if (onlyFile is not null)
+        {
+            if (!File.Exists(onlyFile))
+            {
+                Log($"❌ 指定的小说化输入不存在: {onlyFile}");
+                Log("[DIAG] 输入文件缺失，BatchProcessAsync 返回");
+                return;
+            }
+            mdFiles = [onlyFile];
+        }
+        else
+        {
+            Log($"[DIAG] 扫描 .md 文件: {inputDir}");
+            mdFiles = Directory
+                .GetFiles(inputDir, "*.md", SearchOption.TopDirectoryOnly)
+                .Where(f => !Path.GetFileNameWithoutExtension(f).Contains("_novel_"))
+                .ToArray();
+        }
         if (mdFiles.Length == 0)
         {
             Log($"❌ 目录中没有 .md 文件: {inputDir}");
@@ -312,13 +353,16 @@ public class NovelizerPipeline
             {
                 Log($"[DIAG] Batch 处理: file={fn}, model={model}");
 
-                var cached = cache.Check(mdFile, model, force);
+                var cached = _useMock ? null : cache.Check(mdFile, model, force);
                 if (cached is not null)
                 {
                     Log($"⏭️  跳过（缓存命中）: {Path.GetFileName(cached)}");
                     Log($"[DIAG] 缓存命中，跳过: {fn}");
                     continue;
                 }
+
+                if (_useMock)
+                    Log($"[DIAG] Mock 模式：无视缓存，完整走一遍管线");
 
                 Log($"[DIAG] 调用 ProcessMdFileAsync: {fn}, {model}");
                 try
@@ -348,6 +392,8 @@ public class NovelizerPipeline
 
         Log("\n🏁 批处理完成");
         Log("[DIAG] BatchProcessAsync 执行完毕，即将生成 epub");
+
+        _traceCollector?.Save(outputDir);
 
         // 为每个小说 md 生成 epub
         await GenerateEpubsForNovelsAsync(outputDir);

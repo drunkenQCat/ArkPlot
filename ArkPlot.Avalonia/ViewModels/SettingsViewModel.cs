@@ -45,6 +45,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _enableMultiTurn;
     [ObservableProperty] private int _chunkSize = 5_000;
     [ObservableProperty] private int _compressInterval = 2;
+    [ObservableProperty] private int _compressThresholdTokens;
     [ObservableProperty] private bool _enableSectionSplitter = false;
 
     // 小说化自定义 Provider
@@ -227,6 +228,7 @@ public partial class SettingsViewModel : ObservableObject
         EnableMultiTurn = novelizer.EnableMultiTurn;
         ChunkSize = novelizer.ChunkSize;
         CompressInterval = novelizer.CompressInterval;
+        CompressThresholdTokens = novelizer.CompressThresholdTokens;
         EnableSectionSplitter = novelizer.EnableSectionSplitter;
 
         // GitHub 代理
@@ -274,6 +276,7 @@ public partial class SettingsViewModel : ObservableObject
             EnableMultiTurn = EnableMultiTurn,
             ChunkSize = ChunkSize,
             CompressInterval = CompressInterval,
+            CompressThresholdTokens = CompressThresholdTokens,
             EnableSectionSplitter = EnableSectionSplitter,
             ApiKeys = new Dictionary<string, string>
             {
@@ -511,6 +514,7 @@ public partial class SettingsViewModel : ObservableObject
     partial void OnEnableMultiTurnChanged(bool value) => OnPropertyChanged(nameof(TokenEstimateText));
     partial void OnChunkSizeChanged(int value) => OnPropertyChanged(nameof(TokenEstimateText));
     partial void OnCompressIntervalChanged(int value) => OnPropertyChanged(nameof(TokenEstimateText));
+    partial void OnCompressThresholdTokensChanged(int value) => OnPropertyChanged(nameof(TokenEstimateText));
 
     [RelayCommand]
     private void RestoreDefaultPrompt()

@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:i="using:Avalonia.Xaml.Interactivity"
+             xmlns:ba="using:ArkPlot.Avalonia.Styles"
+             xmlns:vm="using:ArkPlot.Avalonia.ViewModels"
+             xmlns:models="using:ArkPlot.Avalonia.Models"
+             xmlns:controls="using:ArkPlot.Avalonia.Views.Controls"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="300"
+             x:Class="ArkPlot.Avalonia.Views.Controls.WorkflowLogStream"
+             x:DataType="vm:WorkflowLogPanelViewModel">
+
+    <Border CornerRadius="6" Padding="3,2"
+            Background="#FDFDFD" BorderBrush="#D1D5DB" BorderThickness="1">
+        <ScrollViewer x:Name="LogScroll">
+            <i:Interaction.Behaviors>
+                <ba:AutoScrollBehavior Enabled="True"/>
+            </i:Interaction.Behaviors>
+            <ItemsControl ItemsSource="{Binding VisibleLogs}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:LogEntry">
+                        <controls:LogRow/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Border>
+</UserControl>

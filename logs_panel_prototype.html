@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>小说化复盘 — 从日志点击弹出</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: #f3f4f6; color: #1f2937; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { font-size: 12px; color: #6b7280; margin: 0 0 16px; }
+
+  /* 主窗口日志面板 mock */
+  .logpanel { background:#fff; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; }
+  .logpanel-head { font-size:12px; font-weight:600; padding:10px 14px; border-bottom:1px solid #e5e7eb;
+                   display:flex; justify-content:space-between; align-items:center; }
+  .log-nav { font-size:12px; color:#1d4ed8; cursor:pointer; font-weight:600; }
+  .log-nav:hover { text-decoration: underline; }
+  .loglist { padding:8px 10px; max-height: 420px; overflow:auto; }
+
+  .logrow { padding:6px 8px; margin-bottom:4px; border-radius:6px; font-family:Consolas,monospace;
+            font-size:11px; display:flex; gap:8px; align-items:baseline; }
+  .logrow .time { color:#9ca3af; flex:none; }
+  .logrow .lvl { flex:none; font-weight:600; width: 30px; }
+  .logrow .msg { color:#374151; }
+  .logrow.info { background:#f9fafb; }
+  .logrow.clickable { background:#eff6ff; border:1px solid #bfdbfe; cursor:pointer; }
+  .logrow.clickable:hover { background:#dbeafe; }
+  .logrow.compress { background:#fffbeb; border:1px solid #fde68a; cursor:pointer; }
+  .logrow.compress:hover { background:#fef3c7; }
+  .badge { font-size:10px; padding:1px 6px; border-radius:4px; flex:none; align-self:center; }
+  .badge.think { background:#dbeafe; color:#1d4ed8; }
+  .badge.comp { background:#fde68a; color:#92400e; }
+  .hint { font-size:11px; color:#6b7280; margin-top:10px; line-height:1.7; }
+  .hint b { color:#374151; }
+
+  /* 弹出层（复盘面板） */
+  .overlay { position:fixed; inset:0; background:rgba(17,24,39,.45); display:none;
+             z-index:100; padding:3vh 4vw; }
+  .overlay.show { display:block; }
+  .review { background:#fff; border-radius:10px; height:94vh; display:flex; flex-direction:column;
+            box-shadow:0 20px 40px rgba(0,0,0,.2); overflow:hidden; }
+  .review-head { display:flex; justify-content:space-between; align-items:center;
+                 padding:10px 14px; border-bottom:1px solid #e5e7eb; background:#fafafa; }
+  .review-head .title { font-size:14px; font-weight:600; }
+  .review-head .sub-line { font-size:11px; color:#6b7280; margin-top:2px; }
+  .close-btn { font-size:20px; cursor:pointer; color:#6b7280; padding:0 6px; }
+  .close-btn:hover { color:#111827; }
+  .layout { display:grid; grid-template-columns: 220px 250px 1fr; gap:10px; flex:1; padding:10px; }
+  .panel { background:#fafafa; border:1px solid #e5e7eb; border-radius:8px; display:flex; flex-direction:column; overflow:hidden; }
+  .panel-head { font-size:12px; font-weight:600; padding:8px 10px; border-bottom:1px solid #e5e7eb; background:#fff; }
+  .panel-body { flex:1; overflow:auto; padding:6px; }
+  .item { padding:7px 8px; margin-bottom:4px; border-radius:6px; cursor:pointer; font-size:12px; border:1px solid transparent; }
+  .item:hover { background:#f0f0f0; }
+  .item.active { background:#eff6ff; border-color:#bfdbfe; }
+  .item .t { font-weight:600; }
+  .item .m { color:#6b7280; font-size:11px; margin-top:2px; }
+  .item .go { font-size:11px; color:#1d4ed8; margin-top:2px; }
+
+  /* —— 详情区：阶段翻页 + 折叠 —— */
+  /* 阶段导航（仿 WorkflowLogPanel 阶段条：圆点 + 连线 + 标签，点击翻页） */
+  .stage-nav { display:flex; align-items:center; gap:8px; padding:8px 10px; margin-bottom:8px;
+               background:#fff; border:1px solid #e5e7eb; border-radius:6px; }
+  .stagenode { display:flex; align-items:center; gap:5px; font-size:11px; color:#6b7280;
+               cursor:pointer; user-select:none; padding:2px 4px; border-radius:4px; }
+  .stagenode:hover { color:#1d4ed8; }
+  .stagenode.active { color:#1d4ed8; font-weight:700; }
+  .stagenode .dot { width:10px; height:10px; border-radius:50%; background:#d1d5db; flex:none; }
+  .stagenode.active .dot { background:#2563eb; box-shadow:0 0 0 2px #bfdbfe; }
+  .stage-line { flex:1; height:2px; background:#e5e7eb; border-radius:1px; }
+
+  /* 折叠块（每一页 / 每个子部共用） */
+  .fold-head { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:600;
+               padding:8px 10px; cursor:pointer; user-select:none; background:#f9fafb;
+               border:1px solid #e5e7eb; border-radius:6px; }
+  .fold-head:hover { background:#f3f4f6; }
+  .fold-head .arrow { font-size:10px; color:#6b7280; width:12px; flex:none; }
+  .fold-head .len { font-size:10px; color:#9ca3af; font-weight:400; margin-left:auto; }
+  .fold-body { border:1px solid #e5e7eb; border-top:none; border-radius:0 0 6px 6px; overflow:hidden; }
+  .fold-empty { color:#9ca3af; font-size:11px; text-align:center; padding:14px; font-style:italic; }
+  .pre-text { white-space:pre-wrap; font-family:Consolas,monospace; font-size:11px;
+              color:#374151; padding:10px; background:#fff; }
+
+  /* 输入页：system / user 子部 */
+  .sub-card { border:1px solid #e5e7eb; border-radius:6px; margin-bottom:8px; overflow:hidden; background:#fff; }
+  .sub-head { display:flex; align-items:center; gap:8px; font-size:11px; font-weight:600;
+              padding:7px 10px; cursor:pointer; user-select:none; background:#fff; }
+  .sub-head:hover { background:#f9fafb; }
+  .sub-head .arrow { font-size:10px; color:#6b7280; width:12px; flex:none; }
+  .sub-head .len { font-size:10px; color:#9ca3af; font-weight:400; margin-left:auto; }
+  .sub-head .tag { font-size:10px; padding:1px 6px; border-radius:4px; font-weight:700; }
+  .tag.sys { background:#e0e7ff; color:#4338ca; }
+  .tag.user { background:#dcfce7; color:#15803d; }
+  .sub-card .pre-text { border-top:1px solid #e5e7eb; }
+  .empty { color:#9ca3af; font-size:12px; padding:20px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>小说化复盘 — 从日志点击弹出</h1>
+  <p class="sub">运行中/运行后：在日志面板点击「🧠 思考」「🔄 压缩」等特殊 log，直接弹出复盘面板并定位到该轮</p>
+
+  <!-- ===== 主窗口日志面板 mock ===== -->
+  <div class="logpanel">
+    <div class="logpanel-head">
+      <span>日志流（WorkflowLogPanel）</span>
+      <span class="log-nav" onclick="openReview(-1)">查看完整复盘 ↗</span>
+    </div>
+    <div class="loglist" id="loglist"><!-- JS 渲染 --></div>
+  </div>
+
+  <div class="hint">
+    <b>交互说明：</b><br>
+    · 点击 <span class="badge think">🧠</span> 思考类 log → 弹出复盘面板，并定位到该次调用的详情<br>
+    · 点击 <span class="badge comp">🔄</span> 压缩类 log → 弹出复盘面板，定位到压缩记录<br>
+    · 右上角「查看完整复盘 ↗」→ 弹出面板（不定位，浏览全部运行记录与调用）<br>
+    · 详情区顶部是<b>阶段条</b>（① 输入 / ② 思考 / ③ 输出），点击切换当前查看的页，类似日志面板的阶段节点<br>
+    · 每一页都可折叠/展开（点击页标题）；「输入」页内 system 与 user 分开成两个子块，各自可独立折叠
+  </div>
+
+  <!-- ===== 弹出层：复盘面板 ===== -->
+  <div class="overlay" id="overlay">
+    <div class="review">
+      <div class="review-head">
+        <div>
+          <div class="title">小说化复盘</div>
+          <div class="sub-line" id="reviewSub">output/孤星/novelizer-traces/ ｜ 点击日志定位到该轮次</div>
+        </div>
+        <span class="close-btn" onclick="closeReview()">✕</span>
+      </div>
+      <div class="layout">
+        <div class="panel">
+          <div class="panel-head">运行记录</div>
+          <div class="panel-body" id="runList"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">LLM 调用 <span id="turnCount" style="color:#6b7280;font-weight:400;font-size:11px"></span></div>
+          <div class="panel-body" id="turnList"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head" id="detailHead">选择一条 LLM 调用查看详情</div>
+          <div class="panel-body" id="detail"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script id="app-script">
+// ===== 日志流 mock（主窗口）=====
+const logs = [
+  { time: '15:20:01', lvl: 'INFO', msg: '开始生成小说化：孤星 CW-ST-1', kind: 'plain' },
+  { time: '15:20:02', lvl: 'INFO', msg: '正在小说化 第 1/4 章「孤星」…', kind: 'plain' },
+  { time: '15:20:33', lvl: 'INFO', msg: '第 1/4 章「孤星」思考 单轮完成', kind: 'think', run: 0, turn: 0 },
+  { time: '15:21:10', lvl: 'INFO', msg: '正在小说化 第 2/4 章…', kind: 'plain' },
+  { time: '15:21:48', lvl: 'INFO', msg: '第 3/4 章「孤星」Turn 1/3 完成', kind: 'think', run: 0, turn: 1 },
+  { time: '15:22:05', lvl: 'INFO', msg: '上下文过长，触发压缩（第 3/4 章前半）', kind: 'compress', run: 0, turn: 2 },
+  { time: '15:22:20', lvl: 'INFO', msg: '第 3/4 章「孤星」Turn 2/3 完成', kind: 'think', run: 0, turn: 3 },
+  { time: '15:23:00', lvl: 'INFO', msg: '正在生成 epub…', kind: 'plain' },
+];
+
+// ===== 复盘数据（与日志 run/turn 索引对应；prompt 拆为 system / user 两部分）=====
+const turnsByRun = [
+  [ // run 0：完整运行（与日志 flow 对应）
+    { label: '🧠 第 1/4 章「孤星」思考 单轮', ch: '孤星 CW-ST-1',
+      system: '你是一位资深小说家，擅长把视觉化的游戏剧本改写为连贯、有文学性的中文小说。\n\n改写原则：\n1. 保留所有关键剧情、对话与角色信息\n2. 环境、动作、神态补足文学性描写\n3. 不改变原有世界观设定',
+      user: '请小说化以下内容：\n\n---\n\n罗德岛的走廊在深夜格外安静，应急灯把金属墙壁染成冷淡的蓝。博士走在前面……（章节正文）',
+      thinking: '先分析场景：罗德岛舰内走廊，夜晚。角色：博士、凯尔希。需要建立环境氛围……',
+      answer: '罗德岛的走廊在深夜格外安静，应急灯把金属墙壁染成冷淡的蓝。博士走在前面，脚步声被厚地毯吞没……' },
+    { label: '🧠 第 3/4 章「孤星」思考 Turn 1/3', ch: '孤星 CW-ST-2',
+      system: '你是一位资深小说家，擅长把视觉化的游戏剧本改写为连贯、有文学性的中文小说。\n\n改写原则：\n1. 保留所有关键剧情、对话与角色信息\n2. 环境、动作、神态补足文学性描写\n3. 不改变原有世界观设定',
+      user: '请继续小说化下一段：\n\n---\n\n实验舱的门缓缓打开……',
+      thinking: 'Turn 1 承接上文。场景从走廊转到实验舱，需要过渡锚定：人物位置、光线……',
+      answer: '实验舱的门缓缓滑开，暖白色的光涌出来，与走廊的冷蓝形成分界……' },
+    { label: '🔄 第 3/4 章「孤星」上下文压缩', ch: '孤星 CW-ST-2', isCompress: true,
+      system: '你是一位资深小说家，擅长把视觉化的游戏剧本改写为连贯、有文学性的中文小说。\n\n改写原则：\n1. 保留所有关键剧情、对话与角色信息\n2. 环境、动作、神态补足文学性描写\n3. 不改变原有世界观设定',
+      user: '请将以上对话中已生成的小说内容压缩为一份紧凑的情节摘要，要求：\n1. 保留所有已出现的角色名称及关键特征\n2. 按顺序列出已发生的场景和关键事件\n3. 压缩后不超过 300 字',
+      thinking: '（压缩调用通常无思考，仅输出摘要）',
+      answer: '【摘要】博士与凯尔希进入实验舱，对“源石畸变”样品展开争论；博士主张就地销毁……' },
+    { label: '🧠 第 3/4 章「孤星」思考 Turn 2/3', ch: '孤星 CW-ST-2',
+      system: '你是一位资深小说家，擅长把视觉化的游戏剧本改写为连贯、有文学性的中文小说。\n\n此前已生成的小说情节摘要：\n【摘要】博士与凯尔希进入实验舱，对“源石畸变”样品展开争论；博士主张就地销毁，凯尔希坚持保留样本……',
+      user: '请继续小说化下一段：\n\n---\n\n凯尔希没有立刻回答……',
+      thinking: 'Turn 2 承接压缩后的摘要，需延续上一轮中未完成的对话线……',
+      answer: '凯尔希沉默了片刻，才缓缓开口：“样本必须保留，但实验必须停止。”……' },
+  ],
+  [ // run 1：历史运行
+    { label: '🧠 第 1/1 章「孤星」思考 单轮', ch: '孤星 CW-ST-1',
+      system: '你是一位资深小说家，擅长把视觉化的游戏剧本改写为连贯、有文学性的中文小说。',
+      user: '请小说化以下内容：\n\n---\n\n晨曦透过舷窗……',
+      thinking: '场景为清晨舰桥，需交代时间与空间感……',
+      answer: '晨曦透过舷窗洒进舰桥，把操作台的边沿染成暖金色……' },
+  ],
+];
+
+let currentRun = 0;
+let currentTurn = 0;
+
+// 详情区状态：当前页（输入/思考/输出）+ 各页折叠 + 输入页内子部折叠
+const state = {
+  page: 'input', // input | think | output
+  collapsed: { input: false, think: false, output: false },
+  sub: { system: false, user: false },
+};
+
+// ===== 日志流渲染 =====
+function renderLogs() {
+  const list = document.getElementById('loglist');
+  list.innerHTML = logs.map((log, i) => {
+    const badge = log.kind === 'think' ? '<span class="badge think">🧠 思考</span>'
+      : log.kind === 'compress' ? '<span class="badge comp">🔄 压缩</span>' : '';
+    const cls = log.kind === 'think' ? 'clickable' : log.kind === 'compress' ? 'compress' : 'info';
+    const onclick = log.kind !== 'plain'
+      ? `onclick="openFromLog(${log.run}, ${log.turn})"` : '';
+    return `<div class="logrow ${cls}" ${onclick}>
+      <span class="time">${log.time}</span>
+      <span class="lvl" style="color:${log.lvl === 'INFO' ? '#10b981' : '#f59e0b'}">${log.lvl}</span>
+      <span class="msg">${log.msg}</span>${badge}
+    </div>`;
+  }).join('');
+}
+
+// ===== 复盘面板渲染 =====
+function renderRuns() {
+  const list = document.getElementById('runList');
+  list.innerHTML = turnsByRun.map((_, i) => `
+    <div class="item ${i === currentRun ? 'active' : ''}" onclick="selectRun(${i})">
+      <div class="t">${i === 0 ? '2026-08-18 15:20:33' : '2026-08-18 14:51:02'}</div>
+      <div class="m">${turnsByRun[i].length} 次调用</div>
+      <div class="go">${i === 0 ? '当前运行（实时累积）' : '历史运行'}</div>
+    </div>`).join('');
+}
+
+function renderTurns() {
+  const run = turnsByRun[currentRun];
+  document.getElementById('turnCount').textContent = `（${run.length} 次）`;
+  const list = document.getElementById('turnList');
+  list.innerHTML = run.map((t, i) => `
+    <div class="item ${i === currentTurn ? 'active' : ''}" onclick="selectTurn(${i})">
+      <div class="t">${t.label}</div>
+      <div class="m">${t.ch}</div>
+    </div>`).join('');
+}
+
+// ---- 详情区：阶段翻页 + 折叠 ----
+function selectPage(p) { state.page = p; renderDetail(); }
+function toggleFold(k) { state.collapsed[k] = !state.collapsed[k]; renderDetail(); }
+function toggleSub(k) { state.sub[k] = !state.sub[k]; renderDetail(); }
+
+function arrowOn(on) { return on ? '▾' : '▸'; }
+
+/** 折叠块头：整页（输入/思考/输出）通用。 */
+function foldHead(key, text, lenText) {
+  const on = !state.collapsed[key];
+  return `<div class="fold-head" onclick="toggleFold('${key}')">
+    <span class="arrow">${arrowOn(on)}</span>${text}
+    ${lenText ? `<span class="len">${lenText}</span>` : ''}
+  </div>`;
+}
+
+/** 折叠块体：收起时显示占位提示，展开时渲染 inner。 */
+function foldBody(key, inner) {
+  return state.collapsed[key]
+    ? '<div class="fold-empty">（该部分已折叠，点击上方标题展开）</div>'
+    : `<div class="fold-body">${inner}</div>`;
+}
+
+/** 输入页内的子部卡片：system / user，各自可独立折叠。 */
+function subCard(key, tagCls, tagText, lenText, text) {
+  const on = !state.sub[key];
+  return `<div class="sub-card">
+    <div class="sub-head" onclick="toggleSub('${key}')">
+      <span class="arrow">${arrowOn(on)}</span>
+      <span class="tag ${tagCls}">${tagText}</span>
+      <span class="len">${lenText}</span>
+    </div>
+    ${on ? `<div class="pre-text">${esc(text)}</div>` : '<div class="fold-empty">（该子部已折叠，点击展开）</div>'}
+  </div>`;
+}
+
+function renderDetail() {
+  const t = turnsByRun[currentRun][currentTurn];
+  document.getElementById('detailHead').textContent = t.label;
+  const d = document.getElementById('detail');
+
+  const nav = `
+    <div class="stage-nav">
+      <div class="stagenode ${state.page === 'input' ? 'active' : ''}" onclick="selectPage('input')"><span class="dot"></span>① 输入</div>
+      <div class="stage-line"></div>
+      <div class="stagenode ${state.page === 'think' ? 'active' : ''}" onclick="selectPage('think')"><span class="dot"></span>② 思考</div>
+      <div class="stage-line"></div>
+      <div class="stagenode ${state.page === 'output' ? 'active' : ''}" onclick="selectPage('output')"><span class="dot"></span>③ 输出</div>
+    </div>`;
+
+  let pageHtml;
+  if (state.page === 'input') {
+    pageHtml =
+      foldHead('input', '① 输入 Prompt', `system ${t.system.length} 字 · user ${t.user.length} 字`) +
+      foldBody('input',
+        subCard('system', 'sys', 'system', `${t.system.length} 字`, t.system) +
+        subCard('user', 'user', 'user', `${t.user.length} 字`, t.user));
+  } else if (state.page === 'think') {
+    pageHtml =
+      foldHead('think', '② 思考过程', `${t.thinking.length} 字`) +
+      foldBody('think', `<div class="pre-text">${esc(t.thinking)}</div>`);
+  } else {
+    pageHtml =
+      foldHead('output', '③ 输出内容', `${t.answer.length} 字`) +
+      foldBody('output', `<div class="pre-text">${esc(t.answer)}</div>`);
+  }
+  d.innerHTML = nav + pageHtml;
+}
+
+function renderAll() { renderRuns(); renderTurns(); renderDetail(); }
+
+// ===== 交互 =====
+function openReview(runIdx) {
+  if (runIdx >= 0) currentRun = runIdx;
+  renderAll();
+  document.getElementById('overlay').classList.add('show');
+}
+
+function closeReview() { document.getElementById('overlay').classList.remove('show'); }
+
+function openFromLog(run, turn) {
+  currentRun = run;
+  currentTurn = turn;
+  openReview(run);
+}
+
+function selectRun(i) { currentRun = i; currentTurn = 0; renderAll(); }
+function selectTurn(i) { currentTurn = i; renderTurns(); renderDetail(); }
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+renderLogs();
+</script>
+</body>
+</html>

@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace ArkPlot.Novelizer;
 
 /// <summary>
@@ -9,6 +11,10 @@ public class ChapterProcessor
     private readonly string _systemPrompt;
     private readonly Action<string> _log;
     private readonly Action<string> _logError;
+    /// <summary>上报一次 LLM 调用：(轮次标签, 完整输入 prompt, 思考过程, 输出)。</summary>
+    private readonly Action<string, string, string, string, string?, bool>? _onThought;
+    /// <summary>可选：复盘收集器，记录每次调用的结构化数据。</summary>
+    private readonly NovelizerTraceCollector? _traceCollector;
     private readonly int _maxConcurrency;
     private readonly bool _enableMultiTurn;
     private readonly int _chunkSize;
@@ -35,6 +41,8 @@ public class ChapterProcessor
         string systemPrompt,
         Action<string> log,
         Action<string> logError,
+        Action<string, string, string, string, string?, bool>? onThought = null,
+        NovelizerTraceCollector? traceCollector = null,
         int maxConcurrency = 3,
         bool enableMultiTurn = false,
         int chunkSize = 5_000,
@@ -45,11 +53,33 @@ public class ChapterProcessor
         _systemPrompt = systemPrompt;
         _log = log;
         _logError = logError;
+        _onThought = onThought;
+        _traceCollector = traceCollector;
         _maxConcurrency = maxConcurrency;
         _enableMultiTurn = enableMultiTurn;
         _chunkSize = chunkSize;
         _compressInterval = compressInterval;
         _compressThresholdTokens = compressThresholdTokens;
+    }
+
+    /// <summary>上报一次 LLM 调用：轮次标签 / 完整输入 prompt / 思考过程 / 输出。</summary>
+    private void ReportThought(
+        Chapter chapter,
+        int totalCount,
+        string turnLabel,
+        string promptText,
+        ChatResult chatResult,
+        bool isCompress = false)
+    {
+        var label = isCompress
+            ? $"🔄 第 {chapter.Index + 1}/{totalCount} 章「{chapter.Title}」上下文压缩"
+            : $"🧠 第 {chapter.Index + 1}/{totalCount} 章「{chapter.Title}」思考 {turnLabel}";
+        // 先写入 collector 再通知 UI：UI 侧从 collector.Turns.Count-1 取当前序号，顺序颠倒会导致
+        // 第一次调用 turnKey=null（点击退化为展开详情）、后续调用序号整体前移一位（定位错轮）。
+        var turnKey = _traceCollector is null
+            ? null
+            : $"{_traceCollector.RunId}:{_traceCollector.Add(label, promptText, chatResult.ReasoningContent, chatResult.AnswerContent, chapter.Title, isCompress)}";
+        _onThought?.Invoke(label, promptText, chatResult.ReasoningContent, chatResult.AnswerContent, turnKey, isCompress);
     }
 
     /// <summary>
@@ -61,7 +91,7 @@ public class ChapterProcessor
         CancellationToken ct = default)
     {
         var semaphore = new SemaphoreSlim(_maxConcurrency);
-        var results = new Dictionary<int, ChapterResult>();
+        var results = new ConcurrentDictionary<int, ChapterResult>();
         var tasks = new List<Task>();
         var tokenTracker = new TokenTracker();
 
@@ -89,7 +119,7 @@ public class ChapterProcessor
         int totalCount,
         string model,
         SemaphoreSlim semaphore,
-        Dictionary<int, ChapterResult> results,
+        ConcurrentDictionary<int, ChapterResult> results,
         TokenTracker tokenTracker,
         CancellationToken ct)
     {
@@ -110,9 +140,15 @@ public class ChapterProcessor
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                var chatResult = await _client.ChatAsync(model, _systemPrompt, chapter.Body);
+                var userContent = FirstTurnPrefix + chapter.Body;
+                var chatResult = await _client.ChatAsync(model, _systemPrompt, userContent);
                 sw.Stop();
                 _log($"[DIAG] ChatAsync 返回，耗时 {sw.Elapsed.TotalSeconds:F1}s");
+                var promptText = string.Join(
+                    "\n\n",
+                    $"—— system ——\n\n{_systemPrompt}",
+                    $"—— user ——\n\n{userContent}");
+                ReportThought(chapter, totalCount, "单轮", promptText, chatResult);
 
                 var strippedContent = ChapterSplitter.StripHeadings(chatResult.AnswerContent);
                 results[chapter.Index] = ChapterResult.FromSuccess(
@@ -149,7 +185,7 @@ public class ChapterProcessor
         Chapter chapter,
         int totalCount,
         string model,
-        Dictionary<int, ChapterResult> results,
+        ConcurrentDictionary<int, ChapterResult> results,
         TokenTracker tokenTracker)
     {
         _log($"\n--- 🔄 第 {chapter.Index + 1}/{totalCount} 章（多轮）: {chapter.Title} ({chapter.Body.Length} 字符) ---");
@@ -165,8 +201,14 @@ public class ChapterProcessor
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                var chatResult = await _client.ChatAsync(model, _systemPrompt, chapter.Body);
+                var userContent = FirstTurnPrefix + chapter.Body;
+                var chatResult = await _client.ChatAsync(model, _systemPrompt, userContent);
                 sw.Stop();
+                var fallbackPrompt = string.Join(
+                    "\n\n",
+                    $"—— system ——\n\n{_systemPrompt}",
+                    $"—— user ——\n\n{userContent}");
+                ReportThought(chapter, totalCount, "降级单轮", fallbackPrompt, chatResult);
                 var strippedContent = ChapterSplitter.StripHeadings(chatResult.AnswerContent);
                 results[chapter.Index] = ChapterResult.FromSuccess(chapter.Index, chapter.Title, strippedContent, totalCount);
                 if (chatResult.Usage is not null)
@@ -186,16 +228,19 @@ public class ChapterProcessor
         var history = new List<ChatMessage> { new("system", _systemPrompt) };
         var turnOutputs = new List<string>();
         var totalPromptTokens = 0;
+        // Token 阈值以「距上次成功压缩」为一个周期计算；总量仅用于运行统计。
+        // 若使用总量，首次越过阈值后每一轮都会重复压缩。
+        var promptTokensSinceLastCompression = 0;
         var totalCompletionTokens = 0;
         var overallSw = System.Diagnostics.Stopwatch.StartNew();
 
         for (int i = 0; i < chunks.Count; i++)
         {
             // 检查是否需要压缩历史（compressInterval > 0 且已处理 compressInterval 轮之后）
-            bool shouldCompress = _compressInterval > 0
-                && i > 0
-                && i % _compressInterval == 0
-                && i < chunks.Count - 1; // 最后一轮不压缩
+            bool shouldCompress = i > 0
+                && i < chunks.Count - 1 // 最后一轮不压缩
+                && ((_compressInterval > 0 && i % _compressInterval == 0)
+                    || (_compressThresholdTokens > 0 && promptTokensSinceLastCompression >= _compressThresholdTokens));
 
             if (shouldCompress)
             {
@@ -216,6 +261,11 @@ public class ChapterProcessor
                     _log($"  压缩完成: {compressed.Length} 字符, 耗时 {compressSw.Elapsed.TotalSeconds:F1}s");
                     _log($"  📋 压缩摘要:\n{compressed}");
 
+                    var compressPromptText = string.Join(
+                        "\n\n",
+                        compressMessages.Select(m => $"—— {m.Role} ——\n\n{m.Content}"));
+                    ReportThought(chapter, totalCount, $"第 {i + 1} 轮前", compressPromptText, compressResult, isCompress: true);
+
                     if (compressResult.Usage is not null)
                     {
                         totalPromptTokens += compressResult.Usage.PromptTokens;
@@ -226,6 +276,7 @@ public class ChapterProcessor
                     history.Clear();
                     history.Add(new ChatMessage("system", _systemPrompt));
                     history.Add(new ChatMessage("system", $"此前已生成的小说情节摘要：\n{compressed}"));
+                    promptTokensSinceLastCompression = 0;
                 }
                 catch (BailianException ex)
                 {
@@ -246,6 +297,10 @@ public class ChapterProcessor
             {
                 var chatResult = await _client.ChatWithHistoryAsync(model, history);
                 turnSw.Stop();
+                var turnPromptText = string.Join(
+                    "\n\n",
+                    history.Select(m => $"—— {m.Role} ——\n\n{m.Content}"));
+                ReportThought(chapter, totalCount, turnLabel, turnPromptText, chatResult);
 
                 var answer = ChapterSplitter.StripHeadings(chatResult.AnswerContent);
                 turnOutputs.Add(answer);
@@ -253,6 +308,7 @@ public class ChapterProcessor
                 if (chatResult.Usage is not null)
                 {
                     totalPromptTokens += chatResult.Usage.PromptTokens;
+                    promptTokensSinceLastCompression += chatResult.Usage.PromptTokens;
                     totalCompletionTokens += chatResult.Usage.CompletionTokens;
                     _log($"  ✅ {turnLabel}: 入 {chatResult.Usage.PromptTokens} / 出 {chatResult.Usage.CompletionTokens}，耗时 {turnSw.Elapsed.TotalSeconds:F1}s");
                 }

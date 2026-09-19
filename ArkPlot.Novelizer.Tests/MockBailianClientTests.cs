@@ -41,6 +41,18 @@ public class MockBailianClientTests
     }
 
     [Fact]
+    public void ChatAsync_ReturnsMockReasoning_ForLogDisplay()
+    {
+        // Mock 应返回一段可用于日志展示的思考过程（ReasoningContent 非空）
+        var client = CreateClient();
+        var result = client.ChatAsync("deepseek-v4-flash", "system", "剧情输入")
+            .GetAwaiter().GetResult();
+
+        Assert.False(string.IsNullOrEmpty(result.ReasoningContent));
+        Assert.Contains("思考", result.ReasoningContent);
+    }
+
+    [Fact]
     public async Task ChatWithHistoryAsync_ReturnsPlaceholder_WithoutNetworkCall()
     {
         var client = CreateClient();

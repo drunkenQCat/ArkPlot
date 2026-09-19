@@ -1,0 +1,268 @@
+<sukiUi:SukiWindow xmlns="https://github.com/avaloniaui"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                  xmlns:vm="using:ArkPlot.Avalonia.ViewModels"
+                  xmlns:conv="using:ArkPlot.Avalonia.Views.Converters"
+                  xmlns:md="using:Markdown.Avalonia"
+                  xmlns:mds="using:Markdown.Avalonia.StyleCollections"
+                  xmlns:sukiUi="using:SukiUI.Controls"
+                  mc:Ignorable="d"
+                  x:Class="ArkPlot.Avalonia.Views.TraceReviewWindow"
+                  x:DataType="vm:TraceReviewViewModel"
+                  Title="小说化复盘"
+                  Width="1100" Height="720"
+                  d:DesignWidth="1100" d:DesignHeight="720">
+    <sukiUi:SukiWindow.DataContext>
+        <vm:TraceReviewViewModel />
+    </sukiUi:SukiWindow.DataContext>
+
+    <sukiUi:SukiWindow.Resources>
+        <conv:MarkdownToControlConverter x:Key="MarkdownConv"/>
+    </sukiUi:SukiWindow.Resources>
+
+    <sukiUi:SukiWindow.Styles>
+        <!-- 详情区 Markdown 渲染主题 -->
+        <mds:MarkdownStyleStandard />
+
+        <!-- 阶段条节点 -->
+        <Style Selector="Button.stage-node">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Foreground" Value="#6B7280"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style Selector="Button.stage-node:pointerover">
+            <Setter Property="Foreground" Value="#1D4ED8"/>
+        </Style>
+        <Style Selector="Button.stage-node.active">
+            <Setter Property="Foreground" Value="#1D4ED8"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+        <Style Selector="Button.stage-node Ellipse">
+            <Setter Property="Fill" Value="#D1D5DB"/>
+        </Style>
+        <Style Selector="Button.stage-node.active Ellipse">
+            <Setter Property="Fill" Value="#2563EB"/>
+        </Style>
+
+        <!-- 页 / 子部折叠头 -->
+        <Style Selector="Button.fold-head">
+            <Setter Property="Background" Value="#F9FAFB"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#E5E7EB"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#374151"/>
+        </Style>
+        <Style Selector="Button.fold-head:pointerover">
+            <Setter Property="Background" Value="#F3F4F6"/>
+        </Style>
+        <Style Selector="Button.sub-head">
+            <Setter Property="Background" Value="#FFFFFF"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#E5E7EB"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#374151"/>
+        </Style>
+        <Style Selector="Button.sub-head:pointerover">
+            <Setter Property="Background" Value="#F9FAFB"/>
+        </Style>
+    </sukiUi:SukiWindow.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="10">
+        <!-- ===== 顶部：目录 + 刷新 ===== -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8"
+                        VerticalAlignment="Center">
+                <TextBlock Text="trace 目录：" FontSize="12" VerticalAlignment="Center"
+                           Opacity="0.7"/>
+                <TextBox Text="{Binding TraceRoot}" MinWidth="420" FontSize="12"
+                         VerticalAlignment="Center"/>
+            </StackPanel>
+            <Button Grid.Column="1" Content="刷新" FontSize="12" Padding="14,4"
+                    Command="{Binding RefreshRunsCommand}" VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- ===== 三栏：运行 / 轮次 / 详情 ===== -->
+        <Grid Grid.Row="1" ColumnDefinitions="300,320,*">
+            <!-- 左栏：运行列表 -->
+            <Border Grid.Column="0" Margin="0,0,4,0" CornerRadius="6"
+                    Background="#FAFAFA" BorderBrush="#E5E7EB" BorderThickness="1">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="运行记录"
+                               FontSize="13" FontWeight="SemiBold" Margin="10,8,10,4" Opacity="0.8"/>
+                    <ListBox ItemsSource="{Binding Runs}"
+                             SelectedItem="{Binding SelectedRun}"
+                             Margin="6" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:TraceReviewViewModel+RunRow">
+                                <TextBlock Text="{Binding Display}" FontSize="12"
+                                           TextWrapping="Wrap" Margin="2,3"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- 中栏：轮次列表 -->
+            <Border Grid.Column="1" Margin="4,0,4,0" CornerRadius="6"
+                    Background="#FAFAFA" BorderBrush="#E5E7EB" BorderThickness="1">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="LLM 调用"
+                               FontSize="13" FontWeight="SemiBold" Margin="10,8,10,4" Opacity="0.8"/>
+                    <ListBox ItemsSource="{Binding Turns}"
+                             SelectedItem="{Binding SelectedTurn}"
+                             Margin="6" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:TraceReviewViewModel+TurnRow">
+                                <StackPanel Margin="2,3">
+                                    <TextBlock Text="{Binding Label}" FontSize="12"
+                                               FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding ChapterTitle}" FontSize="11"
+                                               Opacity="0.55"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <!-- 右栏：详情（阶段条翻页 + 折叠 + Markdown 渲染） -->
+            <Border Grid.Column="2" Margin="4,0,0,0" CornerRadius="6"
+                    Background="#FAFAFA" BorderBrush="#E5E7EB" BorderThickness="1">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="详情"
+                               FontSize="13" FontWeight="SemiBold" Margin="10,8,10,4" Opacity="0.8"/>
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding SelectedTurn.Label}"
+                               FontSize="12" FontWeight="Bold" Margin="10,0,10,6"
+                               TextWrapping="Wrap"/>
+
+                    <!-- 阶段条（仿日志面板阶段导航，点击翻页） -->
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto,*,Auto"
+                          Margin="10,2,10,6">
+                        <Button Grid.Column="0" Classes="stage-node"
+                                Classes.active="{Binding IsInputActive}"
+                                Command="{Binding SelectPageCommand}" CommandParameter="Input">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <Ellipse Width="9" Height="9" VerticalAlignment="Center"/>
+                                <TextBlock Text="① 输入"/>
+                            </StackPanel>
+                        </Button>
+                        <Border Grid.Column="1" Height="2" Background="#E5E7EB"
+                                VerticalAlignment="Center" Margin="6,0"/>
+                        <Button Grid.Column="2" Classes="stage-node"
+                                Classes.active="{Binding IsThinkActive}"
+                                Command="{Binding SelectPageCommand}" CommandParameter="Think">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <Ellipse Width="9" Height="9" VerticalAlignment="Center"/>
+                                <TextBlock Text="② 思考"/>
+                            </StackPanel>
+                        </Button>
+                        <Border Grid.Column="3" Height="2" Background="#E5E7EB"
+                                VerticalAlignment="Center" Margin="6,0"/>
+                        <Button Grid.Column="4" Classes="stage-node"
+                                Classes.active="{Binding IsOutputActive}"
+                                Command="{Binding SelectPageCommand}" CommandParameter="Output">
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <Ellipse Width="9" Height="9" VerticalAlignment="Center"/>
+                                <TextBlock Text="③ 输出"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <!-- 内容区：统一滚动，页内容经 Markdown 渲染为控件树随文档流 -->
+                    <ScrollViewer Margin="8">
+                        <Grid>
+                            <!-- 空态 -->
+                            <TextBlock Text="未选择调用记录" FontSize="12" Opacity="0.5"
+                                       IsVisible="{Binding !HasSelectedTurn}"/>
+
+                            <!-- ===== 页 ① 输入 ===== -->
+                            <StackPanel Spacing="6" IsVisible="{Binding IsInputShellVisible}">
+                                <Button Classes="fold-head"
+                                        Command="{Binding ToggleFoldCommand}" CommandParameter="Input">
+                                    <TextBlock Text="{Binding InputFoldHeader}" FontSize="12"/>
+                                </Button>
+
+                                <!-- 页内容（未折叠） -->
+                                <StackPanel Spacing="6" IsVisible="{Binding IsInputPageVisible}">
+                                    <!-- system 子部 -->
+                                    <StackPanel IsVisible="{Binding IsSystemHeadVisible}">
+                                        <Button Classes="sub-head"
+                                                Command="{Binding ToggleSubFoldCommand}"
+                                                CommandParameter="System">
+                                            <TextBlock Text="{Binding SystemSubHeader}" FontSize="11"/>
+                                        </Button>
+                                        <ContentControl x:Name="SystemContent" IsVisible="{Binding IsSystemContentVisible}"
+                                                        Margin="0,4,0,0"
+                                                        Content="{Binding SelectedTurn.System,
+                                                                      Converter={StaticResource MarkdownConv}}"/>
+                                    </StackPanel>
+                                    <!-- user 子部 -->
+                                    <StackPanel IsVisible="{Binding IsUserHeadVisible}">
+                                        <Button Classes="sub-head"
+                                                Command="{Binding ToggleSubFoldCommand}"
+                                                CommandParameter="User">
+                                            <TextBlock Text="{Binding UserSubHeader}" FontSize="11"/>
+                                        </Button>
+                                        <ContentControl x:Name="UserContent" IsVisible="{Binding IsUserContentVisible}"
+                                                        Margin="0,4,0,0"
+                                                        Content="{Binding SelectedTurn.User,
+                                                                      Converter={StaticResource MarkdownConv}}"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- 页折叠占位 -->
+                                <TextBlock Text="（① 输入 Prompt 已折叠，点击上方标题展开）"
+                                           FontSize="11" Opacity="0.5"
+                                           IsVisible="{Binding IsInputHintVisible}"/>
+                            </StackPanel>
+
+                            <!-- ===== 页 ② 思考 ===== -->
+                            <StackPanel Spacing="6" IsVisible="{Binding IsThinkShellVisible}">
+                                <Button Classes="fold-head"
+                                        Command="{Binding ToggleFoldCommand}" CommandParameter="Think">
+                                    <TextBlock Text="{Binding ThinkFoldHeader}" FontSize="12"/>
+                                </Button>
+                                <ContentControl x:Name="ThinkContent" IsVisible="{Binding IsThinkPageVisible}"
+                                                Content="{Binding SelectedTurn.Thinking,
+                                                              Converter={StaticResource MarkdownConv}}"/>
+                                <TextBlock Text="（② 思考过程已折叠，点击上方标题展开）"
+                                           FontSize="11" Opacity="0.5"
+                                           IsVisible="{Binding IsThinkHintVisible}"/>
+                            </StackPanel>
+
+                            <!-- ===== 页 ③ 输出 ===== -->
+                            <StackPanel Spacing="6" IsVisible="{Binding IsOutputShellVisible}">
+                                <Button Classes="fold-head"
+                                        Command="{Binding ToggleFoldCommand}" CommandParameter="Output">
+                                    <TextBlock Text="{Binding OutputFoldHeader}" FontSize="12"/>
+                                </Button>
+                                <ContentControl x:Name="OutputContent" IsVisible="{Binding IsOutputPageVisible}"
+                                                Content="{Binding SelectedTurn.Answer,
+                                                              Converter={StaticResource MarkdownConv}}"/>
+                                <TextBlock Text="（③ 输出内容已折叠，点击上方标题展开）"
+                                           FontSize="11" Opacity="0.5"
+                                           IsVisible="{Binding IsOutputHintVisible}"/>
+                            </StackPanel>
+                        </Grid>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- ===== 状态行 ===== -->
+        <TextBlock Grid.Row="2" Text="{Binding Status}" FontSize="11" Opacity="0.5"
+                   Margin="2,6,0,0" IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+    </Grid>
+</sukiUi:SukiWindow>

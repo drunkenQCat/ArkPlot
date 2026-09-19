@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
@@ -50,18 +50,28 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         // 订阅 GitHub 连接失败事件，弹出引导对话框
         ArkPlot.Core.Utilities.GitHubProxy.ConnectionFailed += OnGitHubConnectionFailed;
+        WorkflowLog.ToastManager = toastManager;
+        WorkflowLog.IsClearCacheVisible = AppSettings.Load().Novelizer.ShowClearCacheButton;
+        WorkflowLog.OpenTraceRequested += turnKey => OpenTraceReview(turnKey);
+        SeedSystemLog();
+    }
+
+    /// <summary>将使用说明作为系统阶段的初始日志，替代原先的占位文本。</summary>
+    private void SeedSystemLog()
+    {
+        WorkflowLog.SystemStage.Logs.Add(new LogEntry(
+            LogLevel.Info,
+            "这是一个生成明日方舟剧情 markdown/html 文件的生成器。\n" +
+            "- 下载剧情文本需连接 GitHub，请确保网络可用；\n" +
+            "- 若报错【出错的句子:****】，可在“编辑Tags”中添加相应 tag 的正则；\n" +
+            "- 如有改进意见，欢迎 PR。"));
     }
 
     [ObservableProperty]
     private ISukiToastManager toastManager = new SukiToastManager(); // public, 只读属性
 
-    [ObservableProperty]
-    private string consoleOutput =
-        @"这是一个生成明日方舟剧情markdown/html文件的生成器，使用时有以下注意事项:
-
-        - 因为下载剧情文本需要连接GitHub的服务器，所以在使用时务必先科学上网；
-            - 如果遇到报错【出错的句子:****】，如过于影响阅读体验，需要结合报错信息填写相应正则表达式来规整，请点击“编辑Tags”按钮，添加相应tag的项目；
-            - 如果有任何改进意见，欢迎Pr。";
+    /// <summary>工作流日志面板（按阶段组织日志）。</summary>
+    public WorkflowLogPanelViewModel WorkflowLog { get; } = new();
 
     private List<Act> currentActs = new();
 
@@ -111,6 +121,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private string storyType = "ACTIVITY_STORY";
     private string? activeTitle;
+
+    /// <summary>小说化 LLM 调用复盘收集器（主窗口共享：pipeline 写入，复盘面板实时读取）。</summary>
+    private NovelizerTraceCollector _traceCollector => App.TraceCollector;
 
     private Act CurrentAct => currentActs[SelectedIndex];
 
@@ -177,6 +190,21 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             chapter.IsSelected = false;
         }
+    }
+
+    /// <summary>
+    /// 收集当前勾选章节的已解析条目（从 Plot 缓存读取），供日志面板的「清除缓存」按章节还原图片描述 DedupKey。
+    /// </summary>
+    private async Task<List<ScriptLine>> CollectChapterEntriesForClearCache(Act act, IReadOnlyList<string> chapterNames)
+    {
+        var result = new List<ScriptLine>();
+        foreach (var name in chapterNames)
+        {
+            var cached = await PlotCache<FormattedTextEntry>.TryLoadAsync(act.Id, name);
+            if (cached != null)
+                result.AddRange(cached.Value.Entries);
+        }
+        return result;
     }
 
     [RelayCommand]
@@ -326,6 +354,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
         PrepareLoading();
         activeTitle = CurrentAct.Name;
+        var selectedChapterNames = Chapters
+            .Where(c => c.IsSelected)
+            .Select(c => c.ChapterName)
+            .ToList();
+
+        // 向日志面板注入清除缓存所需的上下文（按勾选章节粒度）
+        WorkflowLog.StoryOutputDir = outputPathOfCurrentStory;
+        WorkflowLog.CurrentChapterNames = selectedChapterNames;
+        WorkflowLog.CurrentChapterEntries = await CollectChapterEntriesForClearCache(CurrentAct, selectedChapterNames);
+
         var chapters = storySync.GetChaptersByActId(CurrentAct.Id);
 
         var content = new AkpStoryLoader(CurrentAct, chapters,
@@ -341,23 +379,39 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            WorkflowLog.EnterStage(1); // 下载章节
             // GetAllChapters 内部自动处理缓存：
             // - Status=2 章节从 DB 加载
             // - 未缓存章节从 GitHub 下载并写 Status=1
             await content.GetAllChapters(selectedChapters, effectiveCt);
             noticeBlock.RaiseCommonEvent("章节加载完成。");
 
+            WorkflowLog.EnterStage(2); // 预加载资源
             await PreloadResources(content, effectiveCt);
+
+            WorkflowLog.EnterStage(3); // 解析文档
             // StartParseDocuments → PlotManager.StartParseLines 自动将解析结果写为 Status=2
             await StartParseDocuments(content, effectiveCt);
 
+            WorkflowLog.EnterStage(4); // 导出文档（含图片描述）
             await ExportDocuments(content, effectiveCt);
+
+            WorkflowLog.EnterStage(5); // 小说化
             await RunNovelizerIfEnabled(effectiveCt);
+
+            WorkflowLog.EnterStage(6); // 完成
             await CompleteLoading();
+            WorkflowLog.CompletePipeline();
         }
         catch (OperationCanceledException)
         {
+            WorkflowLog.FailStage("生成已被取消");
             noticeBlock.RaiseCommonEvent("⚠️ 生成已被取消。");
+        }
+        catch (Exception ex)
+        {
+            WorkflowLog.FailStage($"生成失败：{ex.Message}");
+            noticeBlock.RaiseCommonEvent($"❌ 生成失败：{ex.Message}");
         }
         finally
         {
@@ -372,7 +426,12 @@ public partial class MainWindowViewModel : ViewModelBase
         IsInitialized = false;
         _connectionFailedHandled = 0;
         HasNetworkError = false;
-        ClearConsoleOutput();
+        WorkflowLog.BeginPipeline(new[]
+        {
+            "初始化加载", "下载章节", "预加载资源", "解析文档", "导出文档",
+            "小说化", "完成",
+        });
+        WorkflowLog.EnterStage(0);
         noticeBlock.RaiseCommonEvent("初始化加载...");
     }
 
@@ -402,6 +461,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
         PicDescService? picDescService = null;
         IDisposable? visionDisposable = null;
+        // YAML 提取委托复用的 HttpClient：委托在 ExportPlots 期间被调用，随本方法 finally 释放
+        IDisposable? yamlHttpDisposable = null;
 
         if (IsPicDescEnabled)
         {
@@ -421,8 +482,16 @@ public partial class MainWindowViewModel : ViewModelBase
                 };
 
                 Func<string, Task<string>> describeByUrl;
+                Func<string, string>? thinkingProvider = null;
 
-                if (providerName == "Ollama")
+                if (vision.UseMockVision)
+                {
+                    var mockClient = new MockVisionClient();
+                    visionDisposable = mockClient;
+                    describeByUrl = url => mockClient.DescribeImageUrlAsync(url);
+                    thinkingProvider = MockVisionClient.BuildThinking;
+                }
+                else if (providerName == "Ollama")
                 {
                     var visionConfig = new VisionConfig
                     {
@@ -477,39 +546,83 @@ public partial class MainWindowViewModel : ViewModelBase
                 if (IsNovelizerEnabled)
                 {
                     var novelizerSettings = AppSettings.Load().Novelizer;
-                    var nProviderName = novelizerSettings.SelectedProvider;
-                    var nApiKey = novelizerSettings.GetApiKeyForProvider(nProviderName);
-                    var nBaseUrl = novelizerSettings.GetBaseUrlForProvider(nProviderName);
-                    var nProvider = nProviderName switch
+                    // Mock 图片描述模式下，YAML 提取同样 Mock：不调真实 API，返回确定性假 YAML。
+                    // 否则一张图 = 描述（30ms）+ 真实文本提取（20-30s），Mock 就失去意义。
+                    if (vision.UseMockVision)
                     {
-                        "DeepSeek" => ApiProvider.DeepSeek,
-                        "百炼" => ApiProvider.Bailian,
-                        _ => ApiProvider.Custom,
-                    };
-                    if (!string.IsNullOrEmpty(nApiKey))
+                        extractFacts = prose =>
+                        {
+                            Dispatcher.UIThread.InvokeAsync(() =>
+                                WorkflowLog.Append(
+                                    LogLevel.Info,
+                                    "[Mock] YAML 提取已跳过真实 API（图片描述为 Mock 模式）"));
+                            return Task.FromResult(
+                                """
+hair: [银色, 腰际, 长发]
+clothing: [衣摆, 上装, 下装]
+equipment: [无, 无]
+posture: [伫立, 静默]
+features: [肩头微颤, 凝望方向]
+colors: [银色, 黑色, 深蓝]
+""");
+                        };
+                    }
+                    else
                     {
-                        var nConfig = new ApiConfig
+                        var nProviderName = novelizerSettings.SelectedProvider;
+                        var nApiKey = novelizerSettings.GetApiKeyForProvider(nProviderName);
+                        var nBaseUrl = novelizerSettings.GetBaseUrlForProvider(nProviderName);
+                        var nProvider = nProviderName switch
                         {
-                            Provider = nProvider,
-                            ApiKey = nApiKey,
-                            BaseUrl = nBaseUrl,
+                            "DeepSeek" => ApiProvider.DeepSeek,
+                            "百炼" => ApiProvider.Bailian,
+                            _ => ApiProvider.Custom,
                         };
-                        var nHttp = new HttpClient();
-                        var nClient = new BailianClient(nHttp, nConfig);
-                        extractFacts = async prose =>
+                        if (!string.IsNullOrEmpty(nApiKey))
                         {
-                            var result = await nClient.ChatAsync(
-                                novelizerSettings.SelectedModel,
-                                PicDescService.YamlExtractionPrompt,
-                                prose
-                            );
-                            return result.AnswerContent;
-                        };
+                            var nConfig = new ApiConfig
+                            {
+                                Provider = nProvider,
+                                ApiKey = nApiKey,
+                                BaseUrl = nBaseUrl,
+                            };
+                            var nHttp = new HttpClient();
+                            yamlHttpDisposable = nHttp;
+                            var nClient = new BailianClient(nHttp, nConfig);
+                            extractFacts = async prose =>
+                            {
+                                var result = await nClient.ChatAsync(
+                                    novelizerSettings.SelectedModel,
+                                    PicDescService.YamlExtractionPrompt,
+                                    prose
+                                );
+                                return result.AnswerContent;
+                            };
+                        }
                     }
                 }
 
-                picDescService = new PicDescService(describeByUrl, extractFacts);
+                // 包装描述委托：每次生成一张图的描述，记录「图片 + 描述」到日志（行内缩略图 + 悬停大图）
+                var baseDescribe = describeByUrl;
+                if (baseDescribe != null)
+                {
+                    describeByUrl = async url =>
+                    {
+                        var desc = await baseDescribe(url);
+                        var thinking = thinkingProvider?.Invoke(url);
+                        // 经 InvokeAsync 入队与普通日志同跳数，避免思考/图片条目插队错位
+                        if (thinking != null)
+                            _ = Dispatcher.UIThread.InvokeAsync(() =>
+                                WorkflowLog.AddThought($"🖼 图片描述（Mock）", $"图片：{url}", thinking, desc, url));
+                        else
+                            _ = Dispatcher.UIThread.InvokeAsync(() => WorkflowLog.AddImage(url, desc));
+                        return desc;
+                    };
+                }
+
+                picDescService = new PicDescService(describeByUrl, extractFacts, skipCache: vision.UseMockVision);
                 picDescService.InitializeCleanup();
+                WorkflowLog.AddSection("图片描述进行中");
                 noticeBlock.RaiseCommonEvent($"✅ 图片描述已启用（{providerName} {model}）");
 
                 skipVision:
@@ -544,6 +657,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             picDescService?.Dispose();
             visionDisposable?.Dispose();
+            yamlHttpDisposable?.Dispose();
         }
     }
 
@@ -664,10 +778,20 @@ public partial class MainWindowViewModel : ViewModelBase
                 client,
                 config,
                 onLog: log,
+                onThought: (summary, prompt, thinking, answer, turnKey, isCompress) =>
+                {
+                    // 与管线普通日志走同一跳数（InvokeAsync 入队后由 Append 统一 Post）。
+                    // 直接在后台线程调 AddThought 只经一跳 Post，而普通日志要两跳——Mock 模式下
+                    // 生产太快时思考条目会整体插队到「Turn N 完成」之前，日志位置错乱。
+                    Dispatcher.UIThread.InvokeAsync(() =>
+                        WorkflowLog.AddThought(summary, prompt, thinking, answer, turnKey: turnKey, isCompress: isCompress));
+                },
+                traceCollector: _traceCollector,
                 systemPrompt: systemPrompt,
                 enableMultiTurn: novelizer.EnableMultiTurn,
                 chunkSize: novelizer.ChunkSize,
                 compressInterval: novelizer.CompressInterval,
+                compressThresholdTokens: novelizer.CompressThresholdTokens,
                 enableSectionSplitter: novelizer.EnableSectionSplitter,
                 sectionSplitterModel: model,
                 useMock: useMock
@@ -679,7 +803,10 @@ public partial class MainWindowViewModel : ViewModelBase
                 outputPathOfCurrentStory,
                 [model],
                 force: false,
-                ct: ct
+                ct: ct,
+                // 只处理本次导出的 {活动名}.md。不能扫全目录：目录里的历史快照（如 *_original.md）
+                // 会被一并小说化，把用户没选的章节全部生成出来。
+                onlyFile: Path.Combine(outputPathOfCurrentStory, $"{activeTitle}.md")
             );
             sw.Stop();
             LogDiag("[RunNovelizer] BatchProcessAsync 返回，耗时 {0}s", sw.Elapsed.TotalSeconds);
@@ -711,6 +838,12 @@ public partial class MainWindowViewModel : ViewModelBase
                 LogDiag("[RunNovelizer] HTML 生成过程异常: {0}", ex.Message);
                 noticeBlock.RaiseCommonEvent($"⚠️ 小说HTML生成失败: {ex.Message}");
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // 关键：取消必须先 rethrow，绝不能被下面的兜底 catch (Exception) 吞掉，
+            // 否则在小说化期间取消后 LoadMd 会继续走到 CompletePipeline，误报"全部完成"。
+            throw;
         }
         catch (BailianException ex)
         {
@@ -827,11 +960,6 @@ public partial class MainWindowViewModel : ViewModelBase
         var testPlot = allPlots.First();
         var title = testPlot.CurrentPlot.Title;
         return title + "\n" + testPlot.CurrentPlot.Content;
-    }
-
-    private void ClearConsoleOutput()
-    {
-        ConsoleOutput = ""; //先清空这片区域
     }
 
     private async Task<string> ExportPlots(
@@ -987,18 +1115,27 @@ public partial class MainWindowViewModel : ViewModelBase
         messenger.Send(new OpenWindowMessage("TtsWindow", currentActName: actName));
     }
 
+    /// <summary>打开小说化复盘窗口。turnKey 非空时定位到对应轮次（从日志点击进入）。</summary>
+    [RelayCommand]
+    private void OpenTraceReview(string? turnKey = null)
+    {
+        var actName = CurrentAct?.Name ?? activeTitle;
+        // trace 落盘目录就是 outputPathOfCurrentStory，随消息传给复盘面板，避免接收方再拼路径
+        var storyOutputDir = actName is null ? null : Path.Combine(OutputPath, actName);
+        WeakReferenceMessenger.Default.Send(new OpenWindowMessage("TraceReviewWindow", currentActName: actName, turnKey: turnKey, storyOutputDir: storyOutputDir));
+    }
+
     private void SubscribeCommonNotification()
     {
-        noticeBlock.CommonEventHandler += (_, args) => ConsoleOutput += $"\n{args}";
+        noticeBlock.CommonEventHandler += (_, args) => AppendCommonLog(args);
     }
 
     private void SubscribeNetErrorNotification()
     {
         noticeBlock.NetErrorHappen += (_, args) =>
         {
-            var s =
-                $"\n网络错误：{args.Message}。请检查网络连接，或前往设置页面调整代理/API Key 等配置。";
-            ConsoleOutput += s;
+            WorkflowLog.Append(LogLevel.Error,
+                $"网络错误：{args.Message}。请检查网络连接，或前往设置页面调整代理/API Key 等配置。");
             HasNetworkError = true;
         };
     }
@@ -1007,8 +1144,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         noticeBlock.LineNoMatch += (_, args) =>
         {
-            var s = $"\n警告：请检查tags.json中{args.Tag}是否存在？\n出错的句子:" + args.Line;
-            ConsoleOutput += s;
+            WorkflowLog.Append(LogLevel.Warn,
+                $"警告：请检查tags.json中{args.Tag}是否存在？\n出错的句子: {args.Line}");
         };
     }
 
@@ -1016,9 +1153,22 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         noticeBlock.ChapterLoaded += (_, args) =>
         {
-            var s = "\n" + args.Title.ToString() + "已加载";
-            ConsoleOutput += s;
+            WorkflowLog.Append(LogLevel.Success, $"{args.Title} 已加载");
         };
+    }
+
+    /// <summary>根据消息前缀表情判断日志级别，追加到当前阶段。</summary>
+    private void AppendCommonLog(string message)
+    {
+        var trimmed = message.TrimStart('\n');
+        var level = trimmed switch
+        {
+            _ when trimmed.Contains("❌") => LogLevel.Error,
+            _ when trimmed.Contains("⚠") => LogLevel.Warn,
+            _ when trimmed.Contains("✅") => LogLevel.Success,
+            _ => LogLevel.Info,
+        };
+        WorkflowLog.Append(level, trimmed);
     }
 
     public void SelectJsonFile(string path)

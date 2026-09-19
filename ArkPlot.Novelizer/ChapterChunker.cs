@@ -16,6 +16,9 @@ public static partial class ChapterChunker
     /// <returns>chunk 列表，每个 chunk 包含一个或多个原始段，段间以 \n\n---\n\n 连接</returns>
     public static IReadOnlyList<string> ChunkChapter(string chapterBody, int chunkSize = 10_000)
     {
+        if (chunkSize <= 0)
+            throw new ArgumentOutOfRangeException(nameof(chunkSize), "Chunk size must be positive.");
+
         var segments = SplitSegments(chapterBody);
         if (segments.Count == 0)
             return Array.Empty<string>();
@@ -28,7 +31,9 @@ public static partial class ChapterChunker
         var currentChunk = new List<string>();
         var currentSize = 0;
 
-        foreach (var segment in segments)
+        // "---" 是剧情脚本的首选边界，但并非所有导入文本都有它。把超长段落再按
+        // 段落/句子/字符边界拆开，避免长章悄悄降级为一次超长请求。
+        foreach (var segment in segments.SelectMany(s => SplitOversizedSegment(s, chunkSize)))
         {
             // 空段跳过（首尾可能产生空段）
             if (string.IsNullOrWhiteSpace(segment))
@@ -55,6 +60,39 @@ public static partial class ChapterChunker
         }
 
         return chunks;
+    }
+
+    private static IEnumerable<string> SplitOversizedSegment(string segment, int chunkSize)
+    {
+        if (segment.Length <= chunkSize)
+        {
+            yield return segment;
+            yield break;
+        }
+
+        var remaining = segment;
+        while (remaining.Length > chunkSize)
+        {
+            var splitAt = FindSplitPoint(remaining, chunkSize);
+            yield return remaining[..splitAt].Trim();
+            remaining = remaining[splitAt..].TrimStart();
+        }
+
+        if (remaining.Length > 0)
+            yield return remaining;
+    }
+
+    /// <summary>优先在自然边界截断；找不到时在目标长度处硬切，保证必然前进。</summary>
+    private static int FindSplitPoint(string text, int chunkSize)
+    {
+        var searchStart = Math.Max(0, chunkSize * 2 / 3);
+        for (var i = Math.Min(chunkSize - 1, text.Length - 1); i >= searchStart; i--)
+        {
+            if (text[i] is '\n' or '。' or '！' or '？' or '；' or '.' or '!' or '?' or ';')
+                return i + 1;
+        }
+
+        return chunkSize;
     }
 
     /// <summary>
