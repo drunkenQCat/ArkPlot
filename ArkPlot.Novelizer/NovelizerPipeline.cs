@@ -12,7 +12,7 @@ public class NovelizerPipeline
     private readonly ApiConfig _config;
     private readonly Action<string>? _onLog;
     /// <summary>上报一次 LLM 调用：(轮次标签, 完整输入 prompt, 思考过程, 输出)。</summary>
-    private readonly Action<string, string, string, string, string?>? _onThought;
+    private readonly Action<string, string, string, string, string?, bool>? _onThought;
     /// <summary>可选：复盘收集器（由调用方创建并传入，BatchProcessAsync 结束后由调用方负责落盘）。</summary>
     private readonly NovelizerTraceCollector? _traceCollector;
     private readonly string _systemPrompt;
@@ -118,7 +118,7 @@ public class NovelizerPipeline
         BailianClient client,
         ApiConfig config,
         Action<string>? onLog = null,
-        Action<string, string, string, string, string?>? onThought = null,
+        Action<string, string, string, string, string?, bool>? onThought = null,
         NovelizerTraceCollector? traceCollector = null,
         string? systemPrompt = null,
         bool enableMultiTurn = false,
@@ -294,30 +294,47 @@ public class NovelizerPipeline
     }
 
     /// <summary>
-    /// 批量处理目录下所有 .md 文件
+    /// 批量处理目录下所有 .md 文件；传 <paramref name="onlyFile"/> 时只处理该文件。
+    /// GUI 场景必须传 onlyFile：输出目录里可能残留历史全量快照（如 *_original.md），
+    /// 扫全目录会把用户没选的章节也一并小说化（表现即「选了一个章节、所有章节都被导出」）。
     /// </summary>
     public async Task BatchProcessAsync(
         string inputDir,
         string[] models,
         bool force,
         string? outputDir = null,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        string? onlyFile = null
     )
     {
         outputDir ??= inputDir;
         Log(
-            $"[DIAG] BatchProcessAsync 开始。dir={inputDir}, models=[{string.Join(", ", models)}], force={force}"
+            $"[DIAG] BatchProcessAsync 开始。dir={inputDir}, models=[{string.Join(", ", models)}], force={force}, onlyFile={onlyFile ?? "(扫描目录)"}"
         );
 
-        _traceCollector?.BeginRun(models.FirstOrDefault() ?? "");
+        _traceCollector?.BeginRun(models.FirstOrDefault() ?? "", outputDir);
 
         var cache = new ChapterCache(outputDir);
 
-        Log($"[DIAG] 扫描 .md 文件: {inputDir}");
-        var mdFiles = Directory
-            .GetFiles(inputDir, "*.md", SearchOption.TopDirectoryOnly)
-            .Where(f => !Path.GetFileNameWithoutExtension(f).Contains("_novel_"))
-            .ToArray();
+        string[] mdFiles;
+        if (onlyFile is not null)
+        {
+            if (!File.Exists(onlyFile))
+            {
+                Log($"❌ 指定的小说化输入不存在: {onlyFile}");
+                Log("[DIAG] 输入文件缺失，BatchProcessAsync 返回");
+                return;
+            }
+            mdFiles = [onlyFile];
+        }
+        else
+        {
+            Log($"[DIAG] 扫描 .md 文件: {inputDir}");
+            mdFiles = Directory
+                .GetFiles(inputDir, "*.md", SearchOption.TopDirectoryOnly)
+                .Where(f => !Path.GetFileNameWithoutExtension(f).Contains("_novel_"))
+                .ToArray();
+        }
         if (mdFiles.Length == 0)
         {
             Log($"❌ 目录中没有 .md 文件: {inputDir}");

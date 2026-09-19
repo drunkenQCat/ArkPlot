@@ -44,7 +44,7 @@ public class ChapterProcessorMultiTurnTests
         string? tracePrompt = null;
         var processor = new ChapterProcessor(
             client, "system", _ => { }, _ => { },
-            onThought: (_, prompt, _, _, _) => tracePrompt = prompt);
+            onThought: (_, prompt, _, _, _, _) => tracePrompt = prompt);
 
         await processor.ProcessAllAsync([new Chapter(0, "短章", "原始剧情")], "test-model");
 

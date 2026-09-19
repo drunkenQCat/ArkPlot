@@ -65,6 +65,15 @@ public partial class LogEntry : ObservableObject
     /// <summary>关联的复盘轮次键（小说化 LLM 调用在 trace 中的标识，用于点击日志定位复盘面板）。</summary>
     public string? TurnKey { get; }
 
+    /// <summary>是否可打开复盘面板（已关联 trace 轮次）——这类日志在日志流中显示为可点击的圆角按钮。</summary>
+    public bool HasTrace => !string.IsNullOrEmpty(TurnKey);
+
+    /// <summary>是否为上下文压缩轮次（压缩日志用另一种按钮配色区分）。</summary>
+    public bool IsCompress { get; }
+
+    /// <summary>是否为错误级别（错误行带红色底纹）。</summary>
+    public bool IsError => Level == LogLevel.Error;
+
     /// <summary>级别显示文本。</summary>
     public string LevelText => Level switch
     {
@@ -83,7 +92,8 @@ public partial class LogEntry : ObservableObject
         string? imageUrl = null,
         string? tooltip = null,
         string? detail = null,
-        string? turnKey = null)
+        string? turnKey = null,
+        bool isCompress = false)
     {
         Level = level;
         Message = message;
@@ -93,6 +103,7 @@ public partial class LogEntry : ObservableObject
         Tooltip = tooltip;
         Detail = detail;
         TurnKey = turnKey;
+        IsCompress = isCompress;
         Time = DateTime.Now.ToString("HH:mm:ss");
     }
 }

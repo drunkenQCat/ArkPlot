@@ -10,12 +10,7 @@ namespace ArkPlot.Avalonia.Models;
 /// <summary>
 /// 自定义 LLM Provider 配置（小说化 / 图片描述共用类型）。
 /// </summary>
-public record ProviderConfig(
-    string Name,
-    string BaseUrl,
-    string ApiKey,
-    string[] Models
-);
+public record ProviderConfig(string Name, string BaseUrl, string ApiKey, string[] Models);
 
 /// <summary>
 /// 应用程序统一配置。
@@ -97,7 +92,8 @@ public record AppSettings(
     /// </summary>
     public string GetApiKey(string? providerName)
     {
-        if (string.IsNullOrEmpty(providerName)) return "";
+        if (string.IsNullOrEmpty(providerName))
+            return "";
         if (Novelizer.ApiKeys.TryGetValue(providerName, out var key) && !string.IsNullOrEmpty(key))
             return key;
 
@@ -203,24 +199,34 @@ public record NovelizerSettings(
     /// <summary>
     /// 预设 Provider（不可在 UI 中编辑/删除）
     /// </summary>
-    public static readonly Dictionary<string, (string BaseUrl, string[] Models)> BuiltInProviders = new()
-    {
-        ["DeepSeek"] = ("https://api.deepseek.com", ["deepseek-v4-pro", "deepseek-v4-flash"]),
-        ["百炼"] = ("https://dashscope.aliyuncs.com/compatible-mode/v1",
-                     ["deepseek-v4-flash", "deepseek-v4-flash-0731", "glm-5", "MiniMax-M2.5", "kimi-k2.5"]),
-    };
+    public static readonly Dictionary<string, (string BaseUrl, string[] Models)> BuiltInProviders =
+        new()
+        {
+            ["DeepSeek"] = ("https://api.deepseek.com", ["deepseek-v4-pro", "deepseek-v4-flash"]),
+            ["百炼"] = (
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                [
+                    "deepseek-v4.1-flash",
+                    "deepseek-v4-flash-0731",
+                    "glm-5",
+                    "MiniMax-M2.5",
+                    "kimi-k2.5",
+                ]
+            ),
+        };
 
     /// <summary>所有可选平台名（预设 + 自定义），去重</summary>
     public string[] AllProviderNames =>
-        BuiltInProviders.Keys
-            .Concat(CustomProviders?.Select(p => p.Name) ?? [])
+        BuiltInProviders
+            .Keys.Concat(CustomProviders?.Select(p => p.Name) ?? [])
             .Distinct()
             .ToArray();
 
     /// <summary>根据平台名获取可用模型列表</summary>
     public string[] GetModelsForProvider(string? providerName)
     {
-        if (string.IsNullOrEmpty(providerName)) return [];
+        if (string.IsNullOrEmpty(providerName))
+            return [];
         if (BuiltInProviders.TryGetValue(providerName, out var builtIn))
             return builtIn.Models;
         var custom = CustomProviders?.FirstOrDefault(p => p.Name == providerName);
@@ -230,7 +236,8 @@ public record NovelizerSettings(
     /// <summary>根据平台名获取 BaseUrl</summary>
     public string GetBaseUrlForProvider(string? providerName)
     {
-        if (string.IsNullOrEmpty(providerName)) return "";
+        if (string.IsNullOrEmpty(providerName))
+            return "";
         if (BuiltInProviders.TryGetValue(providerName, out var builtIn))
             return builtIn.BaseUrl;
         var custom = CustomProviders?.FirstOrDefault(p => p.Name == providerName);
@@ -243,7 +250,8 @@ public record NovelizerSettings(
     /// </summary>
     public string GetApiKeyForProvider(string? providerName)
     {
-        if (string.IsNullOrEmpty(providerName)) return "";
+        if (string.IsNullOrEmpty(providerName))
+            return "";
         var custom = CustomProviders?.FirstOrDefault(p => p.Name == providerName);
         if (custom is not null && !string.IsNullOrEmpty(custom.ApiKey))
             return custom.ApiKey;
@@ -309,15 +317,13 @@ public record VisionSettings(
 
     /// <summary>所有可选平台名（预设 + 自定义），去重</summary>
     public string[] AllProviderNames =>
-        BuiltInModels.Keys
-            .Concat(CustomProviders?.Select(p => p.Name) ?? [])
-            .Distinct()
-            .ToArray();
+        BuiltInModels.Keys.Concat(CustomProviders?.Select(p => p.Name) ?? []).Distinct().ToArray();
 
     /// <summary>根据平台名获取可用模型列表</summary>
     public string[] GetModelsForProvider(string? providerName)
     {
-        if (string.IsNullOrEmpty(providerName)) return [];
+        if (string.IsNullOrEmpty(providerName))
+            return [];
         if (BuiltInModels.TryGetValue(providerName, out var models))
             return models;
         var custom = CustomProviders?.FirstOrDefault(p => p.Name == providerName);
@@ -327,7 +333,8 @@ public record VisionSettings(
     /// <summary>根据平台名获取 BaseUrl</summary>
     public string GetBaseUrlForProvider(string? providerName)
     {
-        if (string.IsNullOrEmpty(providerName)) return "";
+        if (string.IsNullOrEmpty(providerName))
+            return "";
         if (providerName == "Ollama")
             return OllamaBaseUrl;
         if (providerName == "百炼")
@@ -339,7 +346,8 @@ public record VisionSettings(
     /// <summary>根据平台名获取 ApiKey（Ollama 不需要）</summary>
     public string GetApiKeyForProvider(string? providerName)
     {
-        if (string.IsNullOrEmpty(providerName)) return "";
+        if (string.IsNullOrEmpty(providerName))
+            return "";
         if (providerName == "Ollama")
             return "";
         var custom = CustomProviders?.FirstOrDefault(p => p.Name == providerName);
@@ -359,4 +367,3 @@ public record VisionSettings(
         );
     }
 }
-

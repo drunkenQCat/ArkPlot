@@ -1,0 +1,130 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="using:ArkPlot.Avalonia.Models"
+             xmlns:conv="using:ArkPlot.Avalonia.Converters"
+             xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="40"
+             x:Class="ArkPlot.Avalonia.Views.Controls.LogRow"
+             x:DataType="models:LogEntry">
+
+    <UserControl.Resources>
+        <conv:LogLevelToBrushConverter x:Key="LogLevelBrush"/>
+    </UserControl.Resources>
+
+    <!--
+        日志行外观一律走样式类（不留本地属性）：本地值优先级高于 Style setter，
+        留在 Border 上的 Padding/Margin/Background 会原地压掉这里的所有视觉设定。
+        背景必须显式给 Transparent —— Avalonia 只在背景非 null 时命中空隙，null 会让点击穿透，
+        普通日志的 Tapped（展开详情）就会失效。
+    -->
+    <UserControl.Styles>
+        <Style Selector="Border.logrow">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Setter Property="Margin" Value="0,1"/>
+        </Style>
+
+        <!-- 错误行：红色底纹 -->
+        <Style Selector="Border.logrow.error">
+            <Setter Property="Background" Value="#33EF4444"/>
+        </Style>
+
+        <!-- 可复盘行（小说化思考/压缩）：圆角按钮外观，让用户一眼看出「这条点开能看复盘」 -->
+        <Style Selector="Border.logrow.trace">
+            <Setter Property="Background" Value="#EFF6FF"/>
+            <Setter Property="BorderBrush" Value="#BFDBFE"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Margin" Value="0,2"/>
+        </Style>
+        <Style Selector="Border.logrow.trace:pointerover">
+            <Setter Property="Background" Value="#DBEAFE"/>
+        </Style>
+
+        <!-- 上下文压缩轮次：黄色按钮，与思考轮次区分 -->
+        <Style Selector="Border.logrow.trace.compress">
+            <Setter Property="Background" Value="#FFFBEB"/>
+            <Setter Property="BorderBrush" Value="#FDE68A"/>
+        </Style>
+        <Style Selector="Border.logrow.trace.compress:pointerover">
+            <Setter Property="Background" Value="#FEF3C7"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid>
+        <!-- 普通日志行（非分段横幅）：图片/思考日志悬停飘窗，普通日志不飘窗；
+             带 turnKey 的（思考/压缩）显示为圆角按钮，点击打开复盘面板。 -->
+        <Border IsVisible="{Binding IsNotSection}"
+                Classes="logrow"
+                Classes.error="{Binding IsError}"
+                Classes.trace="{Binding HasTrace}"
+                Classes.compress="{Binding IsCompress}"
+                Classes.hasPreview="{Binding HasPreview}"
+                Tapped="LogTapped" Cursor="Hand">
+            <Border.Styles>
+                <Style Selector="Border.hasPreview">
+                    <Setter Property="ToolTip.Tip">
+                        <Setter.Value>
+                            <Template>
+                                <StackPanel MaxWidth="300">
+                                    <Image IsVisible="{Binding HasImage}"
+                                           asyncImageLoader:ImageLoader.Source="{Binding ImageUrl}"
+                                           Width="280" Stretch="UniformToFill" Margin="0,0,0,4"/>
+                                    <TextBlock IsVisible="{Binding !HasImage}" Text="{Binding Tooltip}"
+                                               TextWrapping="Wrap" FontSize="11"/>
+                                </StackPanel>
+                            </Template>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Border.Styles>
+            <StackPanel>
+                <Grid ColumnDefinitions="Auto,*">
+                    <Image Grid.Column="0" IsVisible="{Binding HasImage}"
+                           Margin="0,0,8,0"
+                           asyncImageLoader:ImageLoader.Source="{Binding ImageUrl}"
+                           Width="38" Height="38" Stretch="UniformToFill"/>
+                    <StackPanel Grid.Column="1">
+                        <Grid ColumnDefinitions="Auto,Auto,*">
+                            <TextBlock Grid.Column="0" Text="{Binding Time}"
+                                       FontFamily="Consolas" FontSize="11" Opacity="0.5"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="{Binding LevelText}"
+                                       FontFamily="Consolas" FontSize="11" FontWeight="SemiBold"
+                                       Margin="8,0" VerticalAlignment="Center"
+                                       Foreground="{Binding Level, Converter={StaticResource LogLevelBrush}}"/>
+                            <Grid Grid.Column="2" ColumnDefinitions="*,Auto">
+                                <TextBlock Text="{Binding Message}" FontFamily="Consolas"
+                                           FontSize="11" TextWrapping="Wrap"
+                                           VerticalAlignment="Center"
+                                           Grid.Column="0"/>
+                                <ProgressBar Grid.Column="1"
+                                             IsVisible="{Binding HasProgress}"
+                                             Value="{Binding Progress}" Minimum="0" Maximum="100"
+                                             Width="80" Height="5" VerticalAlignment="Center"
+                                             Foreground="#2563EB" Background="#E5E7EB"/>
+                            </Grid>
+                        </Grid>
+                        <Border IsVisible="{Binding IsExpanded}" Background="#F3F4F6"
+                                CornerRadius="4" Padding="8" Margin="0,4,0,0"
+                                BorderBrush="#D1D5DB" BorderThickness="1">
+                            <TextBlock Text="{Binding Detail}" FontFamily="Consolas"
+                                       FontSize="11" TextWrapping="Wrap"/>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
+        <!-- 分段横幅（醒目标注子流程，如「图片描述进行中」） -->
+        <Border IsVisible="{Binding IsSection}" CornerRadius="4"
+                Padding="8,4" Margin="0,3"
+                Background="#EFF6FF" BorderBrush="#2563EB" BorderThickness="1">
+            <TextBlock Text="{Binding Message}" FontSize="12" FontWeight="Bold"
+                       Foreground="#1D4ED8" HorizontalAlignment="Center"
+                       VerticalAlignment="Center"/>
+        </Border>
+    </Grid>
+</UserControl>

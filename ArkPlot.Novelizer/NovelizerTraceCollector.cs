@@ -15,6 +15,8 @@ public sealed class NovelizerTraceCollector
     /// <summary>当前运行元信息（开始时间、模型，由 BeginRun 设置）。</summary>
     private string _model = "";
     private DateTime _startedAt;
+    /// <summary>本次运行的落盘目录（BeginRun 时由调用方传入），每轮 Add 后立即增量重写 trace 文件。</summary>
+    private string? _storyOutputDir;
 
     /// <summary>每次 LLM 调用的结构化记录。</summary>
     public sealed record TurnTrace(
@@ -37,12 +39,16 @@ public sealed class NovelizerTraceCollector
     /// <summary>本次运行的唯一标识（开始时间 yyyyMMdd_HHmmss），作为 turnKey 前缀。</summary>
     public string RunId => _startedAt == default ? "" : _startedAt.ToString("yyyyMMdd_HHmmss");
 
-    /// <summary>标记一次运行的开始（清空上次运行的残留 turns，保证一次 Save 对应一次运行）。</summary>
-    public void BeginRun(string model)
+    /// <summary>
+    /// 标记一次运行的开始（清空上次运行的残留 turns，保证一次 Save 对应一次运行）。
+    /// 传入 <paramref name="storyOutputDir"/> 后，每轮 Add 都会立即增量重写 trace 文件，
+    /// 复盘文件在生成过程中就实时可读（取消/崩溃也不丢已完成轮次）。
+    /// </summary>
+    public void BeginRun(string model, string? storyOutputDir = null)
     {
         lock (_sync)
         {
-            (_model, _startedAt) = (model, DateTime.Now);
+            (_model, _startedAt, _storyOutputDir) = (model, DateTime.Now, storyOutputDir);
             _turns.Clear();
         }
     }
@@ -53,33 +59,42 @@ public sealed class NovelizerTraceCollector
         lock (_sync)
         {
             _turns.Add(new TurnTrace(label, prompt, thinking, answer, chapterTitle, isCompress, DateTime.Now));
+            FlushCore();
             return _turns.Count - 1;
         }
     }
 
     /// <summary>
-    /// 运行结束：把本次运行的全部调用落盘到 <see cref="storyOutputDir"/>/novelizer-traces/ 下，
-    /// 文件名带时间戳，支持多次运行可回看。
+    /// 把当前已收集的 turns 写入 trace 文件（每轮 Add 后调用，实现生成过程中的实时落盘）。
+    /// 持有 <see cref="_sync"/> 时调用；落盘失败静默吞掉——trace 是附属产物，不能阻塞生成。
     /// </summary>
-    /// <returns>落盘文件完整路径；无记录时返回 null。</returns>
-    public string? Save(string storyOutputDir)
+    private void FlushCore()
     {
-        var turns = Turns;
-        if (turns.Count == 0 || string.IsNullOrWhiteSpace(storyOutputDir))
-            return null;
+        if (_turns.Count == 0 || string.IsNullOrWhiteSpace(_storyOutputDir))
+            return;
+        try
+        {
+            WriteTraceFile();
+        }
+        catch
+        {
+            // 目录不可写等 IO 异常不阻塞生成；若后续目录恢复，下一轮 Add / 最终 Save 仍会重试。
+        }
+    }
 
-        var dir = Path.Combine(storyOutputDir, "novelizer-traces");
+    /// <summary>把全部 turns 序列化为 trace 文件内容（持有 <see cref="_sync"/> 时调用）。</summary>
+    private void WriteTraceFile()
+    {
+        var dir = Path.Combine(_storyOutputDir!, "novelizer-traces");
         Directory.CreateDirectory(dir);
-
-        var fileName = $"{_startedAt:yyyyMMdd_HHmmss}_novelizer-trace.json";
-        var fullPath = Path.Combine(dir, fileName);
+        var fullPath = Path.Combine(dir, $"{_startedAt:yyyyMMdd_HHmmss}_novelizer-trace.json");
 
         var runDoc = new
         {
             model = _model,
             startedAt = _startedAt.ToString("yyyy-MM-dd HH:mm:ss"),
-            turnCount = turns.Count,
-            turns,
+            turnCount = _turns.Count,
+            turns = _turns.ToArray(),
         };
 
         var json = JsonSerializer.Serialize(runDoc, new JsonSerializerOptions
@@ -88,7 +103,24 @@ public sealed class NovelizerTraceCollector
             Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         });
         File.WriteAllText(fullPath, json);
-        return fullPath;
+    }
+
+    /// <summary>
+    /// 运行结束：把本次运行的全部调用落盘到 <paramref name="storyOutputDir"/>/novelizer-traces/ 下，
+    /// 文件名带时间戳，支持多次运行可回看。与增量落盘写同一个文件（按 RunId 命名），收尾重写一遍。
+    /// </summary>
+    /// <returns>落盘文件完整路径；无记录时返回 null。</returns>
+    public string? Save(string storyOutputDir)
+    {
+        lock (_sync)
+        {
+            if (_turns.Count == 0 || string.IsNullOrWhiteSpace(storyOutputDir))
+                return null;
+
+            _storyOutputDir = storyOutputDir;
+            WriteTraceFile();
+            return Path.Combine(storyOutputDir, "novelizer-traces", $"{_startedAt:yyyyMMdd_HHmmss}_novelizer-trace.json");
+        }
     }
 
     /// <summary>读取指定目录下所有历史运行记录（按文件名倒序，最新在前）。</summary>

@@ -256,8 +256,12 @@ public partial class TraceReviewViewModel : ViewModelBase
             });
         }
 
+        var liveRunId = LiveCollector is null ? null : CompactRunId(LiveCollector.RunId);
         foreach (var doc in NovelizerTraceCollector.LoadAll(TraceRoot))
         {
+            // 当前运行的增量落盘文件与上面的实时行是同一份，跳过避免重复展示
+            if (liveRunId is { Length: > 0 } && CompactRunId(doc.StartedAt) == liveRunId)
+                continue;
             Runs.Add(new RunRow
             {
                 FileName = "history",
@@ -277,8 +281,8 @@ public partial class TraceReviewViewModel : ViewModelBase
         if (parts.Length != 2 || !int.TryParse(parts[1], out var index))
             return;
 
-        // 优先实时运行：RunId 匹配时直接定位；否则在历史行中匹配 StartedAt 前缀
-        if (LiveCollector?.RunId == parts[0] || parts[0] == LiveCollector?.RunId)
+        // 优先实时运行：RunId 匹配时直接定位；否则在历史行中匹配 StartedAt（数字归一化后）
+        if (LiveCollector != null && CompactRunId(LiveCollector.RunId) == CompactRunId(parts[0]))
         {
             if (Runs.FirstOrDefault(r => r.FileName == "live") is { } liveRun)
             {
@@ -288,9 +292,13 @@ public partial class TraceReviewViewModel : ViewModelBase
             return;
         }
 
-        var history = Runs.FirstOrDefault(r => r.Document.StartedAt.Replace(":", "").Replace("/", "").Replace("-", "") == parts[0]);
+        var history = Runs.FirstOrDefault(r => r.FileName == "history" && CompactRunId(r.Document.StartedAt) == CompactRunId(parts[0]));
         if (history is null) return;
         SelectedRun = history;
         if (index >= 0 && index < Turns.Count) SelectedTurn = Turns[index];
     }
+
+    /// <summary>把 RunId（20260919_103000）与 StartedAt（2026-09-19 10:30:00）归一成同一段数字再比对。</summary>
+    private static string CompactRunId(string value)
+        => new string(value.Where(char.IsDigit).ToArray());
 }

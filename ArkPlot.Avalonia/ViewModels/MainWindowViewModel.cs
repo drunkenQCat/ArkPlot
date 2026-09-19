@@ -550,9 +550,10 @@ public partial class MainWindowViewModel : ViewModelBase
                     {
                         extractFacts = prose =>
                         {
-                            WorkflowLog.Append(
-                                LogLevel.Info,
-                                "[Mock] YAML 提取已跳过真实 API（图片描述为 Mock 模式）");
+                            Dispatcher.UIThread.InvokeAsync(() =>
+                                WorkflowLog.Append(
+                                    LogLevel.Info,
+                                    "[Mock] YAML 提取已跳过真实 API（图片描述为 Mock 模式）"));
                             return Task.FromResult(
                                 """
 hair: [银色, 腰际, 长发]
@@ -606,10 +607,12 @@ colors: [银色, 黑色, 深蓝]
                     {
                         var desc = await baseDescribe(url);
                         var thinking = thinkingProvider?.Invoke(url);
+                        // 经 InvokeAsync 入队与普通日志同跳数，避免思考/图片条目插队错位
                         if (thinking != null)
-                            WorkflowLog.AddThought($"🖼 图片描述（Mock）", $"图片：{url}", thinking, desc, url);
+                            _ = Dispatcher.UIThread.InvokeAsync(() =>
+                                WorkflowLog.AddThought($"🖼 图片描述（Mock）", $"图片：{url}", thinking, desc, url));
                         else
-                            WorkflowLog.AddImage(url, desc);
+                            _ = Dispatcher.UIThread.InvokeAsync(() => WorkflowLog.AddImage(url, desc));
                         return desc;
                     };
                 }
@@ -744,8 +747,8 @@ colors: [银色, 黑色, 深蓝]
 
         var model = novelizer.SelectedModel;
         var systemPrompt = novelizer.SystemPrompt;
-        // 新一次小说化运行：开始新的复盘运行（turnKey 序号从 0 重新计）
-        _traceCollector.BeginRun(model);
+        // 新一次小说化运行：开始新的复盘运行（turnKey 序号从 0 重新计），并指定实时落盘目录
+        _traceCollector.BeginRun(model, outputPathOfCurrentStory);
         LogDiag("[RunNovelizer] model={0}，useMock={1}，outputDir={2}", model, useMock, outputPathOfCurrentStory);
         noticeBlock.RaiseCommonEvent(
             useMock ? $"正在使用 {model} 生成小说（Mock 模式，不调用真实 API）..." : $"正在使用 {model} 生成小说...");
@@ -773,9 +776,13 @@ colors: [银色, 黑色, 深蓝]
                 client,
                 config,
                 onLog: log,
-                onThought: (summary, prompt, thinking, answer, turnKey) =>
+                onThought: (summary, prompt, thinking, answer, turnKey, isCompress) =>
                 {
-                    WorkflowLog.AddThought(summary, prompt, thinking, answer, turnKey: turnKey);
+                    // 与管线普通日志走同一跳数（InvokeAsync 入队后由 Append 统一 Post）。
+                    // 直接在后台线程调 AddThought 只经一跳 Post，而普通日志要两跳——Mock 模式下
+                    // 生产太快时思考条目会整体插队到「Turn N 完成」之前，日志位置错乱。
+                    Dispatcher.UIThread.InvokeAsync(() =>
+                        WorkflowLog.AddThought(summary, prompt, thinking, answer, turnKey: turnKey, isCompress: isCompress));
                 },
                 traceCollector: _traceCollector,
                 systemPrompt: systemPrompt,
@@ -794,7 +801,10 @@ colors: [银色, 黑色, 深蓝]
                 outputPathOfCurrentStory,
                 [model],
                 force: false,
-                ct: ct
+                ct: ct,
+                // 只处理本次导出的 {活动名}.md。不能扫全目录：目录里的历史快照（如 *_original.md）
+                // 会被一并小说化，把用户没选的章节全部生成出来。
+                onlyFile: Path.Combine(outputPathOfCurrentStory, $"{activeTitle}.md")
             );
             sw.Stop();
             LogDiag("[RunNovelizer] BatchProcessAsync 返回，耗时 {0}s", sw.Elapsed.TotalSeconds);
