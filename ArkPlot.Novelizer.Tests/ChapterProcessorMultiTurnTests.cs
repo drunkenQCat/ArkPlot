@@ -21,19 +21,20 @@ public class ChapterProcessorMultiTurnTests
     }
 
     [Fact]
-    public async Task MultiTurn_TokenThreshold_TriggersCompression_WhenIntervalIsDisabled()
+    public async Task MultiTurn_TokenThreshold_ResetsAfterCompression_WhenIntervalIsDisabled()
     {
         var client = new RecordingClient();
         var processor = new ChapterProcessor(
             client, "system", _ => { }, _ => { },
             maxConcurrency: 1, enableMultiTurn: true, chunkSize: 50,
-            compressInterval: 0, compressThresholdTokens: 100);
+            compressInterval: 0, compressThresholdTokens: 150);
 
         await processor.ProcessAllAsync(
             [new Chapter(0, "阈值压缩", new string('文', 180))], "test-model");
 
-        Assert.Contains(client.HistoryCalls,
+        var compressionCalls = client.HistoryCalls.Where(
             call => call.Last().Role == "user" && call.Last().Content.Contains("紧凑的情节摘要"));
+        Assert.Single(compressionCalls);
     }
 
     [Fact]

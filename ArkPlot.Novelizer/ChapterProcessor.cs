@@ -228,6 +228,9 @@ public class ChapterProcessor
         var history = new List<ChatMessage> { new("system", _systemPrompt) };
         var turnOutputs = new List<string>();
         var totalPromptTokens = 0;
+        // Token 阈值以「距上次成功压缩」为一个周期计算；总量仅用于运行统计。
+        // 若使用总量，首次越过阈值后每一轮都会重复压缩。
+        var promptTokensSinceLastCompression = 0;
         var totalCompletionTokens = 0;
         var overallSw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -237,7 +240,7 @@ public class ChapterProcessor
             bool shouldCompress = i > 0
                 && i < chunks.Count - 1 // 最后一轮不压缩
                 && ((_compressInterval > 0 && i % _compressInterval == 0)
-                    || (_compressThresholdTokens > 0 && totalPromptTokens >= _compressThresholdTokens));
+                    || (_compressThresholdTokens > 0 && promptTokensSinceLastCompression >= _compressThresholdTokens));
 
             if (shouldCompress)
             {
@@ -273,6 +276,7 @@ public class ChapterProcessor
                     history.Clear();
                     history.Add(new ChatMessage("system", _systemPrompt));
                     history.Add(new ChatMessage("system", $"此前已生成的小说情节摘要：\n{compressed}"));
+                    promptTokensSinceLastCompression = 0;
                 }
                 catch (BailianException ex)
                 {
@@ -304,6 +308,7 @@ public class ChapterProcessor
                 if (chatResult.Usage is not null)
                 {
                     totalPromptTokens += chatResult.Usage.PromptTokens;
+                    promptTokensSinceLastCompression += chatResult.Usage.PromptTokens;
                     totalCompletionTokens += chatResult.Usage.CompletionTokens;
                     _log($"  ✅ {turnLabel}: 入 {chatResult.Usage.PromptTokens} / 出 {chatResult.Usage.CompletionTokens}，耗时 {turnSw.Elapsed.TotalSeconds:F1}s");
                 }
