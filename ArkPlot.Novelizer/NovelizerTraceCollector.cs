@@ -109,7 +109,8 @@ public sealed class NovelizerTraceCollector
     /// 运行结束：把本次运行的全部调用落盘到 <paramref name="storyOutputDir"/>/novelizer-traces/ 下，
     /// 文件名带时间戳，支持多次运行可回看。与增量落盘写同一个文件（按 RunId 命名），收尾重写一遍。
     /// </summary>
-    /// <returns>落盘文件完整路径；无记录时返回 null。</returns>
+    /// <returns>落盘文件完整路径；无记录或落盘失败（与 <see cref="FlushCore"/> 同策略：trace 是
+    /// 附属产物，不能把一次成功的生成报成失败）时返回 null。</returns>
     public string? Save(string storyOutputDir)
     {
         lock (_sync)
@@ -118,8 +119,15 @@ public sealed class NovelizerTraceCollector
                 return null;
 
             _storyOutputDir = storyOutputDir;
-            WriteTraceFile();
-            return Path.Combine(storyOutputDir, "novelizer-traces", $"{_startedAt:yyyyMMdd_HHmmss}_novelizer-trace.json");
+            try
+            {
+                WriteTraceFile();
+                return Path.Combine(storyOutputDir, "novelizer-traces", $"{_startedAt:yyyyMMdd_HHmmss}_novelizer-trace.json");
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 

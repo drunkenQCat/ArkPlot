@@ -47,9 +47,9 @@ public partial class App : Application
                     var view = new TraceReviewWindow();
                     var viewModel = new TraceReviewViewModel
                     {
-                        TraceRoot = message.ActName is { } act
-                            ? Path.Combine(OutputPaths.ActRootAbsolute(act), "novelizer-traces")
-                            : null,
+                        // 直接用发送方解析好的故事输出目录（与 trace 落盘同源）；
+                        // LoadAll 内部自行拼 novelizer-traces，这里不能再拼一层
+                        TraceRoot = message.StoryOutputDir,
                         LiveCollector = TraceCollector,
                     };
                     view.DataContext = viewModel;

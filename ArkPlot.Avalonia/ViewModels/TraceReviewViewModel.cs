@@ -288,12 +288,17 @@ public partial class TraceReviewViewModel : ViewModelBase
             {
                 SelectedRun = liveRun;
                 if (index >= 0 && index < Turns.Count) SelectedTurn = Turns[index];
+                else Status = $"该运行只有 {Turns.Count} 轮，无法定位到第 {index + 1} 轮";
             }
             return;
         }
 
         var history = Runs.FirstOrDefault(r => r.FileName == "history" && CompactRunId(r.Document.StartedAt) == CompactRunId(parts[0]));
-        if (history is null) return;
+        if (history is null)
+        {
+            Status = $"未找到运行记录 {parts[0]}（trace 目录可能不是生成时的输出目录）";
+            return;
+        }
         SelectedRun = history;
         if (index >= 0 && index < Turns.Count) SelectedTurn = Turns[index];
     }

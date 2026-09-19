@@ -461,6 +461,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
         PicDescService? picDescService = null;
         IDisposable? visionDisposable = null;
+        // YAML 提取委托复用的 HttpClient：委托在 ExportPlots 期间被调用，随本方法 finally 释放
+        IDisposable? yamlHttpDisposable = null;
 
         if (IsPicDescEnabled)
         {
@@ -585,6 +587,7 @@ colors: [银色, 黑色, 深蓝]
                                 BaseUrl = nBaseUrl,
                             };
                             var nHttp = new HttpClient();
+                            yamlHttpDisposable = nHttp;
                             var nClient = new BailianClient(nHttp, nConfig);
                             extractFacts = async prose =>
                             {
@@ -654,6 +657,7 @@ colors: [银色, 黑色, 深蓝]
         {
             picDescService?.Dispose();
             visionDisposable?.Dispose();
+            yamlHttpDisposable?.Dispose();
         }
     }
 
@@ -747,8 +751,6 @@ colors: [银色, 黑色, 深蓝]
 
         var model = novelizer.SelectedModel;
         var systemPrompt = novelizer.SystemPrompt;
-        // 新一次小说化运行：开始新的复盘运行（turnKey 序号从 0 重新计），并指定实时落盘目录
-        _traceCollector.BeginRun(model, outputPathOfCurrentStory);
         LogDiag("[RunNovelizer] model={0}，useMock={1}，outputDir={2}", model, useMock, outputPathOfCurrentStory);
         noticeBlock.RaiseCommonEvent(
             useMock ? $"正在使用 {model} 生成小说（Mock 模式，不调用真实 API）..." : $"正在使用 {model} 生成小说...");
@@ -1118,7 +1120,9 @@ colors: [银色, 黑色, 深蓝]
     private void OpenTraceReview(string? turnKey = null)
     {
         var actName = CurrentAct?.Name ?? activeTitle;
-        WeakReferenceMessenger.Default.Send(new OpenWindowMessage("TraceReviewWindow", currentActName: actName, turnKey: turnKey));
+        // trace 落盘目录就是 outputPathOfCurrentStory，随消息传给复盘面板，避免接收方再拼路径
+        var storyOutputDir = actName is null ? null : Path.Combine(OutputPath, actName);
+        WeakReferenceMessenger.Default.Send(new OpenWindowMessage("TraceReviewWindow", currentActName: actName, turnKey: turnKey, storyOutputDir: storyOutputDir));
     }
 
     private void SubscribeCommonNotification()

@@ -93,6 +93,23 @@ public class NovelizerTraceCollectorFlushTests : IDisposable
         Assert.Equal(2, doc!.TurnCount);
     }
 
+    [Fact]
+    public void Save_UnwritableDir_ReturnsNullInsteadOfThrowing()
+    {
+        // novelizer-traces 位置被一个同名文件占住 → Directory.CreateDirectory 必失败
+        var blocked = Path.Combine(_dir, "blocked-story");
+        Directory.CreateDirectory(blocked);
+        File.WriteAllText(Path.Combine(blocked, "novelizer-traces"), "不是目录");
+
+        _collector.BeginRun("mock-model", blocked);
+        _collector.Add("label-1", "p", "t", "a", "章节");
+
+        // FlushCore（增量）已静默吞掉；收尾 Save 也不应把一次成功的生成报成失败
+        var ex = Record.Exception(() => _collector.Save(blocked));
+        Assert.Null(ex);
+        Assert.Null(_collector.Save(blocked));
+    }
+
     private RunDocument? RunDocumentLoad()
         => System.Text.Json.JsonSerializer.Deserialize<RunDocument>(File.ReadAllText(ExpectedPath));
 }
