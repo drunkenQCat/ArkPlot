@@ -185,6 +185,8 @@ public class NovelizerPipeline
         // 拆章
         Log($"[DIAG] 按 ## 标题拆章...");
         var chapters = ChapterSplitter.SplitChapters(processed);
+        if (!chapters.Any(chapter => !string.IsNullOrWhiteSpace(chapter.Body)))
+            throw new InvalidOperationException("源 Markdown 没有章节正文，已停止小说和 EPUB 生成。");
         Log($"[DIAG] 拆分为 {chapters.Count} 章");
 
         Log($"\n{'=' * 60}");

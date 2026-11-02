@@ -33,12 +33,7 @@ public class NovelizerSettingsTests
     {
         var s = CreateWithCustom();
         var models = s.GetModelsForProvider("百炼");
-        Assert.Contains("glm-5", models);
-        Assert.Contains("MiniMax-M2.5", models);
-        Assert.Contains("kimi-k2.5", models);
-        Assert.Contains("deepseek-v4.1-flash", models);
-        Assert.Contains("deepseek-v4-flash-0731", models);
-        Assert.Equal(5, models.Length);
+        Assert.Empty(models); // 百炼模型由目录 API 获取，不再在设置中写死。
     }
 
     // B3
@@ -227,9 +222,7 @@ public class VisionSettingsTests
     {
         var v = VisionSettings.CreateDefaults();
         var models = v.GetModelsForProvider("百炼");
-        Assert.Equal(4, models.Length);
-        Assert.Contains("qwen3-vl-flash", models);
-        Assert.Contains("qwen-vl-max", models);
+        Assert.Empty(models);
     }
 
     // C2
@@ -268,7 +261,7 @@ public class VisionSettingsTests
         var d = VisionSettings.CreateDefaults();
         Assert.False(d.IsPicDescEnabled);
         Assert.Equal("百炼", d.SelectedProvider);
-        Assert.Equal("qwen3-vl-flash", d.SelectedModel);
+        Assert.Empty(d.SelectedModel);
         Assert.Equal(VisionSettings.DefaultSystemPrompt, d.SystemPrompt);
         Assert.Equal("http://localhost:11434", d.OllamaBaseUrl);
         Assert.Null(d.CustomProviders);
@@ -325,7 +318,7 @@ public class SerializationCompatTests
         Assert.False(settings!.Vision!.IsPicDescEnabled);
         // New fields should have default values
         Assert.Equal("百炼", settings.Vision.SelectedProvider);
-        Assert.Equal("qwen3-vl-flash", settings.Vision.SelectedModel);
+        Assert.Empty(settings.Vision.SelectedModel);
     }
 
     // D3
@@ -405,7 +398,7 @@ public class SerializationCompatTests
         Assert.True(settings!.Vision!.IsPicDescEnabled);
         // All other fields should take defaults
         Assert.Equal("百炼", settings.Vision.SelectedProvider);
-        Assert.Equal("qwen3-vl-flash", settings.Vision.SelectedModel);
+        Assert.Empty(settings.Vision.SelectedModel);
         Assert.Equal("http://localhost:11434", settings.Vision.OllamaBaseUrl);
     }
 }

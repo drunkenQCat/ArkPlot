@@ -39,6 +39,19 @@ public class BatchProcessOnlyFileTests : IDisposable
     }
 
     [Fact]
+    public async Task TitleOnlyMarkdown_DoesNotProduceEmptyNovelOrEpub()
+    {
+        var source = Path.Combine(_dir, "empty.md");
+        await File.WriteAllTextAsync(source, "# 人们，我们\n\n");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            NewPipeline().ProcessMdFileAsync(source, "mock-model", _dir));
+
+        Assert.False(File.Exists(Path.Combine(_dir, "empty_novel_mock-model.md")));
+        Assert.False(File.Exists(Path.Combine(_dir, "empty_novel_mock-model.epub")));
+    }
+
+    [Fact]
     public async Task OnlyFile_ProcessesJustThatFile_IgnoresOtherMdInDir()
     {
         var onlyFile = Path.Combine(_dir, "当前活动.md");
