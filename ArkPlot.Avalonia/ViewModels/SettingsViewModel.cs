@@ -59,7 +59,7 @@ public partial class SettingsViewModel : ObservableObject
     // --- Tab 3: 图片描述设置 ---
     [ObservableProperty] private string _visionSystemPrompt = VisionSettings.DefaultSystemPrompt;
     [ObservableProperty] private string _visionSelectedProvider = "百炼";
-    [ObservableProperty] private string _visionSelectedModel = "qwen3-vl-flash";
+    [ObservableProperty] private string _visionSelectedModel = "";
     [ObservableProperty] private string _visionOllamaBaseUrl = "http://localhost:11434";
     [ObservableProperty] private string[] _visionProviderOptions = VisionSettings.BuiltInModels.Keys.ToArray();
     [ObservableProperty] private string[] _visionModelOptions = VisionSettings.BuiltInModels["百炼"];
@@ -117,12 +117,14 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void LoadSettings()
+    private async Task LoadSettings()
     {
         LoadTagJson();
         LoadNovelizerSettings();
         LoadVisionSettings();
         LoadTtsSettings();
+        _settingsLoaded = true;
+        await RefreshBailianModels();
     }
 
     // ==================== Tab 1: 标签替换 ====================
@@ -214,9 +216,11 @@ public partial class SettingsViewModel : ObservableObject
     {
         var settings = AppSettings.Load();
         var novelizer = settings.Novelizer with { CustomProviders = CustomProviderList.ToArray() };
-        ModelOptions = novelizer.GetModelsForProvider(value);
-        if (ModelOptions.Length > 0 && !ModelOptions.Contains(SelectedModel))
-            SelectedModel = ModelOptions[0];
+        ModelOptions = GetNovelizerModels(novelizer, value);
+        if (!ModelOptions.Contains(SelectedModel))
+            SelectedModel = NovelModelChoices.FirstOrDefault()?.Id ?? "";
+        if (_settingsLoaded && value == "百炼" && _catalogModels.Length == 0)
+            _ = RefreshBailianModels();
     }
 
     private void LoadNovelizerSettings()
@@ -234,14 +238,17 @@ public partial class SettingsViewModel : ObservableObject
         // GitHub 代理
         GitHubProxyPrefix = settings.GitHubProxyPrefix;
         SelectProxyPreset(settings.GitHubProxyPrefix);
+        SelectedNetworkModeIndex = Math.Clamp(settings.GitHubNetworkMode, 0, 2);
+        NetworkProxyAddress = settings.GitHubNetworkProxyAddress;
+        NetworkProxyStatus = "";
 
         // 自定义 Provider 列表
         CustomProviderList = new ObservableCollection<ProviderConfig>(novelizer.CustomProviders ?? []);
         RefreshNovelizerProviderOptions();
 
         SelectedProvider = novelizer.SelectedProvider;
-        ModelOptions = novelizer.GetModelsForProvider(SelectedProvider);
-        SelectedModel = ModelOptions.Contains(novelizer.SelectedModel) ? novelizer.SelectedModel : (ModelOptions.Length > 0 ? ModelOptions[0] : "");
+        ModelOptions = GetNovelizerModels(novelizer, SelectedProvider);
+        SelectedModel = ModelOptions.Length == 0 || ModelOptions.Contains(novelizer.SelectedModel) ? novelizer.SelectedModel : NovelModelChoices.FirstOrDefault()?.Id ?? "";
 
         DeepSeekApiKeyText = settings.GetApiKey("DeepSeek");
         BailianApiKeyText = settings.GetApiKey("百炼");
@@ -249,12 +256,8 @@ public partial class SettingsViewModel : ObservableObject
 
     private void SelectProxyPreset(string prefix)
     {
-        if (string.IsNullOrEmpty(prefix))
-            SelectedProxyPresetIndex = 0; // 直连
-        else if (prefix == "https://gh-proxy.com/")
-            SelectedProxyPresetIndex = 1;
-        else
-            SelectedProxyPresetIndex = 2; // 自定义
+        var index = Array.FindIndex(_proxyPresets, p => p.Url.TrimEnd('/') == prefix.TrimEnd('/'));
+        SelectedProxyPresetIndex = index >= 0 ? index : _proxyPresets.Length;
     }
 
     private void RefreshNovelizerProviderOptions()
@@ -267,6 +270,11 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void SaveNovelizerSettings()
     {
+        if (string.IsNullOrWhiteSpace(SelectedModel))
+        {
+            SaveFeedbackText = "请先获取并选择模型。";
+            return;
+        }
         var settings = AppSettings.Load();
         var novelizer = settings.Novelizer with
         {
@@ -299,6 +307,47 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     private GitHubProxyPreset[] _proxyPresets = GitHubProxyPresetList.Load().Presets;
+
+    public string[] NetworkModeOptions => ["跟随系统代理", "直连（不使用代理）", "自定义 HTTP / SOCKS5 代理"];
+    [ObservableProperty] private int _selectedNetworkModeIndex;
+    [ObservableProperty] private string _networkProxyAddress = "";
+    [ObservableProperty] private string _networkProxyStatus = "";
+    public bool IsCustomNetworkProxy => SelectedNetworkModeIndex == 2;
+
+    partial void OnSelectedNetworkModeIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsCustomNetworkProxy));
+        NetworkProxyStatus = "连接方式已修改，请应用后生效。";
+    }
+
+    partial void OnNetworkProxyAddressChanged(string value) =>
+        NetworkProxyStatus = "代理地址已修改，请应用后生效。";
+
+    [RelayCommand]
+    private void SaveNetworkProxy() => ApplyNetworkProxy();
+
+    private bool ApplyNetworkProxy()
+    {
+        var settings = AppSettings.Load();
+        try
+        {
+            ArkPlot.Core.Utilities.GitHubHttpClientFactory.Configure(
+                (ArkPlot.Core.Utilities.GitHubNetworkMode)SelectedNetworkModeIndex, NetworkProxyAddress);
+            (settings with
+            {
+                GitHubNetworkMode = SelectedNetworkModeIndex,
+                GitHubNetworkProxyAddress = NetworkProxyAddress.Trim()
+            }).Save();
+            NetworkProxyStatus = "已应用，下次请求立即生效。";
+            return true;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            AppSettings.Load();
+            NetworkProxyStatus = ex.Message;
+            return false;
+        }
+    }
 
     /// <summary>GitHub 代理预设选项列表（含 "自定义..." 附加项）</summary>
     public string[] ProxyPresetOptions
@@ -336,32 +385,32 @@ public partial class SettingsViewModel : ObservableObject
     private async Task TestGitHubProxyConnection()
     {
         if (IsProxyTesting) return;
+        if (!ApplyNetworkProxy()) return;
         IsProxyTesting = true;
         ProxyTestStatus = "正在测试...";
 
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            var prefix = string.IsNullOrEmpty(GitHubProxyPrefix) ? "" :
-                GitHubProxyPrefix.EndsWith("/") ? GitHubProxyPrefix : GitHubProxyPrefix + "/";
+            using var http = ArkPlot.Core.Utilities.GitHubHttpClientFactory.CreateClient();
+            http.Timeout = TimeSpan.FromSeconds(10);
+            var prefix = IsCustomNetworkProxy || string.IsNullOrEmpty(GitHubProxyPrefix) ? "" :
+                GitHubProxyPrefix.TrimEnd('/') + "/";
 
             // 测试 raw 文件
             var rawUrl = prefix + "https://raw.githubusercontent.com/Kengxxiao/ArknightsGameData/master/zh_CN/gamedata/excel/story_review_table.json";
-            var rawResp = await http.GetAsync(rawUrl);
+            using var rawResp = await http.GetAsync(rawUrl, HttpCompletionOption.ResponseHeadersRead);
             var rawOk = rawResp.IsSuccessStatusCode;
 
             // 测试 API
             var apiUrl = prefix + "https://api.github.com/repos/Kengxxiao/ArknightsGameData/commits?per_page=1";
-            var apiReq = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+            using var apiReq = new HttpRequestMessage(HttpMethod.Get, apiUrl);
             apiReq.Headers.UserAgent.TryParseAdd("ArkPlot");
-            var apiResp = await http.SendAsync(apiReq);
+            using var apiResp = await http.SendAsync(apiReq, HttpCompletionOption.ResponseHeadersRead);
             var apiOk = apiResp.IsSuccessStatusCode;
 
             ProxyTestStatus = rawOk && apiOk
-                ? "✅ 连接正常（raw + API 均可用）"
-                : rawOk
-                    ? "⚠️ 仅 raw 可用，API 不通（无法检查更新）"
-                    : "❌ 无法连接";
+                ? "连接正常：剧情下载与 GitHub API 均可访问。"
+                : $"剧情下载 HTTP {(int)rawResp.StatusCode}；GitHub API HTTP {(int)apiResp.StatusCode}。请检查代理地址或镜像站。";
         }
         catch (Exception ex)
         {
@@ -409,7 +458,7 @@ public partial class SettingsViewModel : ObservableObject
                 {
                     var apiReq = new HttpRequestMessage(HttpMethod.Get, prefix + "https://api.github.com/repos/Kengxxiao/ArknightsGameData/commits?per_page=1");
                     apiReq.Headers.UserAgent.TryParseAdd("ArkPlot");
-                    var apiResp = await http.SendAsync(apiReq);
+                    using var apiResp = await http.SendAsync(apiReq, HttpCompletionOption.ResponseHeadersRead);
                     apiOk = apiResp.IsSuccessStatusCode;
                 }
                 catch { }
@@ -584,10 +633,12 @@ public partial class SettingsViewModel : ObservableObject
     partial void OnVisionSelectedProviderChanged(string value)
     {
         var vision = GetCurrentVisionSettings();
-        VisionModelOptions = vision.GetModelsForProvider(value);
-        if (VisionModelOptions.Length > 0 && !VisionModelOptions.Contains(VisionSelectedModel))
-            VisionSelectedModel = VisionModelOptions[0];
+        VisionModelOptions = GetVisionModels(vision, value);
+        if (!VisionModelOptions.Contains(VisionSelectedModel))
+            VisionSelectedModel = VisionModelOptions.FirstOrDefault() ?? "";
         IsOllamaProvider = value == "Ollama";
+        if (_settingsLoaded && value == "百炼" && _catalogModels.Length == 0)
+            _ = RefreshBailianModels();
     }
 
     private VisionSettings GetCurrentVisionSettings()
@@ -615,8 +666,8 @@ public partial class SettingsViewModel : ObservableObject
         RefreshVisionProviderOptions();
 
         VisionSelectedProvider = vision.SelectedProvider;
-        VisionModelOptions = vision.GetModelsForProvider(VisionSelectedProvider);
-        VisionSelectedModel = VisionModelOptions.Contains(vision.SelectedModel) ? vision.SelectedModel : (VisionModelOptions.Length > 0 ? VisionModelOptions[0] : "");
+        VisionModelOptions = GetVisionModels(vision, VisionSelectedProvider);
+        VisionSelectedModel = VisionModelOptions.Length == 0 || VisionModelOptions.Contains(vision.SelectedModel) ? vision.SelectedModel : VisionModelOptions[0];
         IsOllamaProvider = VisionSelectedProvider == "Ollama";
     }
 
@@ -629,6 +680,11 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void SaveVisionSettings()
     {
+        if (string.IsNullOrWhiteSpace(VisionSelectedModel))
+        {
+            VisionSaveFeedbackText = "请先获取并选择模型。";
+            return;
+        }
         var settings = AppSettings.Load();
         var vision = new VisionSettings(
             IsPicDescEnabled: settings.Vision?.IsPicDescEnabled ?? false,

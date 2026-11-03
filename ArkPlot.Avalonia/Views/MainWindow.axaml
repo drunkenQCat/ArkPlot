@@ -186,13 +186,13 @@
                 <!-- 开始/停止 合并按钮：同位置、互斥显示 -->
                 <Panel Margin="0 10 0 10" HorizontalAlignment="Center">
                     <Button
-                        IsVisible="{c:Binding !LoadMdCommand.IsRunning}"
+                        IsVisible="{c:Binding !LoadMdCommand.IsRunning and !IsLogStressRunning}"
                         IsEnabled="{c:Binding !LoadInitResourceCommand.IsRunning and IsInitialized}"
                         VerticalAlignment="Center" Command="{Binding LoadMdCommand}" Width="100">
                         开始
                     </Button>
                     <Button
-                        IsVisible="{c:Binding LoadMdCommand.IsRunning}"
+                        IsVisible="{c:Binding LoadMdCommand.IsRunning or IsLogStressRunning}"
                         VerticalAlignment="Center"
                         Command="{Binding StopGenerationCommand}"
                         Width="100"

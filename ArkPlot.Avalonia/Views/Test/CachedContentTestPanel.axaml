@@ -1,0 +1,80 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ArkPlot.Avalonia.ViewModels.Test"
+             xmlns:services="using:ArkPlot.Avalonia.Services"
+             xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
+             x:Class="ArkPlot.Avalonia.Views.Test.CachedContentTestPanel"
+             x:DataType="vm:CachedContentTestViewModel">
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="8" RowSpacing="10">
+    <StackPanel Grid.Row="0" Spacing="6" IsEnabled="{Binding !IsRunning}">
+      <Grid ColumnDefinitions="*,*,Auto,Auto" ColumnSpacing="8">
+        <ComboBox Grid.Column="0" ItemsSource="{Binding Activities}" SelectedItem="{Binding SelectedActivity}"
+                  PlaceholderText="选择缓存活动" HorizontalAlignment="Stretch">
+          <ComboBox.ItemTemplate><DataTemplate x:DataType="services:CachedChoice"><TextBlock Text="{Binding Name}"/></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+        <ComboBox Grid.Column="1" ItemsSource="{Binding Chapters}" SelectedItem="{Binding SelectedChapter}"
+                  PlaceholderText="选择缓存章节" HorizontalAlignment="Stretch">
+          <ComboBox.ItemTemplate><DataTemplate x:DataType="services:CachedChoice"><TextBlock Text="{Binding Name}"/></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+        <Button Grid.Column="2" Content="刷新缓存" Command="{Binding RefreshCacheCommand}"/>
+        <Button Grid.Column="3" Content="随机取样" Command="{Binding RandomSampleCommand}"/>
+      </Grid>
+      <Grid ColumnDefinitions="150,*,Auto" ColumnSpacing="8">
+        <ComboBox ItemsSource="{Binding Providers}" SelectedItem="{Binding SelectedProvider}" HorizontalAlignment="Stretch"/>
+        <ComboBox Grid.Column="1" ItemsSource="{Binding Models}" SelectedItem="{Binding SelectedModel}" HorizontalAlignment="Stretch">
+          <ComboBox.ItemTemplate><DataTemplate x:DataType="services:ModelChoice"><TextBlock Text="{Binding DisplayName}"/></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+        <Button Grid.Column="2" Content="刷新百炼模型" Command="{Binding RefreshModelsCommand}" IsEnabled="{Binding !IsRefreshingModels}"/>
+      </Grid>
+    </StackPanel>
+    <TextBlock Grid.Row="1" Text="选取缓存内容后点击运行，将实际调用所选模型；使用设置中的 API Key。"
+               FontSize="12" Opacity="0.7" TextWrapping="Wrap"/>
+    <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="12">
+      <Grid ColumnDefinitions="*" RowDefinitions="Auto,*" RowSpacing="6">
+        <TextBlock Text="{Binding InputTitle}" FontWeight="SemiBold"/>
+        <Grid Grid.Row="1" RowDefinitions="Auto,*" IsVisible="{Binding !IsImageTest}">
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6" IsEnabled="{Binding !IsRunning}">
+            <TextBlock Text="载入字数" VerticalAlignment="Center"/>
+            <NumericUpDown Value="{Binding InputCharacterLimit}" Minimum="100" Maximum="50000" Increment="500" Width="110"/>
+            <Button Content="重新载入" Command="{Binding LoadSelectedContentCommand}"/>
+          </StackPanel>
+          <TextBox Grid.Row="1" Text="{Binding InputText}" AcceptsReturn="True" TextWrapping="Wrap"
+                   IsReadOnly="{Binding IsRunning}" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+        </Grid>
+        <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="6" IsVisible="{Binding IsImageTest}">
+          <ComboBox ItemsSource="{Binding Images}" SelectedItem="{Binding SelectedImage}" HorizontalAlignment="Stretch" IsEnabled="{Binding !IsRunning}">
+            <ComboBox.ItemTemplate><DataTemplate x:DataType="services:CachedImage"><TextBlock Text="{Binding Name}"/></DataTemplate></ComboBox.ItemTemplate>
+          </ComboBox>
+          <TextBlock Grid.Row="1" Text="{Binding ImageSourceLabel}" FontSize="11" TextWrapping="Wrap" Opacity="0.7"/>
+          <Border Grid.Row="2" BorderBrush="#40808080" BorderThickness="1" CornerRadius="6" Padding="6" MinHeight="100">
+            <Image asyncImageLoader:ImageLoader.Source="{Binding ImagePreview}" Stretch="Uniform"/>
+          </Border>
+          <TextBlock Grid.Row="3" Text="历史图片描述" FontSize="12" Opacity="0.7"/>
+          <TextBox Grid.Row="4" Text="{Binding CachedDescription}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                   MaxHeight="90" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+        </Grid>
+      </Grid>
+      <Grid Grid.Column="1" RowDefinitions="Auto,120,Auto,*,Auto" RowSpacing="6">
+        <TextBlock Text="测试提示词（可编辑）" FontWeight="SemiBold"/>
+        <TextBox Grid.Row="1" Text="{Binding SystemPrompt}" AcceptsReturn="True" TextWrapping="Wrap" IsReadOnly="{Binding IsRunning}"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+        <TextBlock Grid.Row="2" Text="本次输出" FontWeight="SemiBold"/>
+        <TextBox Grid.Row="3" Text="{Binding OutputText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+        <Expander Grid.Row="4" Header="思考内容" MaxHeight="120">
+          <TextBox Text="{Binding ThinkingText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"/>
+        </Expander>
+      </Grid>
+    </Grid>
+    <StackPanel Grid.Row="3" Spacing="6">
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <TextBlock Text="最大输出 Token" VerticalAlignment="Center"/>
+        <NumericUpDown Value="{Binding MaxTokens}" Minimum="128" Maximum="32768" Increment="512" Width="110" IsEnabled="{Binding !IsRunning}"/>
+        <CheckBox Content="开启思考" IsChecked="{Binding EnableThinking}" IsVisible="{Binding !IsImageTest}" IsEnabled="{Binding !IsRunning}"/>
+        <Button Content="{Binding RunLabel}" Command="{Binding RunTestCommand}" IsEnabled="{Binding !IsRunning}" Classes="Accent"/>
+        <Button Content="取消" Command="{Binding CancelTestCommand}" IsEnabled="{Binding IsRunning}"/>
+      </StackPanel>
+      <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" FontSize="12"/>
+    </StackPanel>
+  </Grid>
+</UserControl>

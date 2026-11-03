@@ -21,7 +21,9 @@ public record AppSettings(
     NovelizerSettings Novelizer,
     VisionSettings? Vision = null,
     TtsSettings? Tts = null,
-    string GitHubProxyPrefix = ""
+    string GitHubProxyPrefix = "",
+    int GitHubNetworkMode = 0,
+    string GitHubNetworkProxyAddress = ""
 )
 {
     private static readonly string FilePath = Path.Combine(
@@ -121,6 +123,17 @@ public record AppSettings(
     {
         var settings = LoadFromFile(filePath);
         ArkPlot.Core.Utilities.GitHubProxy.Prefix = settings.GitHubProxyPrefix;
+        try
+        {
+            ArkPlot.Core.Utilities.GitHubHttpClientFactory.Configure(
+                (ArkPlot.Core.Utilities.GitHubNetworkMode)settings.GitHubNetworkMode,
+                settings.GitHubNetworkProxyAddress);
+        }
+        catch (ArgumentException)
+        {
+            ArkPlot.Core.Utilities.GitHubHttpClientFactory.Configure(
+                ArkPlot.Core.Utilities.GitHubNetworkMode.System, "");
+        }
         return settings;
     }
 }
@@ -205,13 +218,7 @@ public record NovelizerSettings(
             ["DeepSeek"] = ("https://api.deepseek.com", ["deepseek-v4-pro", "deepseek-v4-flash"]),
             ["百炼"] = (
                 "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                [
-                    "deepseek-v4.1-flash",
-                    "deepseek-v4-flash-0731",
-                    "glm-5",
-                    "MiniMax-M2.5",
-                    "kimi-k2.5",
-                ]
+                []
             ),
         };
 
@@ -289,7 +296,7 @@ public record NovelizerSettings(
 public record VisionSettings(
     bool IsPicDescEnabled,
     string SelectedProvider = "百炼",
-    string SelectedModel = "qwen3-vl-flash",
+    string SelectedModel = "",
     string SystemPrompt = "",
     string OllamaBaseUrl = "http://localhost:11434",
     ProviderConfig[]? CustomProviders = null,
@@ -311,7 +318,7 @@ public record VisionSettings(
     /// </summary>
     public static readonly Dictionary<string, string[]> BuiltInModels = new()
     {
-        ["百炼"] = ["qwen3-vl-flash", "qwen3-vl-plus", "qwen-vl-plus", "qwen-vl-max"],
+        ["百炼"] = [],
         ["Ollama"] = ["qwen3-vl:8b"],
     };
 
@@ -361,7 +368,7 @@ public record VisionSettings(
         return new VisionSettings(
             IsPicDescEnabled: false,
             SelectedProvider: "百炼",
-            SelectedModel: "qwen3-vl-flash",
+            SelectedModel: "",
             SystemPrompt: DefaultSystemPrompt,
             OllamaBaseUrl: "http://localhost:11434"
         );

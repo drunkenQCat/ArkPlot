@@ -2,6 +2,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using ArkPlot.Avalonia.Services;
 
 namespace ArkPlot.Avalonia;
 
@@ -10,6 +11,17 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        try
+        {
+            LogStressOptions.Current = LogStressOptions.Parse(args);
+        }
+        catch (ArgumentException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            Environment.ExitCode = 2;
+            return;
+        }
+
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             var ex = e.ExceptionObject as Exception;

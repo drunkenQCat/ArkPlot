@@ -149,5 +149,30 @@ public class GalleryBackgroundSelectionTests : System.IDisposable
     {
         try { Directory.Delete(_tempDir, true); } catch { }
     }
+
+    [AvaloniaTheory]
+    [InlineData(0, "bg_a", null, "bg_b")]
+    [InlineData(6, "bg_a", null, "bg_b")]
+    [InlineData(12, "bg_b", "bg_a", null)]
+    public void Gallery_TransitionsUseVisibleScenesWithinChapter(int entry, string expected, string? previous, string? next)
+    {
+        using var vm = new TtsViewModel(_tempDir);
+        var field = typeof(TtsViewModel).GetField("_backgrounds",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        const string black = "https://media.prts.wiki/8/8a/Avg_bg_bg_black.png";
+        field.SetValue(vm, new List<BackgroundItem>
+        {
+            new("other-chapter", "", 0, [], 2, "B"),
+            new("bg_b", "", 10, [], 1, "A"),
+            new(black, "", 5, [], 1, "A"),
+            new("bg_a", "", 4, [], 1, "A"),
+            new(black, "", 1, [], 1, "A")
+        });
+        vm.FilteredSegments = [new SegmentRow { ChapterTitle = "A", EntryIndex = entry }];
+        vm.SelectedSegment = vm.FilteredSegments[0];
+        Assert.Equal(expected, vm.GalleryPanel.CurrentBackground);
+        Assert.Equal(previous, vm.GalleryPanel.PrevBackground);
+        Assert.Equal(next, vm.GalleryPanel.NextBackground);
+    }
 }
 

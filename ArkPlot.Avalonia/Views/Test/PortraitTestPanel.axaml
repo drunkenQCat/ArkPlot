@@ -26,13 +26,16 @@
                Watermark="阿米娅"/>
 
       <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
-        <Button Content="加载示例立绘"
+        <Button Content="随机缓存角色"
                 Command="{Binding LoadSampleCommand}"
                 Classes="Rounded Accent"/>
         <Button Content="清空"
                 Command="{Binding ClearCommand}"
                 Classes="Rounded"/>
       </StackPanel>
+
+      <Button Content="刷新角色缓存" Command="{Binding RefreshCacheCommand}"/>
+      <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" FontSize="12"/>
 
       <Border BorderBrush="#20FFFFFF" BorderThickness="1"
               CornerRadius="4" Margin="0,8,0,0" Padding="8">

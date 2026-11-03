@@ -210,6 +210,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task LoadInitResource()
     {
+        if (LogStressOptions.Current is { } stress)
+        {
+            await RunLogStressAsync(stress);
+            return;
+        }
+
         // 初始化 API Key：从 AppSettings 读取（settings.json 优先 → 环境变量备选）
         var settings = AppSettings.Load();
         DeepSeekApiKey = settings.GetApiKey("DeepSeek");

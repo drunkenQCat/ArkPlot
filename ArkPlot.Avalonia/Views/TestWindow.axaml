@@ -7,9 +7,15 @@
     mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
     x:Class="ArkPlot.Avalonia.Views.TestWindow"
     Title="ArkPlot 测试面板"
-    Width="800" Height="600">
+    Width="1000" Height="760" MinWidth="850" MinHeight="650">
 
   <TabControl Margin="16">
+    <TabItem Header="文本模型测试">
+      <testViews:CachedContentTestPanel x:Name="TextModelTestTab"/>
+    </TabItem>
+    <TabItem Header="图片模型测试">
+      <testViews:CachedContentTestPanel x:Name="ImageModelTestTab"/>
+    </TabItem>
     <!-- 开发选项 -->
     <TabItem Header="开发选项">
       <testViews:DevOptionsPanel x:Name="DevOptionsTab"/>

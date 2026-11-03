@@ -1779,6 +1779,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
         var chapterBgs = _backgrounds
             .Where(b => string.Equals(b.ChapterTitle, seg.ChapterTitle, StringComparison.Ordinal))
+            .OrderBy(b => b.EntryIndex)
             .ToList();
 
         if (chapterBgs.Count == 0)
@@ -1788,33 +1789,14 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         }
 
         // 找到当前片段最近的背景图（不区分颜色）
-        var nearestBg = chapterBgs
-            .Where(b => b.EntryIndex <= effectiveEntryIndex)
+        // A black frame is a transition, so keep the last visible scene in this chapter.
+        // Only use a future scene if the chapter has not shown any visible scene yet.
+        var bg = chapterBgs
+            .Where(b => b.EntryIndex <= effectiveEntryIndex && !IsBlackBg(b.ImageUrl))
             .OrderByDescending(b => b.EntryIndex)
-            .FirstOrDefault();
+            .FirstOrDefault()
+            ?? chapterBgs.OrderBy(b => b.EntryIndex).FirstOrDefault(b => !IsBlackBg(b.ImageUrl));
 
-        BackgroundItem? bg;
-        if (nearestBg != null && IsBlackBg(nearestBg.ImageUrl))
-        {
-            // 最近的是黑场 → 向后搜索最近的非黑背景（场景过渡）
-            bg = chapterBgs
-                .Where(b => b.EntryIndex > effectiveEntryIndex)
-                .OrderBy(b => b.EntryIndex)
-                .FirstOrDefault(b => !IsBlackBg(b.ImageUrl));
-        }
-        else
-        {
-            bg = nearestBg;
-        }
-
-        if (bg == null)
-            bg = chapterBgs
-                .Where(b => b.EntryIndex <= effectiveEntryIndex)
-                .OrderByDescending(b => b.EntryIndex)
-                .FirstOrDefault();
-
-        if (bg == null)
-            bg = chapterBgs.FirstOrDefault();
         if (bg == null)
         {
             GalleryPanel.Clear();

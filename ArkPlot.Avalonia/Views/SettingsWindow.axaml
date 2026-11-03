@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:services="clr-namespace:ArkPlot.Avalonia.Services"
         xmlns:vm="clr-namespace:ArkPlot.Avalonia.ViewModels;assembly=ArkPlot.Avalonia"
         xmlns:b="clr-namespace:Avalonia.Xaml.Behaviors;assembly=Avalonia.Xaml.Behaviors"
         xmlns:i="clr-namespace:Avalonia.Xaml.Interactivity;assembly=Avalonia.Xaml.Interactivity"
@@ -97,10 +98,22 @@
                                 </StackPanel>
                                 <StackPanel Spacing="4">
                                     <TextBlock Text="模型选择" FontSize="12"/>
-                                    <ComboBox ItemsSource="{Binding ModelOptions}"
-                                              SelectedItem="{Binding SelectedModel}"
-                                              Width="200"/>
+                                    <ComboBox ItemsSource="{Binding NovelModelChoices}"
+                                              SelectedItem="{Binding SelectedNovelModelChoice}"
+                                              Width="300">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="services:ModelChoice">
+                                                <TextBlock Text="{Binding DisplayName}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
                                 </StackPanel>
+                            </StackPanel>
+                            <StackPanel Spacing="6">
+                                <Button Content="刷新百炼模型列表"
+                                        Command="{Binding RefreshBailianModelsCommand}"
+                                        IsEnabled="{Binding !IsModelCatalogLoading}"/>
+                                <TextBlock Text="{Binding ModelCatalogStatus}" TextWrapping="Wrap" Foreground="Gray" FontSize="11"/>
                             </StackPanel>
 
                             <Separator Margin="0,5"/>
@@ -254,8 +267,14 @@
                                     <TextBlock Text="模型选择" FontSize="12"/>
                                     <ComboBox ItemsSource="{Binding VisionModelOptions}"
                                               SelectedItem="{Binding VisionSelectedModel}"
-                                              Width="200"/>
+                                              Width="300"/>
                                 </StackPanel>
+                            </StackPanel>
+                            <StackPanel Spacing="6">
+                                <Button Content="刷新百炼模型列表"
+                                        Command="{Binding RefreshBailianModelsCommand}"
+                                        IsEnabled="{Binding !IsModelCatalogLoading}"/>
+                                <TextBlock Text="{Binding ModelCatalogStatus}" TextWrapping="Wrap" Foreground="Gray" FontSize="11"/>
                             </StackPanel>
 
                             <StackPanel Spacing="4" IsVisible="{Binding IsOllamaProvider}">
@@ -512,6 +531,7 @@
 
             <!-- Tab 5: 数据管理 -->
             <TabItem Header="数据管理">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="16" Spacing="16">
                     <TextBlock Text="数据源同步" FontWeight="Bold" FontSize="16"/>
                     <TextBlock Text="从 GitHub 和 PRTS Wiki 获取最新数据。强制刷新会无视缓存状态，重新下载并增量更新。"
@@ -533,22 +553,35 @@
 
                     <Separator Margin="0,8"/>
 
-                    <!-- GitHub 代理设置 -->
-                    <TextBlock Text="GitHub 代理镜像" FontWeight="Bold" FontSize="14"/>
-                    <TextBlock Text="通过代理加速 GitHub 数据下载（活动列表、剧情文本）。适用于国内网络环境。"
+                    <TextBlock Text="GitHub 连接方式" FontWeight="Bold" FontSize="14"/>
+                    <TextBlock Text="用于活动列表、更新检查和剧情下载。自定义代理直接访问 GitHub，自动绕过下方镜像站。API 模型连接仍使用原有设置。"
+                               TextWrapping="Wrap" FontSize="11" Foreground="Gray"/>
+                    <ComboBox ItemsSource="{Binding NetworkModeOptions}"
+                              SelectedIndex="{Binding SelectedNetworkModeIndex}"
+                              HorizontalAlignment="Stretch"/>
+                    <TextBox Text="{Binding NetworkProxyAddress}"
+                             IsVisible="{Binding IsCustomNetworkProxy}"
+                             Watermark="http://127.0.0.1:7890 或 socks5://127.0.0.1:1080"/>
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button Content="应用连接设置" Command="{Binding SaveNetworkProxyCommand}" Padding="16,6"/>
+                        <TextBlock Text="{Binding NetworkProxyStatus}" TextWrapping="Wrap" MaxWidth="340" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <Separator/>
+                    <TextBlock Text="GitHub 镜像站（可选）" FontWeight="Bold" FontSize="14"/>
+                    <TextBlock Text="镜像前缀与 HTTP / SOCKS5 代理不同；选择自定义代理时，此处配置暂不使用。"
                                TextWrapping="Wrap" FontSize="11" Foreground="Gray"/>
 
                     <StackPanel Orientation="Horizontal" Spacing="12">
-                        <ComboBox ItemsSource="{Binding ProxyPresetOptions}"
+                        <ComboBox IsEnabled="{Binding !IsCustomNetworkProxy}" ItemsSource="{Binding ProxyPresetOptions}"
                                   SelectedIndex="{Binding SelectedProxyPresetIndex}"
                                   Width="180"/>
-                        <TextBox Text="{Binding GitHubProxyPrefix}"
+                        <TextBox IsEnabled="{Binding !IsCustomNetworkProxy}" Text="{Binding GitHubProxyPrefix}"
                                  Width="260"
                                  Watermark="https://gh-proxy.com/ 或留空=直连"/>
                     </StackPanel>
 
                     <StackPanel Orientation="Horizontal" Spacing="12">
-                        <Button Content="测试连接"
+                        <Button Content="应用并测试连接"
                                 Command="{Binding TestGitHubProxyConnectionCommand}"
                                 IsEnabled="{Binding !IsProxyTesting}"
                                 Padding="16,6"/>
@@ -588,6 +621,7 @@
                                Foreground="Gray"
                                Margin="0,8,0,0"/>
                 </StackPanel>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
     </Grid>

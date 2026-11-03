@@ -1,0 +1,9 @@
+# Agent-local material stays out of Git, but rg/fd --hidden can search it.
+!.qwen/
+!.qwen/**
+!.reasonix/
+.reasonix/*
+!.reasonix/skills/
+!.reasonix/skills/**
+!.zcode/
+!.zcode/**

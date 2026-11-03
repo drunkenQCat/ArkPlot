@@ -15,6 +15,9 @@ public class BailianVisionClient : IDisposable
     private readonly BailianVisionConfig _config;
     private readonly Action<string>? _onLog;
 
+    private bool IsOmni => _config.Model.Contains("omni", StringComparison.OrdinalIgnoreCase);
+    private bool IsQwen38Omni => _config.Model.StartsWith("qwen3.8-omni", StringComparison.OrdinalIgnoreCase);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -88,7 +91,10 @@ public class BailianVisionClient : IDisposable
                     }
                 }
             },
-            max_tokens = _config.MaxTokens
+            max_tokens = _config.MaxTokens,
+            modalities = IsOmni ? new[] { "text" } : null,
+            stream = IsOmni ? true : (bool?)null,
+            reasoning_effort = IsQwen38Omni ? "none" : null
         };
 
         return await SendRequestAsync(requestBody, $"imageUrl={imageUrl.Truncate(80)}");
@@ -125,7 +131,10 @@ public class BailianVisionClient : IDisposable
                     }
                 }
             },
-            max_tokens = _config.MaxTokens
+            max_tokens = _config.MaxTokens,
+            modalities = IsOmni ? new[] { "text" } : null,
+            stream = IsOmni ? true : (bool?)null,
+            reasoning_effort = IsQwen38Omni ? "none" : null
         };
 
         return await SendRequestAsync(requestBody, "base64 image");
@@ -209,16 +218,62 @@ public class BailianVisionClient : IDisposable
         var responseJson = await response.Content.ReadAsStringAsync();
         Log($"[BailianVision] 响应 {responseJson.Length} 字节，开始解析");
 
-        using var doc = JsonDocument.Parse(responseJson);
-        var choice = doc.RootElement.GetProperty("choices")[0];
-        var message = choice.GetProperty("message");
-        var description = message.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
+        string description;
+        if (IsOmni)
+        {
+            description = ReadStreamText(responseJson);
+        }
+        else
+        {
+            using var doc = JsonDocument.Parse(responseJson);
+            var choice = doc.RootElement.GetProperty("choices")[0];
+            var message = choice.GetProperty("message");
+            description = message.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
+        }
 
         if (string.IsNullOrWhiteSpace(description))
             throw new VisionException("百炼返回了空响应");
 
         Log($"[BailianVision] 描述完成，{description.Length} 字符");
         return description.Trim();
+    }
+
+    private static string ReadStreamText(string response)
+    {
+        var text = new StringBuilder();
+        var completed = false;
+        using var reader = new StringReader(response);
+        while (reader.ReadLine() is { } line)
+        {
+            if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+            var data = line[5..].Trim();
+            if (data == "[DONE]") { completed = true; break; }
+            if (data.Length == 0) continue;
+            using var doc = JsonDocument.Parse(data);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("error", out _))
+                throw new VisionException("图片描述模型在流式响应中返回错误。");
+            if (root.TryGetProperty("code", out var code) &&
+                code.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) &&
+                code.ToString() is not ("" or "0" or "200"))
+                throw new VisionException($"图片描述模型在流式响应中返回错误：{code}");
+            if (!root.TryGetProperty("choices", out var choices)) continue;
+            foreach (var choice in choices.EnumerateArray())
+            {
+                if (choice.TryGetProperty("finish_reason", out var finish) && finish.ValueKind == JsonValueKind.String)
+                {
+                    if (finish.GetString() != "stop")
+                        throw new VisionException($"图片描述未正常完成（finish_reason={finish.GetString()}），未保存截断内容。");
+                    completed = true;
+                }
+                if (choice.TryGetProperty("delta", out var delta) &&
+                    delta.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
+                    text.Append(content.GetString());
+            }
+        }
+        if (!completed)
+            throw new VisionException("图片描述流式响应提前结束，未保存不完整内容。");
+        return text.ToString();
     }
 
     public void Dispose()

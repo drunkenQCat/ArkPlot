@@ -1,51 +1,56 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using ArkPlot.Avalonia.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace ArkPlot.Avalonia.ViewModels.Test;
 
-/// <summary>
-/// PortraitPanel 测试用 ViewModel。
-/// 内部持有 PortraitPanelViewModel 实例，测试控制直接操作它。
-/// </summary>
 public partial class PortraitTestViewModel : ViewModelBase
 {
-    /// <summary>被测试的组件 ViewModel（直接绑定到 PortraitPanel）。</summary>
+    private readonly ITestCacheSource _cache;
+    private List<CachedCharacter> _characters = [];
+    private string? _previousKey;
     public PortraitPanelViewModel Panel { get; } = new();
+    [ObservableProperty] private string _statusText = "";
 
-    // ── 测试控制命令 ──
+    public PortraitTestViewModel() : this(new TestCacheSource()) { }
+    public PortraitTestViewModel(ITestCacheSource cache)
+    {
+        _cache = cache;
+        RefreshCache();
+    }
 
-    private static readonly string[] SamplePortraits =
-    [
-        "https://media.prts.wiki/8/82/Avg_avg_npc_892_1-2%241.png",
-        "https://media.prts.wiki/f/f9/Avg_avg_npc_536_1-2%241.png",
-        "https://media.prts.wiki/1/1e/Avg_char_136_hsguma_ns_1.png",
-        "https://media.prts.wiki/1/15/Avg_avg_npc_134.png",
-        "https://media.prts.wiki/0/08/Avg_avg_npc_892_1-4%241.png",
-    ];
-
-    private static readonly string[] SampleNames =
-    [
-        "小贾斯汀",
-        "缪尔赛思",
-        "星熊",
-        "avg_npc_134",
-        "avg_npc_892",
-    ];
-
-    private int _sampleIndex;
+    [RelayCommand]
+    private void RefreshCache()
+    {
+        try
+        {
+            _characters = _cache.GetCharacters();
+            if (_characters.Count == 0)
+            {
+                Panel.Clear();
+                StatusText = "没有可用的缓存角色立绘，请先加载并解析剧情。";
+                return;
+            }
+            LoadSample();
+        }
+        catch (Exception ex) { StatusText = $"读取角色缓存失败：{ex.Message}"; }
+    }
 
     [RelayCommand]
     private void LoadSample()
     {
-        Panel.Update(
-            SamplePortraits[_sampleIndex % SamplePortraits.Length],
-            SampleNames[_sampleIndex % SampleNames.Length]);
-        _sampleIndex++;
+        if (_characters.Count == 0) { StatusText = "没有可用的缓存角色，请先刷新缓存。"; return; }
+        var candidates = _characters.Where(c => c.Key != _previousKey).ToList();
+        if (candidates.Count == 0) candidates = _characters;
+        var character = candidates[Random.Shared.Next(candidates.Count)];
+        _previousKey = character.Key;
+        Panel.Update(character.PortraitUrl, character.Name);
+        StatusText = $"已缓存 {_characters.Count} 个角色；当前来源：{character.Source}";
     }
 
     [RelayCommand]
-    private void Clear()
-    {
-        Panel.Clear();
-    }
+    private void Clear() => Panel.Clear();
 }
