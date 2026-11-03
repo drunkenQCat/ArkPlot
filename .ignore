@@ -2,6 +2,7 @@
 !.qwen/
 !.qwen/**
 !.reasonix/
+.reasonix/*
 !.reasonix/skills/
 !.reasonix/skills/**
 !.zcode/
