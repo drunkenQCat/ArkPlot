@@ -159,7 +159,13 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
                 stage.ShowErrorHint = true;
                 if (stage == SelectedStage) SelectedStageShowErrorHint = true;
             }
-            if (stage == SelectedStage) RefreshVisibleLogs();
+            if (stage == SelectedStage && IsEntryVisible(entry))
+            {
+                // 增量追加而非 Clear+全量重加：后者会让每条新日志都把已有行容器全部销毁重建，
+                // N 条日志产生 O(N²) 次行实例化（曾累积 200 万个 LogRow，每个又带走一份类绑定订阅）。
+                VisibleLogs.Add(entry);
+                TrimVisibleLogs();
+            }
             UpdateProgress();
         });
     }
@@ -300,6 +306,7 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
         }
         VisibleLogs.Clear();
         foreach (var e in errors) VisibleLogs.Add(e);
+        _errorsOnlyView = true;
         StatusMessage = $"已定位到 {errors.Count} 条错误日志";
     }
 
@@ -312,16 +319,35 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
         RefreshVisibleLogs();
     }
 
+    /// <summary>可见日志上限：只保留最近 N 条。每行是一整棵 LogRow 可视树（含图片与 ToolTip 模板），
+    /// 不设上限时长流程的驻留行数与布局开销无界增长。</summary>
+    public const int MaxVisibleLogs = 1000;
+
+    /// <summary>「定位到问题」产生的临时仅错误视图；任何一次正式重建（切阶段/改过滤/新 pipeline）都会复位。</summary>
+    private bool _errorsOnlyView;
+
+    /// <summary>条目是否应出现在当前可见日志区。</summary>
+    private bool IsEntryVisible(LogEntry entry) =>
+        (!ShowErrorsOnly && !_errorsOnlyView) || entry.Level == LogLevel.Error;
+
     /// <summary>根据选中阶段与过滤开关重建右侧可见日志。</summary>
     public void RefreshVisibleLogs()
     {
+        _errorsOnlyView = false;
         VisibleLogs.Clear();
         if (SelectedStage == null) return;
         foreach (var e in SelectedStage.Logs)
         {
-            if (ShowErrorsOnly && e.Level != LogLevel.Error) continue;
+            if (!IsEntryVisible(e)) continue;
             VisibleLogs.Add(e);
         }
+        TrimVisibleLogs();
+    }
+
+    /// <summary>把可见日志裁到上限，丢弃最旧条目。</summary>
+    private void TrimVisibleLogs()
+    {
+        while (VisibleLogs.Count > MaxVisibleLogs) VisibleLogs.RemoveAt(0);
     }
 
     // ---------- 工具栏命令 ----------

@@ -1,4 +1,5 @@
-﻿using ArkPlot.Avalonia.Models;
+﻿using System.Collections.Specialized;
+using ArkPlot.Avalonia.Models;
 using ArkPlot.Avalonia.ViewModels;
 using ArkPlot.Arknights;
 using ArkPlot.Core.Infrastructure;
@@ -417,5 +418,87 @@ public class WorkflowLogPanelViewModelTests
         Assert.Contains("未发现可清除的缓存", vm.StatusMessage);
 
         DbFactory.Reset();
+    }
+
+    [AvaloniaFact]
+    public void Append_AddsVisibleLog_WithoutRaisingReset()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "A" });
+        vm.EnterStage(0);
+        Dispatcher.UIThread.RunJobs();
+
+        var actions = new List<NotifyCollectionChangedAction>();
+        ((INotifyCollectionChanged)vm.VisibleLogs).CollectionChanged +=
+            (_, e) => actions.Add(e.Action);
+
+        vm.Append(LogLevel.Info, "第1条");
+        vm.Append(LogLevel.Info, "第2条");
+        vm.Append(LogLevel.Info, "第3条");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(3, vm.VisibleLogs.Count);
+        // Reset 会让 ItemsControl 把已有行容器全部销毁重建；每条日志都 Reset 就是 O(N²) 行实例化的根源
+        Assert.DoesNotContain(NotifyCollectionChangedAction.Reset, actions);
+        Assert.All(actions, a => Assert.Equal(NotifyCollectionChangedAction.Add, a));
+    }
+
+    [AvaloniaFact]
+    public void Append_TrimmsVisibleLogs_ButKeepsStageLogsForExport()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "A" });
+        vm.EnterStage(0);
+        Dispatcher.UIThread.RunJobs();
+
+        const int total = WorkflowLogPanelViewModel.MaxVisibleLogs + 5;
+        for (var i = 0; i < total; i++) vm.Append(LogLevel.Info, $"日志{i}");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(WorkflowLogPanelViewModel.MaxVisibleLogs, vm.VisibleLogs.Count);
+        Assert.Equal($"日志5", vm.VisibleLogs[0].Message);
+        // 可见区被裁剪，阶段日志仍完整，导出/定位问题不受影响
+        Assert.Equal(total, vm.Stages[0].Logs.Count);
+    }
+
+    [AvaloniaFact]
+    public void ShowErrorsOnly_AppendSkipsNonErrors()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "A" });
+        vm.EnterStage(0);
+        vm.Append(LogLevel.Info, "普通1");
+        Dispatcher.UIThread.RunJobs();
+
+        vm.ShowErrorsOnly = true;
+        vm.Append(LogLevel.Info, "普通2");
+        vm.Append(LogLevel.Error, "错误2");
+        Dispatcher.UIThread.RunJobs();
+
+        var log = Assert.Single(vm.VisibleLogs);
+        Assert.Equal(LogLevel.Error, log.Level);
+    }
+
+    [AvaloniaFact]
+    public void LocateErrorView_SurvivesAppends_AndResetsOnStageSwitch()
+    {
+        var vm = new WorkflowLogPanelViewModel();
+        vm.BeginPipeline(new[] { "A" });
+        vm.EnterStage(0);
+        vm.Append(LogLevel.Info, "普通1");
+        vm.Append(LogLevel.Error, "错误1");
+        Dispatcher.UIThread.RunJobs();
+
+        vm.LocateErrorCommand.Execute(null);
+        vm.Append(LogLevel.Info, "普通2");
+        vm.Append(LogLevel.Error, "错误2");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(2, vm.VisibleLogs.Count);
+        Assert.All(vm.VisibleLogs, e => Assert.Equal(LogLevel.Error, e.Level));
+
+        vm.SelectStage(vm.SystemStage);
+        vm.SelectStage(vm.Stages[0]);
+        Assert.Equal(4, vm.VisibleLogs.Count);
     }
 }
