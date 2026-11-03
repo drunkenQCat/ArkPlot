@@ -490,6 +490,7 @@ $RECYCLE.BIN/
 .env
 .qwen/
 .reasonix/
+.zcode/
 ArkPlot.Novelizer.Tests/bootstrap/current_prompts
 
 # 临时咨询文档和设计文档
