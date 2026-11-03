@@ -497,4 +497,5 @@ ArkPlot.Novelizer.Tests/bootstrap/current_prompts
 *.consultation.md
 docs/temp/
 tmp_artifact/
+/log-stress.jsonl
 tools
