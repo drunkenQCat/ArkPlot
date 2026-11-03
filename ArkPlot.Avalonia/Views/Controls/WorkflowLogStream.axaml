@@ -18,6 +18,12 @@
                 <ba:AutoScrollBehavior Enabled="True"/>
             </i:Interaction.Behaviors>
             <ItemsControl ItemsSource="{Binding VisibleLogs}">
+                <!-- ItemsControl 默认面板是 StackPanel，会把全部日志行实体化；改用 VirtualizingStackPanel 只保留视口内的行 -->
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="models:LogEntry">
                         <controls:LogRow/>
