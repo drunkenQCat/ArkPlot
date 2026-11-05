@@ -84,6 +84,64 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
         SystemStage = new WorkflowStage("系统", 0) { IsSystem = true };
         _activeStage = SystemStage;
         SelectedStage = SystemStage;
+        VisibleLogs.CollectionChanged += (_, _) => { OnPropertyChanged(nameof(VisibleLogSummary)); OnPropertyChanged(nameof(HasVisibleLogs)); };
+    }
+
+    [ObservableProperty] private bool isRunning;
+    [ObservableProperty] private string currentActivity = "等待开始。生成详情可在下方展开。";
+    [ObservableProperty] private bool followLatest = true;
+    [ObservableProperty] private bool showAllStages;
+    partial void OnFollowLatestChanged(bool value)
+    {
+        if (value && !ShowAllStages && _activeStage != null) SelectedStage = _activeStage;
+    }
+    public int TotalErrors => Stages.Sum(s => s.ErrorCount) + SystemStage.ErrorCount;
+    public bool HasErrors => TotalErrors > 0;
+    public bool HasVisibleLogs => VisibleLogs.Count > 0;
+    public string VisibleLogSummary => $"显示 {VisibleLogs.Count} 条记录 · 最多保留最近 {MaxVisibleLogs} 条";
+    public string ErrorSummary => $"发现 {TotalErrors} 条错误 · 请检查对应阶段与生成结果";
+
+    private void RefreshErrorSummary()
+    {
+        OnPropertyChanged(nameof(TotalErrors));
+        OnPropertyChanged(nameof(HasErrors));
+        OnPropertyChanged(nameof(ErrorSummary));
+    }
+
+    [RelayCommand]
+    private void ShowAllLogs()
+    {
+        SelectedStage = null;
+        ShowAllStages = true;
+        HeaderText = "全部记录";
+        RefreshVisibleLogs();
+    }
+
+    [RelayCommand]
+    private void ShowSystemLogs() => SelectStage(SystemStage);
+
+    [RelayCommand]
+    private void LocateAllErrors()
+    {
+        ShowAllLogs();
+        FollowLatest = false;
+        ShowErrorsOnly = true;
+        RefreshVisibleLogs();
+    }
+
+    public void CancelPipeline(string message)
+    {
+        var stage = _activeStage;
+        if (stage != null)
+        {
+            stage.Status = StageStatus.Cancelled;
+            StopStageTiming(stage);
+        }
+        _activeStage = null;
+        IsRunning = false;
+        IsComplete = false;
+        CurrentActivity = message;
+        UpdateProgress();
     }
 
     // ---------- 数据接入 API（供主程序 pipeline 调用） ----------
@@ -91,7 +149,10 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     /// <summary>开始一轮 pipeline，按名称列表重建阶段时间线。</summary>
     public void BeginPipeline(IReadOnlyList<string> stageNames)
     {
+        IsRunning = true;
+        CurrentActivity = "正在准备任务…";
         Stages.Clear();
+        RefreshErrorSummary();
         for (var i = 0; i < stageNames.Count; i++)
         {
             Stages.Add(new WorkflowStage(stageNames[i], i + 1)
@@ -127,8 +188,9 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
 
         _activeStage = stage;
         stage.Status = StageStatus.Active;
+        CurrentActivity = stage.Name;
         StartStageTiming(stage);
-        SelectedStage = stage;
+        if (FollowLatest && !ShowAllStages) SelectedStage = stage;
         RefreshVisibleLogs();
         UpdateProgress();
     }
@@ -153,13 +215,16 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
         Dispatcher.UIThread.Post(() =>
         {
             stage.Logs.Add(entry);
+            if (IsRunning && ReferenceEquals(stage, _activeStage) && !message.Contains("[DIAG]") && !message.Contains("[perf]"))
+                CurrentActivity = message.Length > 180 ? message[..180] + "…" : message;
             if (level == LogLevel.Error)
             {
                 stage.ErrorCount++;
                 stage.ShowErrorHint = true;
                 if (stage == SelectedStage) SelectedStageShowErrorHint = true;
+                RefreshErrorSummary();
             }
-            if (stage == SelectedStage && IsEntryVisible(entry))
+            if ((ShowAllStages || stage == SelectedStage) && IsEntryVisible(entry))
             {
                 // 增量追加而非 Clear+全量重加：后者会让每条新日志都把已有行容器全部销毁重建，
                 // N 条日志产生 O(N²) 次行实例化（曾累积 200 万个 LogRow，每个又带走一份类绑定订阅）。
@@ -196,7 +261,7 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
         if (entry.HasDetail) entry.IsExpanded = !entry.IsExpanded;
     }
 
-    /// <summary>结束 pipeline：将未失败阶段全部置为完成，标记整体完成。</summary>
+    /// <summary>结束 pipeline：仅收尾正在执行的阶段，失败、取消和未执行阶段不算成功。</summary>
     public void CompletePipeline()
     {
         Dispatcher.UIThread.Post(() =>
@@ -208,12 +273,13 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
             }
             foreach (var s in Stages)
             {
-                if (s.Status != StageStatus.Failed) s.Status = StageStatus.Done;
+                if (s.Status == StageStatus.Active) s.Status = StageStatus.Done;
             }
             _activeStage = null;
-            TotalProgress = 100;
-            ProgressText = Stages.Count > 0 ? $"阶段 {Stages.Count}/{Stages.Count}" : string.Empty;
-            IsComplete = true;
+            UpdateProgress();
+            IsComplete = Stages.All(s => s.Status == StageStatus.Done);
+            IsRunning = false;
+            CurrentActivity = "处理结束，产物结果可在主窗口查看。";
             RefreshVisibleLogs();
         });
     }
@@ -221,13 +287,21 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     /// <summary>将当前阶段标记为失败（用于管线异常/网络错误等收尾路径），可附带一条错误日志。</summary>
     public void FailStage(string? message = null)
     {
+        var stage = _activeStage;
         Dispatcher.UIThread.Post(() =>
         {
-            var stage = _activeStage;
+            IsRunning = false;
+            IsComplete = false;
+            CurrentActivity = message ?? "生成失败";
             if (stage == null)
             {
                 if (message != null)
+                {
                     SystemStage.Logs.Add(new LogEntry(LogLevel.Error, message));
+                    SystemStage.ErrorCount++;
+                }
+                RefreshErrorSummary();
+                RefreshVisibleLogs();
                 return;
             }
             stage.Status = StageStatus.Failed;
@@ -237,6 +311,7 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
                 stage.ErrorCount++;
             }
             stage.ShowErrorHint = true;
+            RefreshErrorSummary();
             StopStageTiming(stage);
             _activeStage = null;
             UpdateProgress();
@@ -249,6 +324,7 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     /// <summary>点击阶段节点，切换右侧展示其日志。</summary>
     public void SelectStage(WorkflowStage stage)
     {
+        FollowLatest = false;
         SelectedStage = stage;
         RefreshVisibleLogs();
     }
@@ -314,6 +390,7 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
 
     partial void OnSelectedStageChanged(WorkflowStage? value)
     {
+        if (value != null) ShowAllStages = false;
         HeaderText = value == null ? "工作流日志" : $"{value.Name} · 阶段日志";
         SelectedStageShowErrorHint = value?.ShowErrorHint ?? false;
         RefreshVisibleLogs();
@@ -335,8 +412,11 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     {
         _errorsOnlyView = false;
         VisibleLogs.Clear();
-        if (SelectedStage == null) return;
-        foreach (var e in SelectedStage.Logs)
+        if (SelectedStage == null && !ShowAllStages) return;
+        var logs = ShowAllStages
+            ? Stages.SelectMany(s => s.Logs).Concat(SystemStage.Logs).OrderBy(e => e.Sequence)
+            : SelectedStage!.Logs.AsEnumerable();
+        foreach (var e in logs)
         {
             if (!IsEntryVisible(e)) continue;
             VisibleLogs.Add(e);
@@ -355,8 +435,12 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
     [RelayCommand]
     private void ClearLogs()
     {
-        foreach (var s in Stages) s.Logs.Clear();
+        foreach (var s in Stages) { s.Logs.Clear(); s.ErrorCount = 0; s.ShowErrorHint = false; }
         SystemStage.Logs.Clear();
+        SystemStage.ErrorCount = 0;
+        SystemStage.ShowErrorHint = false;
+        SelectedStageShowErrorHint = false;
+        RefreshErrorSummary();
         RefreshVisibleLogs();
         StatusMessage = "日志已清空";
     }
@@ -403,7 +487,7 @@ public partial class WorkflowLogPanelViewModel : ObservableObject
         var sb = new StringBuilder();
         sb.AppendLine("ArkPlot 工作流日志导出");
         sb.AppendLine("=".PadRight(48, '='));
-        foreach (var s in Stages)
+        foreach (var s in new[] { SystemStage }.Concat(Stages))
         {
             sb.AppendLine($"\n【{s.Number}. {s.Name}】 {s.StatusText}  {s.Duration}");
             foreach (var e in s.Logs)

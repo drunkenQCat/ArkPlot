@@ -1,6 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
-using ArkPlot.Avalonia.Models;
+using Avalonia.Interactivity;
 using ArkPlot.Avalonia.ViewModels;
 
 namespace ArkPlot.Avalonia.Views.Controls;
@@ -10,15 +10,13 @@ public partial class WorkflowLogPanel : UserControl
     public WorkflowLogPanel()
     {
         InitializeComponent();
+        var stages = this.FindControl<ListBox>("StageList")!;
+        stages.AddHandler(PointerPressedEvent, (_, _) => PauseFollowing(), RoutingStrategies.Tunnel);
+        stages.AddHandler(KeyDownEvent, (_, _) => PauseFollowing(), RoutingStrategies.Tunnel);
     }
 
-    /// <summary>点击阶段圆点，切换右侧日志为对应阶段。</summary>
-    private void StageTapped(object? sender, TappedEventArgs e)
+    private void PauseFollowing()
     {
-        if (sender is Border { DataContext: WorkflowStage stage } &&
-            DataContext is WorkflowLogPanelViewModel vm)
-        {
-            vm.SelectStage(stage);
-        }
+        if (DataContext is WorkflowLogPanelViewModel vm) vm.FollowLatest = false;
     }
 }

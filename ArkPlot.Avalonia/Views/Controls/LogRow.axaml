@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:models="using:ArkPlot.Avalonia.Models"
+             xmlns:icons="using:Material.Icons.Avalonia"
              xmlns:conv="using:ArkPlot.Avalonia.Converters"
              xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
              mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="40"
@@ -19,38 +20,38 @@
         背景必须显式给 Transparent —— Avalonia 只在背景非 null 时命中空隙，null 会让点击穿透，
         普通日志的 Tapped（展开详情）就会失效。
     -->
-    <UserControl.Styles>
+    <UserControl.Styles><Style Selector="TextBlock.level"><Setter Property="Foreground" Value="{DynamicResource SukiLowText}"/></Style><Style Selector="TextBlock.level.error"><Setter Property="Foreground" Value="{DynamicResource SukiDangerColor}"/></Style>
         <Style Selector="Border.logrow">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="CornerRadius" Value="4"/>
-            <Setter Property="Padding" Value="6,3"/>
-            <Setter Property="Margin" Value="0,1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="10,10"/>
+            <Setter Property="Margin" Value="0,3"/><Setter Property="BorderThickness" Value="0,0,0,1"/><Setter Property="BorderBrush" Value="{DynamicResource SukiBorderBrush}"/>
         </Style>
 
         <!-- 错误行：红色底纹 -->
         <Style Selector="Border.logrow.error">
-            <Setter Property="Background" Value="#33EF4444"/>
+            <Setter Property="Background" Value="{DynamicResource SukiAccentColor10}"/>
         </Style>
 
         <!-- 可复盘行（小说化思考/压缩）：圆角按钮外观，让用户一眼看出「这条点开能看复盘」 -->
         <Style Selector="Border.logrow.trace">
-            <Setter Property="Background" Value="#EFF6FF"/>
-            <Setter Property="BorderBrush" Value="#BFDBFE"/>
+            <Setter Property="Background" Value="{DynamicResource SukiPrimaryColor5}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SukiPrimaryColor25}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="6"/>
             <Setter Property="Margin" Value="0,2"/>
         </Style>
         <Style Selector="Border.logrow.trace:pointerover">
-            <Setter Property="Background" Value="#DBEAFE"/>
+            <Setter Property="Background" Value="{DynamicResource SukiPrimaryColor10}"/>
         </Style>
 
         <!-- 上下文压缩轮次：黄色按钮，与思考轮次区分 -->
         <Style Selector="Border.logrow.trace.compress">
-            <Setter Property="Background" Value="#FFFBEB"/>
-            <Setter Property="BorderBrush" Value="#FDE68A"/>
+            <Setter Property="Background" Value="{DynamicResource SukiAccentColor10}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SukiAccentColor25}"/>
         </Style>
         <Style Selector="Border.logrow.trace.compress:pointerover">
-            <Setter Property="Background" Value="#FEF3C7"/>
+            <Setter Property="Background" Value="{DynamicResource SukiAccentColor25}"/>
         </Style>
     </UserControl.Styles>
 
@@ -92,27 +93,24 @@
                             <TextBlock Grid.Column="0" Text="{Binding Time}"
                                        FontFamily="Consolas" FontSize="11" Opacity="0.5"
                                        VerticalAlignment="Center"/>
-                            <TextBlock Grid.Column="1" Text="{Binding LevelText}"
-                                       FontFamily="Consolas" FontSize="11" FontWeight="SemiBold"
-                                       Margin="8,0" VerticalAlignment="Center"
-                                       Foreground="{Binding Level, Converter={StaticResource LogLevelBrush}}"/>
-                            <Grid Grid.Column="2" ColumnDefinitions="*,Auto">
-                                <TextBlock Text="{Binding Message}" FontFamily="Consolas"
-                                           FontSize="11" TextWrapping="Wrap"
+                            <icons:MaterialIcon Grid.Column="1" Kind="{Binding LevelIcon}" Width="16" Height="16" Margin="8,0" VerticalAlignment="Center" Foreground="{DynamicResource SukiPrimaryColor120}"/>
+                            <Grid Grid.Column="2" ColumnDefinitions="*,Auto,Auto">
+                                <TextBlock Text="{Binding Message}"
+                                           FontSize="13" TextWrapping="Wrap"
                                            VerticalAlignment="Center"
                                            Grid.Column="0"/>
                                 <ProgressBar Grid.Column="1"
                                              IsVisible="{Binding HasProgress}"
                                              Value="{Binding Progress}" Minimum="0" Maximum="100"
                                              Width="80" Height="5" VerticalAlignment="Center"
-                                             Foreground="#2563EB" Background="#E5E7EB"/>
+                                             Foreground="{DynamicResource SukiPrimaryColor}" Background="{DynamicResource SukiBorderBrush}"/><icons:MaterialIcon Grid.Column="2" Kind="ChevronDown" IsVisible="{Binding HasDetail}" Width="15" Height="15" Margin="8,0,0,0"/><icons:MaterialIcon Grid.Column="2" Kind="OpenInNew" IsVisible="{Binding HasTrace}" Width="15" Height="15" Margin="8,0,0,0"/>
                             </Grid>
                         </Grid>
-                        <Border IsVisible="{Binding IsExpanded}" Background="#F3F4F6"
+                        <TextBlock Text="查看本轮输入、思考与输出" IsVisible="{Binding HasTrace}" FontSize="11" Margin="0,5,0,0" Foreground="{DynamicResource SukiLowText}"/><Border IsVisible="{Binding IsExpanded}" Background="{DynamicResource SukiPrimaryColor5}"
                                 CornerRadius="4" Padding="8" Margin="0,4,0,0"
-                                BorderBrush="#D1D5DB" BorderThickness="1">
+                                BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="1">
                             <TextBlock Text="{Binding Detail}" FontFamily="Consolas"
-                                       FontSize="11" TextWrapping="Wrap"/>
+                                       FontSize="12" TextWrapping="Wrap"/>
                         </Border>
                     </StackPanel>
                 </Grid>
@@ -121,9 +119,9 @@
         <!-- 分段横幅（醒目标注子流程，如「图片描述进行中」） -->
         <Border IsVisible="{Binding IsSection}" CornerRadius="4"
                 Padding="8,4" Margin="0,3"
-                Background="#EFF6FF" BorderBrush="#2563EB" BorderThickness="1">
+                Background="{DynamicResource SukiPrimaryColor5}" BorderBrush="{DynamicResource SukiPrimaryColor}" BorderThickness="1">
             <TextBlock Text="{Binding Message}" FontSize="12" FontWeight="Bold"
-                       Foreground="#1D4ED8" HorizontalAlignment="Center"
+                       Foreground="{DynamicResource SukiText}" HorizontalAlignment="Center"
                        VerticalAlignment="Center"/>
         </Border>
     </Grid>
