@@ -2,38 +2,18 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:testViews="using:ArkPlot.Avalonia.Views.Test"
     xmlns:sukiUi="using:SukiUI.Controls"
     mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
     x:Class="ArkPlot.Avalonia.Views.TestWindow"
     Title="ArkPlot 测试面板"
     Width="1000" Height="760" MinWidth="850" MinHeight="650">
 
-  <TabControl Margin="16">
-    <TabItem Header="文本模型测试">
-      <testViews:CachedContentTestPanel x:Name="TextModelTestTab"/>
-    </TabItem>
-    <TabItem Header="图片模型测试">
-      <testViews:CachedContentTestPanel x:Name="ImageModelTestTab"/>
-    </TabItem>
-    <!-- 开发选项 -->
-    <TabItem Header="开发选项">
-      <testViews:DevOptionsPanel x:Name="DevOptionsTab"/>
-    </TabItem>
-
-    <!-- PortraitPanel 测试 -->
-    <TabItem Header="立绘组件">
-      <testViews:PortraitTestPanel x:Name="PortraitTestTab"/>
-    </TabItem>
-
-    <!-- 音频播放测试 -->
-    <TabItem Header="音频播放">
-      <testViews:AudioTestPanel x:Name="AudioTestTab"/>
-    </TabItem>
-
-    <!-- 网络中断模拟 -->
-    <TabItem Header="网络中断">
-      <testViews:NetworkFailureTestPanel x:Name="NetworkFailureTab"/>
-    </TabItem>
+  <TabControl x:Name="TestTabs" Margin="16" SelectedIndex="0">
+    <TabItem Header="文本模型测试"/>
+    <TabItem Header="图片模型测试"/>
+    <TabItem Header="开发选项"/>
+    <TabItem Header="立绘组件"/>
+    <TabItem Header="音频播放"/>
+    <TabItem Header="网络中断"/>
   </TabControl>
 </sukiUi:SukiWindow>

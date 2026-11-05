@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using ArkPlot.Core.Infrastructure;
 using ArkPlot.Novelizer;
+using Microsoft.Data.Sqlite;
 using SqlSugar;
 
 namespace ArkPlot.Avalonia.Services;
@@ -38,20 +38,47 @@ public class TestCacheSource : ITestCacheSource
 {
     private readonly Func<SqlSugarClient> _getDb;
     private readonly string _outputRoot;
-    public TestCacheSource() : this(DbFactory.GetClient, Path.Combine(AppContext.BaseDirectory, "output")) { }
+    private readonly bool _ownsClients;
+    public TestCacheSource() : this(Path.Combine(AppContext.BaseDirectory, "arkplot.db"),
+        Path.Combine(AppContext.BaseDirectory, "output")) { }
+    internal TestCacheSource(string databasePath, string outputRoot)
+    {
+        _outputRoot = outputRoot;
+        _ownsClients = true;
+        // Each read owns its connection: background tab loading must not share the UI's SqlSugarClient.
+        // An empty cache is valid, and opening the test panel must not create or migrate a database.
+        _getDb = () =>
+        {
+            var exists = File.Exists(databasePath);
+            return new SqlSugarClient(new ConnectionConfig
+            {
+                ConnectionString = new SqliteConnectionStringBuilder
+                {
+                    DataSource = exists ? databasePath : ":memory:",
+                    Mode = exists ? SqliteOpenMode.ReadOnly : SqliteOpenMode.Memory,
+                    Pooling = false
+                }.ToString(),
+                DbType = DbType.Sqlite,
+                IsAutoCloseConnection = false
+            });
+        };
+    }
     public TestCacheSource(Func<SqlSugarClient> getDb, string outputRoot)
     { _getDb = getDb; _outputRoot = outputRoot; }
 
     public List<CachedChoice> GetActivities(bool images)
     {
         var db = _getDb();
+        using var ownedDb = _ownsClients ? db : null;
+        // Materialize the chapter IDs once. A correlated EXISTS scans the entire unindexed
+        // text table again for every Plot in older caches (tens of seconds on real data).
         var activities = HasEntries(db) ? db.Ado.SqlQuery<CachedChoice>("""
             SELECT DISTINCT a.Id, a.Name FROM Acts a JOIN Plot p ON p.ActId = a.Id
-            WHERE p.Status = 2 AND EXISTS (SELECT 1 FROM FormattedTextEntry f WHERE f.PlotId = p.Id)
+            WHERE p.Status = 2 AND p.Id IN (SELECT DISTINCT PlotId FROM FormattedTextEntry)
             ORDER BY a.Id DESC
             """) : [];
         if (images && db.DbMaintenance.IsAnyTable("PicDescriptions", false) &&
-            db.Ado.GetInt("SELECT COUNT(*) FROM PicDescriptions WHERE ImageUrl <> ''") > 0)
+            db.Ado.GetInt("SELECT EXISTS(SELECT 1 FROM PicDescriptions WHERE ImageUrl <> '')") > 0)
             activities.Insert(0, new CachedChoice { Id = -1, Name = "历史图片描述缓存" });
         return activities;
     }
@@ -60,18 +87,21 @@ public class TestCacheSource : ITestCacheSource
     {
         if (activityId == -1) return [new() { Id = -1, Name = "全部已描述图片" }];
         var db = _getDb();
+        using var ownedDb = _ownsClients ? db : null;
         if (!HasEntries(db)) return [];
         return db.Ado.SqlQuery<CachedChoice>("""
             SELECT p.Id, p.Title AS Name FROM Plot p LEFT JOIN StoryChapters c ON p.StoryChapterId = c.Id
             WHERE p.ActId = @act AND p.Status = 2
-            AND EXISTS (SELECT 1 FROM FormattedTextEntry f WHERE f.PlotId = p.Id)
+            AND p.Id IN (SELECT DISTINCT PlotId FROM FormattedTextEntry)
             ORDER BY c.StorySort, p.Id
             """, new SugarParameter("@act", activityId));
     }
 
     public string GetText(long plotId)
     {
-        var rows = _getDb().Ado.SqlQuery<CachedTextRow>("""
+        var db = _getDb();
+        using var ownedDb = _ownsClients ? db : null;
+        var rows = db.Ado.SqlQuery<CachedTextRow>("""
             SELECT CharacterName, Dialog, MdText FROM FormattedTextEntry
             WHERE PlotId = @plot ORDER BY "Index", Id
             """, new SugarParameter("@plot", plotId));
@@ -83,6 +113,7 @@ public class TestCacheSource : ITestCacheSource
     public List<CachedImage> GetImages(long plotId)
     {
         var db = _getDb();
+        using var ownedDb = _ownsClients ? db : null;
         var descriptions = db.DbMaintenance.IsAnyTable("PicDescriptions", false)
             ? db.Ado.SqlQuery<DescriptionRow>("SELECT ImageUrl, PicDesc FROM PicDescriptions WHERE ImageUrl <> ''") : [];
         var descriptionMap = descriptions.GroupBy(d => d.ImageUrl).ToDictionary(g => g.Key, g => g.First().PicDesc);
@@ -114,6 +145,7 @@ public class TestCacheSource : ITestCacheSource
     public List<CachedCharacter> GetCharacters()
     {
         var db = _getDb();
+        using var ownedDb = _ownsClients ? db : null;
         if (!HasEntries(db)) return [];
         var rows = db.Ado.SqlQuery<CharacterRow>("""
             SELECT COALESCE(NULLIF(f.CharacterCode, ''), f.CharacterName) AS CharacterKey,
