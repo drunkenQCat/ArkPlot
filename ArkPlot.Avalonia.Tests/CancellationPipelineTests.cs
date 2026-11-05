@@ -91,7 +91,7 @@ public class CancellationPipelineTests
     {
         // 先触发一次生成来创建 _loadMdCts，但由于没有真实数据，
         // 我们直接验证 StopGeneration 命令存在且可执行。
-        var vm = new MainWindowViewModel();
+        using var vm = new MainWindowViewModel();
         Assert.NotNull(vm.StopGenerationCommand);
         Assert.True(vm.StopGenerationCommand.CanExecute(null));
     }

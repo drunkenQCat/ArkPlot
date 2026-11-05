@@ -7,7 +7,7 @@
              x:Class="ArkPlot.Avalonia.Views.Controls.ChapterSelectionFlyout"
              x:DataType="vm:MainWindowViewModel">
   <Button
-      Content="当前活动🔻"
+      Content="选择章节"
       VerticalAlignment="Center"
       HorizontalAlignment="Right"
       IsEnabled="{Binding IsInitialized}"

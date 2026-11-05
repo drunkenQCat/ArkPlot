@@ -1,4 +1,4 @@
-﻿using ArkPlot.Arknights;
+using ArkPlot.Arknights;
 using ArkPlot.Arknights.Data;
 
 using System;
@@ -33,7 +33,20 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private int _selectedIndex;
 
     // --- Tab 2: 小说化设置 ---
-    [ObservableProperty] private int _selectedTabIndex;
+    [ObservableProperty] private int _selectedTabIndex = 1;
+    public bool IsNovelSection => SelectedTabIndex == 1;
+    public bool IsVisionSection => SelectedTabIndex == 2;
+    public bool IsVoiceSection => SelectedTabIndex == 3;
+    public bool IsNetworkSection => SelectedTabIndex == 4;
+    public bool IsTagsSection => SelectedTabIndex == 0;
+    partial void OnSelectedTabIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsNovelSection));
+        OnPropertyChanged(nameof(IsVisionSection));
+        OnPropertyChanged(nameof(IsVoiceSection));
+        OnPropertyChanged(nameof(IsNetworkSection));
+        OnPropertyChanged(nameof(IsTagsSection));
+    }
     [ObservableProperty] private string _systemPromptText = "";
     [ObservableProperty] private string _deepSeekApiKeyText = "";
     [ObservableProperty] private string _bailianApiKeyText = "";
@@ -212,8 +225,13 @@ public partial class SettingsViewModel : ObservableObject
 
     // ==================== Tab 2: 小说化设置 ====================
 
+    public bool IsBailianSelected => SelectedProvider == "百炼";
+    public bool IsDeepSeekSelected => SelectedProvider == "DeepSeek";
+    public bool IsVisionBailianSelected => VisionSelectedProvider == "百炼";
     partial void OnSelectedProviderChanged(string value)
     {
+        OnPropertyChanged(nameof(IsBailianSelected));
+        OnPropertyChanged(nameof(IsDeepSeekSelected));
         var settings = AppSettings.Load();
         var novelizer = settings.Novelizer with { CustomProviders = CustomProviderList.ToArray() };
         ModelOptions = GetNovelizerModels(novelizer, value);
@@ -632,6 +650,7 @@ public partial class SettingsViewModel : ObservableObject
 
     partial void OnVisionSelectedProviderChanged(string value)
     {
+        OnPropertyChanged(nameof(IsVisionBailianSelected));
         var vision = GetCurrentVisionSettings();
         VisionModelOptions = GetVisionModels(vision, value);
         if (!VisionModelOptions.Contains(VisionSelectedModel))
@@ -694,7 +713,8 @@ public partial class SettingsViewModel : ObservableObject
             OllamaBaseUrl: VisionOllamaBaseUrl,
             CustomProviders: VisionCustomProviderList.ToArray()
         );
-        settings = settings with { Vision = vision };
+        var apiKeys = new Dictionary<string, string>(settings.Novelizer.ApiKeys) { ["百炼"] = BailianApiKeyText };
+        settings = settings with { Vision = vision, Novelizer = settings.Novelizer with { ApiKeys = apiKeys } };
         settings.Save();
 
         VisionSaveFeedbackText = "✅ 已保存";
