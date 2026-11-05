@@ -246,7 +246,17 @@ public class NovelizerPipeline
             Log($"[SectionSplitter] Pass 2 完成");
         }
 
-        // 组装并写入
+        ct.ThrowIfCancellationRequested();
+        // Incomplete drafts are kept separately so TTS never mistakes them for a ready novel.
+        if (results.Any(r => !r.IsSuccess))
+        {
+            var incompleteDir = Path.Combine(outputDir, "incomplete");
+            Directory.CreateDirectory(incompleteDir);
+            var partialPath = NovelComposer.ComposeAndWrite(results,
+                Path.Combine(incompleteDir, Path.GetFileName(mdPath)), tag, Log);
+            throw new InvalidOperationException($"小说未完整生成，部分内容保存在 {partialPath}；请重试：" +
+                string.Join("；", results.Where(r => !r.IsSuccess).Select(r => $"{r.Title}: {r.ErrorMessage}")));
+        }
         var novelPath = NovelComposer.ComposeAndWrite(results, mdPath, tag, Log);
 
         var tracker = new TokenTracker();
@@ -300,7 +310,7 @@ public class NovelizerPipeline
     /// GUI 场景必须传 onlyFile：输出目录里可能残留历史全量快照（如 *_original.md），
     /// 扫全目录会把用户没选的章节也一并小说化（表现即「选了一个章节、所有章节都被导出」）。
     /// </summary>
-    public async Task BatchProcessAsync(
+    public async Task<NovelBatchResult> BatchProcessAsync(
         string inputDir,
         string[] models,
         bool force,
@@ -309,6 +319,7 @@ public class NovelizerPipeline
         string? onlyFile = null
     )
     {
+        var result = new NovelBatchResult();
         outputDir ??= inputDir;
         Log(
             $"[DIAG] BatchProcessAsync 开始。dir={inputDir}, models=[{string.Join(", ", models)}], force={force}, onlyFile={onlyFile ?? "(扫描目录)"}"
@@ -325,7 +336,8 @@ public class NovelizerPipeline
             {
                 Log($"❌ 指定的小说化输入不存在: {onlyFile}");
                 Log("[DIAG] 输入文件缺失，BatchProcessAsync 返回");
-                return;
+                result.Errors.Add("小说化输入文件不存在。");
+                return result;
             }
             mdFiles = [onlyFile];
         }
@@ -341,7 +353,8 @@ public class NovelizerPipeline
         {
             Log($"❌ 目录中没有 .md 文件: {inputDir}");
             Log($"[DIAG] 无 .md 文件，BatchProcessAsync 返回");
-            return;
+            result.Errors.Add("没有可处理的剧本文件。");
+            return result;
         }
 
         Log($"📂 发现 {mdFiles.Length} 个 .md 文件");
@@ -360,28 +373,33 @@ public class NovelizerPipeline
                 {
                     Log($"⏭️  跳过（缓存命中）: {Path.GetFileName(cached)}");
                     Log($"[DIAG] 缓存命中，跳过: {fn}");
+                    result.NovelFiles.Add(cached);
+                    result.CachedCount++;
                     continue;
                 }
 
                 if (_useMock)
                     Log($"[DIAG] Mock 模式：无视缓存，完整走一遍管线");
 
+                cache.Invalidate(mdFile, model);
                 Log($"[DIAG] 调用 ProcessMdFileAsync: {fn}, {model}");
                 try
                 {
                     var sw = System.Diagnostics.Stopwatch.StartNew();
-                    await ProcessMdFileAsync(mdFile, model, outputDir, ct: ct);
+                    var novelFile = await ProcessMdFileAsync(mdFile, model, outputDir, ct: ct);
+                    result.NovelFiles.Add(novelFile);
                     sw.Stop();
                     Log(
                         $"[DIAG] ProcessMdFileAsync 返回成功，{fn} 耗时 {sw.Elapsed.TotalSeconds:F1}s"
                     );
                     cache.Update(mdFile, model);
                 }
-                catch (BailianException ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     Log(
-                        $"[DIAG] ProcessMdFileAsync 抛出 BailianException: {fn}, {model}, {ex.Message}"
+                        $"[DIAG] ProcessMdFileAsync 失败: {fn}, {model}, {ex.Message}"
                     );
+                    result.Errors.Add($"{fn} / {model}：{ex.Message}");
                     LogError($"❌ [{model}] 失败: {ex.Message}");
                     var failedLog = Path.Combine(outputDir, "failed.txt");
                     File.AppendAllText(
@@ -398,37 +416,43 @@ public class NovelizerPipeline
         _traceCollector?.Save(outputDir);
 
         // 为每个小说 md 生成 epub
-        await GenerateEpubsForNovelsAsync(outputDir);
+        await GenerateEpubsForNovelsAsync(result, ct);
+        return result;
     }
 
     /// <summary>
     /// 为目录下所有小说 MD 生成 epub
     /// </summary>
-    private async Task GenerateEpubsForNovelsAsync(string outputDir)
+    private async Task GenerateEpubsForNovelsAsync(NovelBatchResult result, CancellationToken ct)
     {
         try
         {
-            var novelMdFiles = Directory.GetFiles(outputDir, "*_novel_*.md");
+            var novelMdFiles = result.NovelFiles.ToArray();
             if (novelMdFiles.Length > 0)
             {
                 Log($"[DIAG] 找到 {novelMdFiles.Length} 个小说 MD，开始生成 epub");
                 foreach (var mdPath in novelMdFiles)
                 {
+                    ct.ThrowIfCancellationRequested();
                     var title = Path.GetFileNameWithoutExtension(mdPath);
                     var epubPath = await PandocService.GenerateEpubAsync(mdPath, title);
                     if (epubPath != null)
                     {
+                        result.EpubFiles.Add(epubPath);
                         Log($"📚 已生成 epub: {Path.GetFileName(epubPath)}");
                     }
                     else
                     {
+                        result.Warnings.Add($"EPUB 未生成（请检查 Pandoc）：{Path.GetFileName(mdPath)}");
                         Log($"⚠️  epub 生成失败或 pandoc 不可用: {Path.GetFileName(mdPath)}");
                     }
                 }
             }
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
+            result.Warnings.Add($"EPUB 未生成：{ex.Message}");
             Log($"[DIAG] epub 生成过程异常: {ex.Message}");
         }
     }

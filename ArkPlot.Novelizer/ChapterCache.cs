@@ -44,6 +44,11 @@ public class ChapterCache
     /// <summary>
     /// 生成完成后更新缓存
     /// </summary>
+    public void Invalidate(string sourceMdPath, string model)
+    {
+        if (_entries.Remove(MakeKey(sourceMdPath, model))) Save();
+    }
+
     public void Update(string sourceMdPath, string model)
     {
         var sourceHash = ComputeMd5(sourceMdPath);

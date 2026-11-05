@@ -130,7 +130,7 @@ public class ChapterProcessor
             // 多轮模式 && 正文超过 chunkSize → 走多轮路径
             if (_enableMultiTurn && chapter.Body.Length > _chunkSize)
             {
-                await ProcessChapterMultiTurnAsync(chapter, totalCount, model, results, tokenTracker);
+                await ProcessChapterMultiTurnAsync(chapter, totalCount, model, results, tokenTracker, ct);
                 return;
             }
 
@@ -186,7 +186,7 @@ public class ChapterProcessor
         int totalCount,
         string model,
         ConcurrentDictionary<int, ChapterResult> results,
-        TokenTracker tokenTracker)
+        TokenTracker tokenTracker, CancellationToken ct)
     {
         _log($"\n--- 🔄 第 {chapter.Index + 1}/{totalCount} 章（多轮）: {chapter.Title} ({chapter.Body.Length} 字符) ---");
         _log($"[DIAG] 拆块中 (chunkSize={_chunkSize})...");
@@ -227,6 +227,7 @@ public class ChapterProcessor
         // 多轮对话：构建历史，逐轮调用，必要时压缩
         var history = new List<ChatMessage> { new("system", _systemPrompt) };
         var turnOutputs = new List<string>();
+        var turnErrors = new List<string>();
         var totalPromptTokens = 0;
         // Token 阈值以「距上次成功压缩」为一个周期计算；总量仅用于运行统计。
         // 若使用总量，首次越过阈值后每一轮都会重复压缩。
@@ -236,6 +237,7 @@ public class ChapterProcessor
 
         for (int i = 0; i < chunks.Count; i++)
         {
+            ct.ThrowIfCancellationRequested();
             // 检查是否需要压缩历史（compressInterval > 0 且已处理 compressInterval 轮之后）
             bool shouldCompress = i > 0
                 && i < chunks.Count - 1 // 最后一轮不压缩
@@ -324,6 +326,7 @@ public class ChapterProcessor
             {
                 turnSw.Stop();
                 _logError($"  ❌ {turnLabel} 失败: {ex.Message}");
+                turnErrors.Add($"{turnLabel}: {ex.Message}");
                 // 某轮失败，用占位符继续
                 turnOutputs.Add($"\n> *（第 {i + 1} 段生成失败：{ex.Message}）*");
             }
@@ -337,7 +340,7 @@ public class ChapterProcessor
             chapter.Index,
             chapter.Title,
             combinedContent,
-            totalCount);
+            totalCount) with { IsSuccess = turnErrors.Count == 0, ErrorMessage = turnErrors.Count == 0 ? null : string.Join("；", turnErrors) };
 
         _log($"\n  ✅ 多轮完成: {chunks.Count} 轮, {overallSw.Elapsed.TotalSeconds:F1}s 总耗时, 入 {totalPromptTokens} / 出 {totalCompletionTokens} tokens");
     }
