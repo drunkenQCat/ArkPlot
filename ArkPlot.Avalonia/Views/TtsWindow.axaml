@@ -9,7 +9,7 @@
     mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="750"
     x:Class="ArkPlot.Avalonia.Views.TtsWindow"
     x:DataType="vm:TtsViewModel"
-    Title="TTS 语音生成"
+    Title="制作有声书"
     Width="1200" Height="800"
     MinWidth="900" MinHeight="600">
 
@@ -19,6 +19,8 @@
       <ScrollViewer>
         <DockPanel Margin="12,8">
 
+        <TextBlock DockPanel.Dock="Top" Text="制作有声书" FontSize="22" FontWeight="Bold" Margin="0,0,0,8"/>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding AudiobookStatus}" TextWrapping="Wrap" Margin="0,0,0,12"/>
         <!-- ffmpeg 通知条 -->
         <Border DockPanel.Dock="Top" IsVisible="{Binding ShowFfmpegNotice}"
                 Background="#2080C0FF" BorderBrush="#4080C0FF"
@@ -43,20 +45,14 @@
           </DockPanel>
         </Border>
 
-        <!-- 角色立绘 (三击开启 Debug) -->
-        <Border DockPanel.Dock="Top" Margin="0,0,0,10"
-                PointerPressed="PortraitPanel_PointerPressed">
-          <controls:PortraitPanel DataContext="{Binding PortraitPanel}"/>
-        </Border>
-
         <!-- 小说文件选择 -->
-        <TextBlock DockPanel.Dock="Top" Text="小说文件" FontSize="12"
+        <TextBlock DockPanel.Dock="Top" Text="1. 小说文件（沿用本次生成结果）" FontSize="12"
                    Opacity="0.6" Margin="0,0,0,4"/>
         <Border DockPanel.Dock="Top" BorderBrush="#30FFFFFF"
                 BorderThickness="1" CornerRadius="4" Margin="0,0,0,8"
                 MaxHeight="80">
           <ScrollViewer>
-            <ItemsControl ItemsSource="{Binding NovelFiles}">
+            <ItemsControl ItemsSource="{Binding NovelFiles}" IsEnabled="{Binding !IsGenerating}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
                   <RadioButton Content="{Binding FileName}"
@@ -70,7 +66,7 @@
         </Border>
 
         <!-- 音色配置 -->
-        <Button DockPanel.Dock="Top" Content="🎙 音色配置 🔻" Margin="0,0,0,8"
+        <Button DockPanel.Dock="Top" Content="2. 确认角色音色" IsEnabled="{Binding !IsGenerating}" Margin="0,0,0,8"
                 HorizontalAlignment="Stretch" Classes="Rounded">
           <Button.Flyout>
             <Flyout Placement="RightEdgeAlignedTop">
@@ -125,16 +121,18 @@
           </Button.Flyout>
         </Button>
 
+        <TextBlock DockPanel.Dock="Top" Text="生成会复用相同文本与音色的缓存；更换音色后需要重新生成。导出会合并为每章一个 MP3。" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,8"/>
+        <Button DockPanel.Dock="Top" Content="打开已导出有声书" Command="{Binding OpenAudioExportFolderCommand}" Margin="0,0,0,8"/>
         <!-- 输出目录 -->
         <TextBlock DockPanel.Dock="Top" Text="输出目录" FontSize="12"
                    Opacity="0.6" Margin="0,0,0,4"/>
-        <TextBox DockPanel.Dock="Top" Text="{Binding TtsOutputDir}"
+        <TextBox DockPanel.Dock="Top" Text="{Binding TtsOutputDir}" IsEnabled="{Binding !IsGenerating}"
                  Margin="0,0,0,8"/>
 
         <!-- 进度 -->
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
           <TextBlock Text="{Binding ProgressText}" FontSize="12" Margin="0,0,0,4"/>
-          <ProgressBar Value="{Binding ProgressValue}" Maximum="100" Height="6"
+          <ProgressBar Value="{Binding ProgressValue}" Maximum="100" Height="20"
                        CornerRadius="3"/>
           <TextBlock Text="{Binding TotalProgressText}" FontSize="11"
                      Opacity="0.5" Margin="0,4,0,0"/>
@@ -143,23 +141,27 @@
         <!-- 按钮 -->
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal"
                     HorizontalAlignment="Center" Spacing="8" Margin="0,0,0,8">
-          <Button Content="生成整章" Command="{Binding StartGenerateCommand}"
+          <Button Content="3. 生成整章音频" Command="{Binding StartGenerateCommand}"
                   IsEnabled="{c:Binding !IsGenerating}"
-                  Width="120" Classes="Rounded Accent"/>
+                  Width="155" Classes="Rounded" Background="#2563EB" Foreground="White"/>
           <Button Content="取消" Command="{Binding CancelCommand}"
                   IsEnabled="{Binding IsGenerating}"
                   Width="120" Classes="Rounded"/>
         </StackPanel>
 
+        <Expander DockPanel.Dock="Top" Header="角色立绘预览" HorizontalAlignment="Stretch">
+            <Border Height="180" PointerPressed="PortraitPanel_PointerPressed">
+                <controls:PortraitPanel DataContext="{Binding PortraitPanel}"/>
+            </Border>
+        </Expander>
         <!-- 日志 -->
-        <Border DockPanel.Dock="Top" BorderBrush="#20FFFFFF"
-                BorderThickness="1" CornerRadius="4">
+        <Expander DockPanel.Dock="Top" Header="详细日志" HorizontalAlignment="Stretch">
           <ScrollViewer MaxHeight="200">
             <TextBox Text="{Binding LogText}" IsReadOnly="True"
                      TextWrapping="Wrap" Background="Transparent"
                      FontSize="11" AcceptsReturn="False"/>
           </ScrollViewer>
-        </Border>
+        </Expander>
         </DockPanel>
       </ScrollViewer>
     </Border>
@@ -171,7 +173,7 @@
       <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto"
             Margin="0,0,0,8">
         <ComboBox Grid.Column="0"
-                  ItemsSource="{Binding Chapters}"
+                  ItemsSource="{Binding Chapters}" IsEnabled="{Binding !IsGenerating}"
                   SelectedItem="{Binding SelectedChapter}"
                   PlaceholderText="选择章节...">
           <ComboBox.ItemTemplate>
@@ -180,13 +182,13 @@
             </DataTemplate>
           </ComboBox.ItemTemplate>
         </ComboBox>
-        <Button Grid.Column="1" Content="◄"
+        <Button Grid.Column="1" Content="◄" IsEnabled="{Binding !IsGenerating}" AutomationProperties.Name="上一章"
                 Command="{Binding PrevChapterCommand}" Margin="4,0"/>
-        <Button Grid.Column="2" Content="►"
+        <Button Grid.Column="2" Content="►" IsEnabled="{Binding !IsGenerating}" AutomationProperties.Name="下一章"
                 Command="{Binding NextChapterCommand}"/>
       </Grid>
 
-      <TextBox DockPanel.Dock="Top" Text="{Binding SearchText}"
+      <TextBox DockPanel.Dock="Top" Text="{Binding SearchText}" IsEnabled="{Binding !IsGenerating}"
                Watermark="搜索片段或角色名..." Margin="0,0,0,8"/>
 
       <!-- 连播控制 -->
@@ -223,14 +225,16 @@
             DataContext="{Binding}"/>
 
         <!-- 场景 Gallery -->
-        <controls:GalleryPanel Grid.Row="1" DataContext="{Binding GalleryPanel}"/>
+        <Expander Grid.Row="1" Header="场景图片与上下文" HorizontalAlignment="Stretch">
+            <controls:GalleryPanel DataContext="{Binding GalleryPanel}"/>
+        </Expander>
 
         <!-- 导出按钮 -->
         <StackPanel Grid.Row="2" Orientation="Horizontal"
                     HorizontalAlignment="Center" Spacing="8" Margin="0,8,0,0">
-          <Button Content="导出当前章节 MP3"
+          <Button Content="4. 导出当前章节 MP3" IsEnabled="{Binding !IsGenerating}"
                   Command="{Binding ExportCurrentChapterCommand}"/>
-          <Button Content="导出全部章节 MP3"
+          <Button Content="导出全部章节 MP3" IsEnabled="{Binding !IsGenerating}"
                   Command="{Binding ExportAllChaptersCommand}"/>
         </StackPanel>
       </Grid>
