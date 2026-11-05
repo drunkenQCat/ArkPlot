@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ArkPlot · SukiUI 布局原型</title>
+  <link rel="icon" href="assets/donkey.ico"><link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="prototype-bar"><span>布局原型 <span class="dot"></span> 示例数据 · 不调用模型</span><div><label for="scenario">演示状态</label><select id="scenario"><option value="ready">准备生成</option><option value="running">生成中</option><option value="partial">部分失败</option><option value="done">生成完成</option><option value="missing">尚未配置模型</option></select></div></div>
+  <main class="window">
+    <header class="titlebar"><div class="brand"><img src="assets/donkey.ico" alt=""><b>ArkPlot</b><span>明日方舟剧情工具</span></div><div class="toolbar"><button class="icon-button" id="theme" aria-label="切换深浅主题" title="切换深浅主题"><i data-icon="weather-night"></i></button><button class="icon-button" data-settings aria-label="设置" title="设置"><i data-icon="cog-outline"></i></button></div></header>
+    <div class="banner" role="img" aria-label="原有明日方舟 banner：罗德岛舰桥上的角色插画"></div>
+    <div class="workspace">
+      <nav class="scope-bar" aria-label="剧情分类"><div class="chips" id="categories"><button class="chip active" aria-pressed="true">活动剧情</button><button class="chip" aria-pressed="false">主线剧情</button><button class="chip" aria-pressed="false">干员密录</button></div><label class="language">资源语言<select id="language" aria-label="资源语言"><option>简体中文</option><option>English</option><option>日本語</option></select></label></nav>
+      <div class="columns">
+        <section class="glass story-panel" aria-labelledby="story-heading">
+          <div class="section-heading"><h1 id="story-heading">选择剧情</h1><button class="icon-button small" id="sync" aria-label="同步剧情目录" title="同步剧情目录"><i data-icon="refresh"></i></button></div>
+          <label class="story-picker"><span class="sr-only">活动</span><select id="story"><option>孤星</option><option>巴别塔</option><option>怀黍离</option></select><span class="badge">SideStory</span></label>
+          <div class="chapter-tools"><span id="selection-count">已选 4 / 8 章</span><div><button class="text-button" id="select-all">全选</button><button class="text-button" id="clear">清空</button></div></div>
+          <div class="chapters" id="chapters" aria-label="章节列表"></div>
+          <div class="selection-note"><i data-icon="information-outline"></i><span>仅处理勾选的章节，按剧情顺序输出。</span></div>
+        </section>
+        <section class="glass output-panel" aria-labelledby="output-heading">
+          <div class="section-heading"><h2 id="output-heading">输出内容</h2><span class="quiet" id="output-note">保留原始剧本</span></div>
+          <div class="targets" role="group" aria-label="输出类型">
+            <button class="target" data-target="script" aria-pressed="false"><i data-icon="file-document-outline"></i><span>剧本</span></button>
+            <button class="target active" data-target="novel" aria-pressed="true"><i data-icon="book-open-page-variant-outline"></i><span>小说</span></button>
+            <button class="target" data-target="audio" aria-pressed="false"><i data-icon="headphones"></i><span>有声书</span></button>
+          </div>
+          <div id="plan-view">
+            <div class="output-description"><h3 id="target-title">将剧情整理为连贯的小说</h3><p id="target-description">保留原始剧本，同时生成小说 Markdown 与 EPUB。</p></div>
+            <button class="model-row" data-settings><span class="icon-tile"><i data-icon="cog-outline"></i></span><span><b id="model-label">DeepSeek</b><small id="model-detail">deepseek-chat</small></span><span class="status-pill" id="model-status">已配置</span><i data-icon="chevron-right"></i></button>
+            <details class="options"><summary>输出选项<span id="options-summary">复用缓存 · 画面描述关闭</span><i data-icon="chevron-down"></i></summary><div class="option-body"><label class="switch-row"><span>补充画面描述<small>使用视觉模型理解背景与立绘</small></span><input type="checkbox" role="switch" id="vision"></label><label class="switch-row"><span>复用已完成章节<small>跳过已有结果，减少重复调用</small></span><input type="checkbox" role="switch" id="cache" checked></label></div></details>
+            <div class="flow-preview" aria-label="处理流程"><span>获取剧情</span><i data-icon="chevron-right"></i><span>整理剧本</span><i data-icon="chevron-right"></i><span id="last-step">小说与 EPUB</span></div>
+            <div class="action-area"><p id="cost-note"><i data-icon="information-outline"></i><span>小说生成会调用模型，费用由服务商收取。</span></p><button class="primary" id="start"><i data-icon="play"></i><span>生成小说</span><span class="button-count">4 章</span></button></div>
+          </div>
+          <div id="run-view" hidden aria-live="polite">
+            <div class="run-heading"><span class="run-symbol"><i data-icon="refresh"></i></span><div><h3 id="run-title">正在生成小说</h3><p id="run-detail">已完成 1 / 4 章 · 正在处理 CW-1 行动后</p></div></div>
+            <ol class="stepper" id="stepper"></ol>
+            <div id="run-message" class="run-message">已完成的章节会保留，可随时停止。</div>
+            <details class="logs"><summary>运行详情<i data-icon="chevron-down"></i></summary><div id="log-lines"></div></details>
+            <div class="run-actions" id="run-actions"></div>
+          </div>
+        </section>
+      </div>
+      <footer class="output-location"><i data-icon="folder-outline"></i><span>保存到</span><button id="folder" title="查看输出位置">output / 孤星<i data-icon="chevron-right"></i></button><span class="local-note">原始剧本始终保留</span></footer>
+    </div>
+  </main>
+  <p class="prototype-foot">SukiUI Blue · 原图 banner · GlassCard / Chips / Stepper / Dialog</p>
+  <dialog id="settings"><form method="dialog"><div class="dialog-heading"><div><h2>生成设置</h2><p>先连接模型，再按需要调整生成方式。</p></div><button class="icon-button" aria-label="关闭设置" value="cancel"><i data-icon="close"></i></button></div><div class="dialog-content"><div class="field"><label for="provider">模型服务</label><select id="provider"><option>DeepSeek</option><option>阿里云百炼</option><option>OpenAI 兼容服务</option></select></div><div class="field"><label for="model">模型</label><input id="model" value="deepseek-chat"></div><div class="field"><label for="key">API Key</label><input id="key" type="password" value="prototype-example-key" autocomplete="off"><small>原型中的值仅用于演示，不会保存或发送。</small></div><details class="advanced"><summary>高级设置 · 提示词与文本处理</summary><label for="prompt">小说生成提示词</label><textarea id="prompt" rows="3">保留剧情事实与人物性格，将对话与场景整理为连贯的叙事。</textarea><label class="switch-row"><span>保留思考记录</span><input type="checkbox" role="switch"></label></details></div><div class="dialog-footer"><button class="basic" value="cancel">取消</button><button class="primary" id="save-settings" value="save">应用到原型</button></div></form></dialog>
+  <dialog id="files"><div class="dialog-heading"><div><h2>输出文件</h2><p id="files-location">output / 孤星</p></div><button class="icon-button" data-close="files" aria-label="关闭文件列表"><i data-icon="close"></i></button></div><div class="file-list" id="file-list"></div><p class="dialog-hint">此处演示结果呈现方式，未生成真实文件。</p></dialog>
+  <dialog id="voices"><div class="dialog-heading"><div><h2>有声书工作台</h2><p>小说已准备好，确认角色声音后开始合成。</p></div><button class="icon-button" data-close="voices" aria-label="关闭有声书工作台"><i data-icon="close"></i></button></div><div class="voice-summary"><span class="status-pill">文本已就绪</span><span id="voice-count">4 章</span><span>合成后可按章导出 MP3</span></div><div class="voice-row"><b>旁白</b><select aria-label="旁白声音"><option>沉稳男声</option><option>自然女声</option></select></div><div class="voice-row"><b>角色对白</b><select aria-label="角色默认声音"><option>自动匹配，逐句可调整</option><option>使用旁白声音</option></select></div><p class="dialog-hint">声音配置与合成是下一步，不计入小说生成完成状态。</p><div class="dialog-footer"><button class="primary" id="audio-demo"><i data-icon="volume-high"></i>演示合成与导出</button></div></dialog>
+  <div class="toast" id="toast" role="status" hidden><i data-icon="information-outline"></i><span></span></div>
+  <script src="icons.js"></script><script src="app.js"></script>
+</body>
+</html>
