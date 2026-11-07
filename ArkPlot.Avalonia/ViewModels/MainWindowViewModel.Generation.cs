@@ -120,8 +120,8 @@ public partial class MainWindowViewModel
         if (IsPicDescEnabled && v != null && !v.UseMockVision)
         {
             if (string.IsNullOrWhiteSpace(v.SelectedModel)) issues.Add("请选择视觉模型");
-            if (v.SelectedProvider != "Ollama" && string.IsNullOrWhiteSpace(v.GetApiKeyForProvider(v.SelectedProvider)) &&
-                string.IsNullOrWhiteSpace(settings.GetApiKey(v.SelectedProvider))) issues.Add($"请配置图片描述的 {v.SelectedProvider} API Key");
+            if (v.SelectedProvider != "Ollama" && string.IsNullOrWhiteSpace(settings.GetVisionApiKey(v.SelectedProvider)))
+                issues.Add($"请配置图片描述的 {v.SelectedProvider} API Key");
         }
         ConfigurationReady = issues.Count == 0;
         ConfigurationStatus = ConfigurationReady ? "本地配置检查通过；服务可用性将在调用时确认。" : string.Join("；", issues);

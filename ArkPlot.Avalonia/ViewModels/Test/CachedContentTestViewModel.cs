@@ -19,6 +19,7 @@ public partial class CachedContentTestViewModel : ViewModelBase, IDisposable
     private readonly ITestCacheSource _cache;
     private readonly ICachedModelTestRunner _runner;
     private CatalogModel[] _catalog = [];
+    private CatalogModel[] _deepSeekCatalog = [];
     private CancellationTokenSource? _running;
     private readonly string _catalogPath = Path.Combine(AppContext.BaseDirectory, "bailian-model-catalog.json");
     public bool IsImageTest { get; }
@@ -57,8 +58,10 @@ public partial class CachedContentTestViewModel : ViewModelBase, IDisposable
         if (string.IsNullOrWhiteSpace(SystemPrompt)) SystemPrompt = imageTest ? VisionSettings.DefaultSystemPrompt : "将这段剧情改写为连贯的小说正文。";
         try { _catalog = JsonSerializer.Deserialize<CatalogModel[]>(File.ReadAllText(_catalogPath)) ?? []; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
+        _deepSeekCatalog = SettingsViewModel.ReadModelCache(Path.Combine(AppContext.BaseDirectory, "deepseek-model-catalog.json"));
         SelectedProvider = imageTest ? vision.SelectedProvider : settings.Novelizer.SelectedProvider;
         var selected = imageTest ? vision.SelectedModel : settings.Novelizer.SelectedModel;
+        if (SelectedProvider == "DeepSeek") selected = DeepSeekModelCatalog.NormalizeModelId(selected, Models.Select(m => m.Id).ToArray());
         SelectedModel = Models.FirstOrDefault(m => m.Id == selected) ?? Models.FirstOrDefault();
         RefreshCache();
     }
@@ -66,12 +69,18 @@ public partial class CachedContentTestViewModel : ViewModelBase, IDisposable
     partial void OnSelectedProviderChanged(string value)
     {
         var settings = AppSettings.Load();
-        var ids = value == "百炼" ? BailianModelCatalog.SelectModels(_catalog, IsImageTest)
-            : IsImageTest ? (settings.Vision ?? VisionSettings.CreateDefaults()).GetModelsForProvider(value)
-            : settings.Novelizer.GetModelsForProvider(value);
+        var ids = value switch
+        {
+            "百炼" => BailianModelCatalog.SelectModels(_catalog, IsImageTest),
+            "DeepSeek" when _deepSeekCatalog.Length > 0 => DeepSeekModelCatalog.SelectModels(_deepSeekCatalog, IsImageTest),
+            _ => IsImageTest ? (settings.Vision ?? VisionSettings.CreateDefaults()).GetModelsForProvider(value)
+                : settings.Novelizer.GetModelsForProvider(value)
+        };
         var previous = SelectedModel?.Id;
+        if (value == "DeepSeek" && previous != null) previous = DeepSeekModelCatalog.NormalizeModelId(previous, ids);
         Models = IsImageTest ? ids.Select(id => new ModelChoice(id, id)).ToArray() : ModelChoice.ForNovel(ids);
         SelectedModel = Models.FirstOrDefault(m => m.Id == previous) ?? Models.FirstOrDefault();
+        RefreshModelsCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -143,24 +152,30 @@ public partial class CachedContentTestViewModel : ViewModelBase, IDisposable
         if (next == SelectedChapter) LoadSelectedContent(); else SelectedChapter = next;
     }
 
-    [RelayCommand]
+    private bool SupportsModelRefresh() => SelectedProvider is "百炼" or "DeepSeek";
+
+    [RelayCommand(CanExecute = nameof(SupportsModelRefresh))]
     private async Task RefreshModels()
     {
         if (IsRefreshingModels) return;
         IsRefreshingModels = true;
-        StatusText = "正在刷新百炼模型目录…";
+        var provider = SelectedProvider;
+        StatusText = $"正在刷新 {provider} 模型目录…";
         try
         {
-            var key = AppSettings.Load().Novelizer.GetApiKeyForProvider("百炼");
+            var key = AppSettings.Load().Novelizer.GetApiKeyForProvider(provider);
+            CatalogModel[] models;
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            try { _catalog = await new BailianModelCatalog(http).FetchAsync(key); }
+            try { models = await SettingsViewModel.FetchCatalogAsync(http, provider, key); }
             catch (Exception ex) when (ex is OperationCanceledException or HttpRequestException { StatusCode: null })
             {
                 using var direct = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(30) };
-                _catalog = await new BailianModelCatalog(direct).FetchAsync(key);
+                models = await SettingsViewModel.FetchCatalogAsync(direct, provider, key);
             }
+            if (provider == "DeepSeek") _deepSeekCatalog = models;
+            else _catalog = models;
             OnSelectedProviderChanged(SelectedProvider);
-            StatusText = $"模型目录已刷新，当前平台可选 {Models.Length} 个模型。";
+            StatusText = $"{provider} 模型目录已刷新，当前平台可选 {Models.Length} 个模型。";
         }
         catch (Exception ex) { StatusText = $"刷新失败：{ex.Message}，已保留原有列表。"; }
         finally { IsRefreshingModels = false; }

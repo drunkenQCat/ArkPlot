@@ -131,8 +131,10 @@
                                         <StackPanel Spacing="7" IsVisible="{Binding IsBailianSelected}">
                                             <TextBlock Text="百炼 API Key" FontSize="12"/>
                                             <TextBox Text="{Binding BailianApiKeyText}" PasswordChar="•" Watermark="留空使用 DASHSCOPE_API_KEY 环境变量"/>
-                                            <Button Content="刷新可用模型" Classes="Basic" HorizontalAlignment="Left" Command="{Binding RefreshBailianModelsCommand}" IsEnabled="{Binding !IsModelCatalogLoading}"/>
-                                            <TextBlock Text="{Binding ModelCatalogStatus}" Classes="muted" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        <StackPanel Spacing="7" IsVisible="{Binding HasNovelRemoteCatalog}">
+                                            <Button Content="刷新可用模型" Classes="Basic" HorizontalAlignment="Left" Command="{Binding RefreshNovelModelsCommand}" IsEnabled="{Binding !IsModelCatalogLoading}"/>
+                                            <TextBlock Text="{Binding NovelModelCatalogStatus}" Classes="muted" TextWrapping="Wrap"/>
                                         </StackPanel>
                                         <TextBlock Text="保存配置不会发起模型调用；服务可用性在生成时确认。" Classes="muted" FontSize="11" TextWrapping="Wrap"/>
                                         <Expander Header="自定义平台管理" IsExpanded="False">
@@ -239,13 +241,18 @@
                                             </StackPanel>
                                         </StackPanel>
                                         <StackPanel Spacing="6">
-                                            <Button Content="刷新百炼模型列表" IsVisible="{Binding IsVisionBailianSelected}" Command="{Binding RefreshBailianModelsCommand}" IsEnabled="{Binding !IsModelCatalogLoading}"/>
-                                            <TextBlock IsVisible="{Binding IsVisionBailianSelected}" Text="{Binding ModelCatalogStatus}" TextWrapping="Wrap" Foreground="{DynamicResource SukiLowText}" FontSize="11"/>
+                                            <Button Content="刷新可用模型" IsVisible="{Binding HasVisionRemoteCatalog}" Command="{Binding RefreshVisionModelsCommand}" IsEnabled="{Binding !IsModelCatalogLoading}"/>
+                                            <TextBlock IsVisible="{Binding HasVisionRemoteCatalog}" Text="{Binding VisionModelCatalogStatus}" TextWrapping="Wrap" Foreground="{DynamicResource SukiLowText}" FontSize="11"/>
                                         </StackPanel>
                                         <StackPanel Spacing="6" IsVisible="{Binding IsVisionBailianSelected}">
                                             <TextBlock Text="百炼 API Key" FontSize="12"/>
                                             <TextBox Text="{Binding BailianApiKeyText}" PasswordChar="•" Watermark="留空使用 DASHSCOPE_API_KEY 环境变量"/>
                                             <TextBlock Text="与小说生成共用百炼凭据。" Classes="muted"/>
+                                        </StackPanel>
+                                        <StackPanel Spacing="6" IsVisible="{Binding IsVisionDeepSeekSelected}">
+                                            <TextBlock Text="DeepSeek API Key" FontSize="12"/>
+                                            <TextBox Text="{Binding DeepSeekApiKeyText}" PasswordChar="•" Watermark="留空使用 DEEPSEEK_API_KEY 环境变量"/>
+                                            <TextBlock Text="与小说生成共用 DeepSeek 凭据；模型列表仅显示支持图片输入的模型。" Classes="muted" TextWrapping="Wrap"/>
                                         </StackPanel>
                                         <StackPanel Spacing="4" IsVisible="{Binding IsOllamaProvider}">
                                             <TextBlock Text="Ollama 服务地址" FontSize="12"/>

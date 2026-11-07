@@ -564,9 +564,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
                 }
                 else
                 {
-                    var apiKey = vision.GetApiKeyForProvider(providerName);
-                    if (string.IsNullOrEmpty(apiKey))
-                        apiKey = settings.GetApiKey(providerName);
+                    var apiKey = settings.GetVisionApiKey(providerName);
                     var baseUrl = vision.GetBaseUrlForProvider(providerName);
 
                     if (string.IsNullOrEmpty(apiKey))
@@ -579,6 +577,7 @@ public partial class MainWindowViewModel : ViewModelBase, IDisposable
 
                     var visionConfig = new BailianVisionConfig
                     {
+                        ProviderName = providerName,
                         ApiKey = apiKey,
                         BaseUrl = baseUrl,
                         Model = model,

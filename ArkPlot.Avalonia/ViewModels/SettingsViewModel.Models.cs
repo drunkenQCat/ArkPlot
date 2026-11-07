@@ -13,11 +13,14 @@ namespace ArkPlot.Avalonia.ViewModels;
 
 public partial class SettingsViewModel
 {
-    private static readonly string CatalogCachePath = Path.Combine(AppContext.BaseDirectory, "bailian-model-catalog.json");
-    private CatalogModel[] _catalogModels = ReadModelCache();
+    private readonly string _modelCacheDirectory;
+    private readonly Func<string, string, Task<CatalogModel[]>> _fetchModelCatalog;
+    private CatalogModel[] _catalogModels = [];
+    private CatalogModel[] _deepSeekCatalogModels = [];
     private bool _settingsLoaded;
     [ObservableProperty] private bool _isModelCatalogLoading;
     [ObservableProperty] private string _modelCatalogStatus = "百炼模型列表会自动获取，也可手动刷新。";
+    [ObservableProperty] private string _deepSeekModelCatalogStatus = "DeepSeek 模型列表会自动获取，也可手动刷新。";
     [ObservableProperty] private ModelChoice[] _novelModelChoices = ModelChoice.ForNovel(NovelizerSettings.BuiltInProviders["DeepSeek"].Models);
     [ObservableProperty] private ModelChoice? _selectedNovelModelChoice;
 
@@ -36,85 +39,131 @@ public partial class SettingsViewModel
         if (value != null) SelectedModel = value.Id;
     }
 
-    private string[] GetNovelizerModels(NovelizerSettings settings, string provider) => provider == "百炼"
-        ? BailianModelCatalog.SelectModels(_catalogModels, imageInput: false)
-        : settings.GetModelsForProvider(provider).ToArray();
+    public bool HasNovelRemoteCatalog => SelectedProvider is "百炼" or "DeepSeek";
+    public bool HasVisionRemoteCatalog => VisionSelectedProvider is "百炼" or "DeepSeek";
+    public string NovelModelCatalogStatus => SelectedProvider == "DeepSeek" ? DeepSeekModelCatalogStatus : ModelCatalogStatus;
+    public string VisionModelCatalogStatus => VisionSelectedProvider == "DeepSeek" ? DeepSeekModelCatalogStatus : ModelCatalogStatus;
 
-    private string[] GetVisionModels(VisionSettings settings, string provider) => provider == "百炼"
-        ? BailianModelCatalog.SelectModels(_catalogModels, imageInput: true)
-        : settings.GetModelsForProvider(provider);
+    partial void OnModelCatalogStatusChanged(string value) => NotifyCatalogStatus();
+    partial void OnDeepSeekModelCatalogStatusChanged(string value) => NotifyCatalogStatus();
+    private void NotifyCatalogStatus()
+    {
+        OnPropertyChanged(nameof(NovelModelCatalogStatus));
+        OnPropertyChanged(nameof(VisionModelCatalogStatus));
+    }
+
+    private string[] GetNovelizerModels(NovelizerSettings settings, string provider) => provider switch
+    {
+        "百炼" => BailianModelCatalog.SelectModels(_catalogModels, imageInput: false),
+        "DeepSeek" when _deepSeekCatalogModels.Length > 0 => DeepSeekModelCatalog.SelectModels(_deepSeekCatalogModels, false),
+        _ => settings.GetModelsForProvider(provider).ToArray()
+    };
+
+    private string[] GetVisionModels(VisionSettings settings, string provider) => provider switch
+    {
+        "百炼" => BailianModelCatalog.SelectModels(_catalogModels, imageInput: true),
+        "DeepSeek" when _deepSeekCatalogModels.Length > 0 => DeepSeekModelCatalog.SelectModels(_deepSeekCatalogModels, true),
+        _ => settings.GetModelsForProvider(provider)
+    };
 
     [RelayCommand]
-    private async Task RefreshBailianModels()
+    private Task RefreshNovelModels() => RefreshModelCatalog(SelectedProvider);
+
+    [RelayCommand]
+    private Task RefreshVisionModels() => RefreshModelCatalog(VisionSelectedProvider);
+
+    private bool NeedsModelCatalog(string provider) => provider switch
     {
-        if (IsModelCatalogLoading) return;
+        "百炼" => _catalogModels.Length == 0,
+        "DeepSeek" => _deepSeekCatalogModels.Length == 0,
+        _ => false
+    };
+
+    private void SetCatalogStatus(string provider, string status)
+    {
+        if (provider == "DeepSeek") DeepSeekModelCatalogStatus = status;
+        else ModelCatalogStatus = status;
+    }
+
+    private async Task RefreshModelCatalog(string provider)
+    {
+        if (IsModelCatalogLoading || provider is not ("百炼" or "DeepSeek")) return;
         IsModelCatalogLoading = true;
-        ModelCatalogStatus = "正在获取百炼模型目录…";
+        SetCatalogStatus(provider, $"正在获取 {provider} 模型目录…");
         try
         {
-            var key = !string.IsNullOrWhiteSpace(BailianApiKeyText)
-                ? BailianApiKeyText : AppSettings.Load().Novelizer.GetApiKeyForProvider("百炼");
-            CatalogModel[] models;
-            var usedDirectFallback = false;
-            using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) })
-            {
-                try { models = await new BailianModelCatalog(http).FetchAsync(key); }
-                catch (Exception ex) when (ex is OperationCanceledException || ex is HttpRequestException { StatusCode: null })
-                {
-                    ModelCatalogStatus = "当前网络无法访问模型目录，正在尝试直连…";
-                    using var direct = new HttpClient(new HttpClientHandler { UseProxy = false })
-                    { Timeout = TimeSpan.FromSeconds(30) };
-                    models = await new BailianModelCatalog(direct).FetchAsync(key);
-                    usedDirectFallback = true;
-                }
-            }
-            if (BailianModelCatalog.SelectModels(models, false).Length == 0 ||
-                BailianModelCatalog.SelectModels(models, true).Length == 0)
-                throw new InvalidOperationException("目录没有返回符合条件的文本／图片理解模型，已保留现有列表。");
-            _catalogModels = models;
-            ApplyModelCatalog();
-            ModelCatalogStatus = $"已更新：{BailianModelCatalog.SelectModels(models, false).Length} 个文本模型，{BailianModelCatalog.SelectModels(models, true).Length} 个图片理解模型。请保存要使用的模型。";
-            if (usedDirectFallback) ModelCatalogStatus += " 本次通过直连获取。";
+            var enteredKey = provider == "DeepSeek" ? DeepSeekApiKeyText : BailianApiKeyText;
+            var key = !string.IsNullOrWhiteSpace(enteredKey) ? enteredKey : AppSettings.Load().GetApiKey(provider);
+            var models = await _fetchModelCatalog(provider, key);
+            var textModels = SelectCatalogModels(provider, models, false);
+            var imageModels = SelectCatalogModels(provider, models, true);
+            if (textModels.Length == 0)
+                throw new InvalidOperationException("目录没有返回可用的文本模型，已保留现有列表。");
+            if (provider == "DeepSeek") _deepSeekCatalogModels = models;
+            else _catalogModels = models;
+            ApplyModelCatalog(provider);
+            var status = $"{provider} 已更新：{textModels.Length} 个文本模型，{imageModels.Length} 个图片理解模型。请保存要使用的模型。";
+            SetCatalogStatus(provider, status);
             try
             {
-                var tempPath = CatalogCachePath + ".tmp";
+                var path = Path.Combine(_modelCacheDirectory, provider == "DeepSeek" ? "deepseek-model-catalog.json" : "bailian-model-catalog.json");
+                var tempPath = path + ".tmp";
                 await File.WriteAllTextAsync(tempPath, JsonSerializer.Serialize(models));
-                File.Move(tempPath, CatalogCachePath, overwrite: true);
+                File.Move(tempPath, path, overwrite: true);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                ModelCatalogStatus += " 本次列表可用，但本地缓存保存失败。";
+                SetCatalogStatus(provider, status + " 本次列表可用，但本地缓存保存失败。");
             }
         }
         catch (Exception ex)
         {
-            ModelCatalogStatus = $"获取失败：{ex.Message} " +
-                (_catalogModels.Length > 0 ? "已保留上次成功的模型列表。" : "尚无可用缓存，请检查 API Key 和网络后刷新。");
+            SetCatalogStatus(provider, $"获取失败：{ex.Message} 已保留现有模型列表，请检查 API Key 和网络后刷新。");
         }
         finally { IsModelCatalogLoading = false; }
     }
 
-    private void ApplyModelCatalog()
+    private async Task<CatalogModel[]> FetchModelCatalogAsync(string provider, string key)
     {
-        if (SelectedProvider == "百炼")
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        try { return await FetchCatalogAsync(http, provider, key); }
+        catch (Exception ex) when (ex is OperationCanceledException or HttpRequestException { StatusCode: null })
+        {
+            SetCatalogStatus(provider, "当前网络无法访问模型目录，正在尝试直连…");
+            using var direct = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(30) };
+            return await FetchCatalogAsync(direct, provider, key);
+        }
+    }
+
+    internal static Task<CatalogModel[]> FetchCatalogAsync(HttpClient http, string provider, string key) => provider == "DeepSeek"
+        ? new DeepSeekModelCatalog(http).FetchAsync(key) : new BailianModelCatalog(http).FetchAsync(key);
+
+    internal static string[] SelectCatalogModels(string provider, CatalogModel[] models, bool imageInput) => provider == "DeepSeek"
+        ? DeepSeekModelCatalog.SelectModels(models, imageInput) : BailianModelCatalog.SelectModels(models, imageInput);
+
+    private void ApplyModelCatalog(string provider)
+    {
+        if (SelectedProvider == provider)
         {
             var previous = SelectedModel;
-            ModelOptions = BailianModelCatalog.SelectModels(_catalogModels, false);
+            ModelOptions = GetNovelizerModels(AppSettings.Load().Novelizer, provider);
+            if (provider == "DeepSeek") previous = DeepSeekModelCatalog.NormalizeModelId(previous, ModelOptions);
             SelectedModel = ModelOptions.Contains(previous) ? previous : NovelModelChoices.FirstOrDefault()?.Id ?? "";
         }
-        if (VisionSelectedProvider == "百炼")
+        if (VisionSelectedProvider == provider)
         {
             var previous = VisionSelectedModel;
-            VisionModelOptions = BailianModelCatalog.SelectModels(_catalogModels, true);
+            VisionModelOptions = GetVisionModels(GetCurrentVisionSettings(), provider);
+            if (provider == "DeepSeek") previous = DeepSeekModelCatalog.NormalizeModelId(previous, VisionModelOptions);
             VisionSelectedModel = VisionModelOptions.Contains(previous) ? previous : VisionModelOptions.FirstOrDefault() ?? "";
         }
     }
 
-    private static CatalogModel[] ReadModelCache()
+    internal static CatalogModel[] ReadModelCache(string path)
     {
         try
         {
-            return (JsonSerializer.Deserialize<CatalogModel[]>(File.ReadAllText(CatalogCachePath)) ?? [])
+            return (JsonSerializer.Deserialize<CatalogModel[]>(File.ReadAllText(path)) ?? [])
                 .Where(m => m != null && !string.IsNullOrWhiteSpace(m.Id) && m.Inputs != null && m.Outputs != null && m.Capabilities != null)
                 .ToArray();
         }

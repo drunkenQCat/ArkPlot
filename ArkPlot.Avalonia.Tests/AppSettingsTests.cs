@@ -24,7 +24,7 @@ public class NovelizerSettingsTests
     {
         var s = CreateWithCustom();
         var models = s.GetModelsForProvider("DeepSeek");
-        Assert.Equal(["deepseek-v4-pro", "deepseek-v4-flash"], models);
+        Assert.Equal(["deepseek-v4-pro", "deepseek-flash"], models);
     }
 
     // B2
