@@ -185,6 +185,7 @@ public class NovelizerPipeline
         // 拆章
         Log($"[DIAG] 按 ## 标题拆章...");
         var chapters = ChapterSplitter.SplitChapters(processed);
+        var documentTitle = ChapterSplitter.GetDocumentTitle(processed);
         if (!chapters.Any(chapter => !string.IsNullOrWhiteSpace(chapter.Body)))
             throw new InvalidOperationException("源 Markdown 没有章节正文，已停止小说和 EPUB 生成。");
         Log($"[DIAG] 拆分为 {chapters.Count} 章");
@@ -253,11 +254,11 @@ public class NovelizerPipeline
             var incompleteDir = Path.Combine(outputDir, "incomplete");
             Directory.CreateDirectory(incompleteDir);
             var partialPath = NovelComposer.ComposeAndWrite(results,
-                Path.Combine(incompleteDir, Path.GetFileName(mdPath)), tag, Log);
+                Path.Combine(incompleteDir, Path.GetFileName(mdPath)), tag, Log, documentTitle);
             throw new InvalidOperationException($"小说未完整生成，部分内容保存在 {partialPath}；请重试：" +
                 string.Join("；", results.Where(r => !r.IsSuccess).Select(r => $"{r.Title}: {r.ErrorMessage}")));
         }
-        var novelPath = NovelComposer.ComposeAndWrite(results, mdPath, tag, Log);
+        var novelPath = NovelComposer.ComposeAndWrite(results, mdPath, tag, Log, documentTitle);
 
         var tracker = new TokenTracker();
         foreach (var r in results)
