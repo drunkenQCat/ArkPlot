@@ -261,6 +261,7 @@ public sealed class PromptEvalBootstrapper
 
             var visionConfig = new BailianVisionConfig
             {
+                ProviderName = providerName,
                 ApiKey = apiKey,
                 BaseUrl = baseUrl,
                 Model = model,
@@ -279,11 +280,7 @@ public sealed class PromptEvalBootstrapper
 
     private static string ResolveVisionApiKey(AppSettings settings, VisionSettings vision)
     {
-        var direct = vision.GetApiKeyForProvider(vision.SelectedProvider);
-        if (!string.IsNullOrWhiteSpace(direct))
-            return direct;
-
-        return settings.GetApiKey(vision.SelectedProvider);
+        return settings.GetVisionApiKey(vision.SelectedProvider);
     }
 
     private static async Task<PromptEvalBootstrapActResult> RunSingleActAsync(

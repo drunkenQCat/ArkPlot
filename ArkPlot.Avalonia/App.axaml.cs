@@ -38,7 +38,7 @@ public partial class App : Application
                 else if (message.WindowName == "TtsWindow")
                 {
                     var ttsView = new TtsWindow();
-                    var ttsViewModel = new TtsViewModel(message.ActName!);
+                    var ttsViewModel = new TtsViewModel(message.ActName!, message.ChapterNames, message.NovelPath, message.StoryOutputDir);
                     ttsView.DataContext = ttsViewModel;
                     ttsView.Show();
                 }

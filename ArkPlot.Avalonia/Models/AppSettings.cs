@@ -107,6 +107,16 @@ public record AppSettings(
         };
     }
 
+    /// <summary>Vision shares saved credentials with text models; explicit custom keys take precedence.</summary>
+    public string GetVisionApiKey(string? providerName)
+    {
+        if (providerName == "Ollama") return "";
+        var custom = Vision?.CustomProviders?.FirstOrDefault(p => p.Name == providerName);
+        if (!string.IsNullOrWhiteSpace(custom?.ApiKey)) return custom.ApiKey;
+        var shared = GetApiKey(providerName);
+        return !string.IsNullOrWhiteSpace(shared) ? shared : (Vision ?? VisionSettings.CreateDefaults()).GetApiKeyForProvider(providerName);
+    }
+
     private static AppSettings CreateDefaults()
     {
         return new AppSettings(
@@ -215,7 +225,7 @@ public record NovelizerSettings(
     public static readonly Dictionary<string, (string BaseUrl, string[] Models)> BuiltInProviders =
         new()
         {
-            ["DeepSeek"] = ("https://api.deepseek.com", ["deepseek-v4-pro", "deepseek-v4-flash"]),
+            ["DeepSeek"] = ("https://api.deepseek.com", ["deepseek-v4-pro", "deepseek-flash"]),
             ["百炼"] = (
                 "https://dashscope.aliyuncs.com/compatible-mode/v1",
                 []
@@ -319,6 +329,7 @@ public record VisionSettings(
     public static readonly Dictionary<string, string[]> BuiltInModels = new()
     {
         ["百炼"] = [],
+        ["DeepSeek"] = ["deepseek-flash"],
         ["Ollama"] = ["qwen3-vl:8b"],
     };
 
@@ -346,6 +357,8 @@ public record VisionSettings(
             return OllamaBaseUrl;
         if (providerName == "百炼")
             return "https://dashscope.aliyuncs.com/compatible-mode/v1";
+        if (providerName == "DeepSeek")
+            return "https://api.deepseek.com";
         var custom = CustomProviders?.FirstOrDefault(p => p.Name == providerName);
         return custom?.BaseUrl ?? "";
     }
@@ -360,7 +373,12 @@ public record VisionSettings(
         var custom = CustomProviders?.FirstOrDefault(p => p.Name == providerName);
         if (custom is not null && !string.IsNullOrEmpty(custom.ApiKey))
             return custom.ApiKey;
-        return Environment.GetEnvironmentVariable("DASHSCOPE_API_KEY") ?? "";
+        return providerName switch
+        {
+            "DeepSeek" => Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY") ?? "",
+            "百炼" => Environment.GetEnvironmentVariable("DASHSCOPE_API_KEY") ?? "",
+            _ => ""
+        };
     }
 
     public static VisionSettings CreateDefaults()

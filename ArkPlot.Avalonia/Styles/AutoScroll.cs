@@ -13,7 +13,18 @@ public class AutoScrollBehavior : Behavior<ScrollViewer>
     /// <summary>
     /// 启用或禁用自动滚动
     /// </summary>
-    public bool Enabled { get; set; } = true;
+    public static readonly StyledProperty<bool> EnabledProperty = AvaloniaProperty.Register<AutoScrollBehavior, bool>(nameof(Enabled), true);
+    public bool Enabled { get => GetValue(EnabledProperty); set => SetValue(EnabledProperty, value); }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == EnabledProperty && Enabled)
+        {
+            _shouldScroll = true;
+            AssociatedObject?.ScrollToEnd();
+        }
+    }
 
     private bool _shouldScroll = true;
 
@@ -55,7 +66,7 @@ public class AutoScrollBehavior : Behavior<ScrollViewer>
                 // 延迟执行，保证内容渲染完成后再滚动
                 Dispatcher.UIThread.Post(() =>
                 {
-                    AssociatedObject?.ScrollToEnd();
+                    if (Enabled && _shouldScroll) AssociatedObject?.ScrollToEnd();
                 }, DispatcherPriority.Background);
             }
         }

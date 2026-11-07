@@ -1,4 +1,4 @@
-﻿using System.Collections.Specialized;
+using System.Collections.Specialized;
 using ArkPlot.Avalonia.Models;
 using ArkPlot.Avalonia.ViewModels;
 using ArkPlot.Arknights;
@@ -61,13 +61,14 @@ public class WorkflowLogPanelViewModelTests
     }
 
     [AvaloniaFact]
-    public void CompletePipeline_MarksAllDone_AndSetsComplete()
+    public void CompletePipeline_AfterAllStagesRun_SetsComplete()
     {
         var vm = new WorkflowLogPanelViewModel();
         vm.BeginPipeline(new[] { "初始化", "下载", "完成" });
 
         vm.EnterStage(0);
         vm.EnterStage(1);
+        vm.EnterStage(2);
         vm.CompletePipeline();
         Dispatcher.UIThread.RunJobs();
 
@@ -245,10 +246,11 @@ public class WorkflowLogPanelViewModelTests
         vm.CompletePipeline();
         Dispatcher.UIThread.RunJobs();
 
-        Assert.True(vm.IsComplete);
+        Assert.False(vm.IsComplete);
         Assert.Equal(StageStatus.Failed, vm.Stages[1].Status);
         Assert.Equal(StageStatus.Done, vm.Stages[0].Status);
-        Assert.Equal(StageStatus.Done, vm.Stages[2].Status);
+        Assert.Equal(StageStatus.Pending, vm.Stages[2].Status);
+        Assert.True(vm.TotalProgress < 100);
     }
 
     [AvaloniaFact]

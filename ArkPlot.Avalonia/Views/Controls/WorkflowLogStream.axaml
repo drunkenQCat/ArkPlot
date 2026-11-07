@@ -12,10 +12,10 @@
              x:DataType="vm:WorkflowLogPanelViewModel">
 
     <Border CornerRadius="6" Padding="3,2"
-            Background="#FDFDFD" BorderBrush="#D1D5DB" BorderThickness="1">
+            Background="Transparent" BorderBrush="{DynamicResource SukiBorderBrush}" BorderThickness="0">
         <ScrollViewer x:Name="LogScroll">
             <i:Interaction.Behaviors>
-                <ba:AutoScrollBehavior Enabled="True"/>
+                <ba:AutoScrollBehavior Enabled="{Binding FollowLatest}"/>
             </i:Interaction.Behaviors>
             <ItemsControl ItemsSource="{Binding VisibleLogs}">
                 <!-- ItemsControl 默认面板是 StackPanel，会把全部日志行实体化；改用 VirtualizingStackPanel 只保留视口内的行 -->

@@ -37,7 +37,7 @@ using SukiUI.Toasts;
 
 namespace ArkPlot.Avalonia.ViewModels;
 
-public partial class MainWindowViewModel : ViewModelBase
+public partial class MainWindowViewModel : ViewModelBase, IDisposable
 {
     private readonly StorySyncService storySync = new();
 
@@ -53,7 +53,20 @@ public partial class MainWindowViewModel : ViewModelBase
         WorkflowLog.ToastManager = toastManager;
         WorkflowLog.IsClearCacheVisible = AppSettings.Load().Novelizer.ShowClearCacheButton;
         WorkflowLog.OpenTraceRequested += turnKey => OpenTraceReview(turnKey);
+        Chapters.CollectionChanged += (_, e) =>
+        {
+            if (e.OldItems != null) foreach (ChapterSelectionViewModel c in e.OldItems) c.PropertyChanged -= ChapterChanged;
+            if (e.NewItems != null) foreach (ChapterSelectionViewModel c in e.NewItems) c.PropertyChanged += ChapterChanged;
+            RefreshPlan();
+        };
         SeedSystemLog();
+    }
+
+    public void Dispose()
+    {
+        GitHubProxy.ConnectionFailed -= OnGitHubConnectionFailed;
+        _loadMdCts?.Cancel();
+        foreach (var chapter in Chapters) chapter.PropertyChanged -= ChapterChanged;
     }
 
     /// <summary>将使用说明作为系统阶段的初始日志，替代原先的占位文本。</summary>
@@ -134,6 +147,9 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnSelectedIndexChanged(int value)
     {
         Chapters.Clear();
+        HasResult = false;
+        LastNovelPath = "";
+        RefreshPlan();
     }
 
     // 当图片描述开关变化时，保存到 settings.json（保留其他 Vision 配置）
@@ -146,13 +162,14 @@ public partial class MainWindowViewModel : ViewModelBase
         };
         settings = settings with { Vision = vision };
         settings.Save();
+        RefreshPlan();
     }
 
     [RelayCommand]
     private async Task LoadChapters()
     {
         // 如果当前活动没有章节，则加载它们
-        if (CurrentAct != null && Chapters.Count == 0)
+        if (SelectedIndex >= 0 && SelectedIndex < currentActs.Count && Chapters.Count == 0)
         {
             await LoadChaptersForCurrentAct();
         }
@@ -163,9 +180,11 @@ public partial class MainWindowViewModel : ViewModelBase
         Chapters.Clear();
         Status = "正在加载章节列表...";
 
-        var chapters = storySync.GetChaptersByActId(CurrentAct.Id);
-        var storyLoader = new AkpStoryLoader(CurrentAct, chapters);
+        var requestedAct = CurrentAct;
+        var chapters = storySync.GetChaptersByActId(requestedAct.Id);
+        var storyLoader = new AkpStoryLoader(requestedAct, chapters);
         var chapterNames = await storyLoader.GetChapterNamesAsync();
+        if (SelectedIndex < 0 || SelectedIndex >= currentActs.Count || !ReferenceEquals(CurrentAct, requestedAct)) return;
 
         foreach (var name in chapterNames)
         {
@@ -221,9 +240,8 @@ public partial class MainWindowViewModel : ViewModelBase
         DeepSeekApiKey = settings.GetApiKey("DeepSeek");
         BailianApiKey = settings.GetApiKey("百炼");
 
-        // 根据 API Key 可用性初始化小说化开关
-        IsNovelizerEnabled =
-            !string.IsNullOrEmpty(DeepSeekApiKey) || !string.IsNullOrEmpty(BailianApiKey);
+        // 生成目标由用户明确选择，不根据已保存的凭据自动开启。
+        RefreshPlan();
 
         // 加载图片描述开关
         IsPicDescEnabled = settings.Vision?.IsPicDescEnabled ?? false;
@@ -294,6 +312,7 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             language = lang;
+            OnPropertyChanged(nameof(CurrentLanguageName));
             await SyncActsAsync(lang);
             noticeBlock.RaiseCommonEvent("【剧情索引文件加载完成】\n");
             LoadActs(storyType);
@@ -331,15 +350,25 @@ public partial class MainWindowViewModel : ViewModelBase
         storyType = type;
         currentActs = storySync.GetActsByType(language, type);
         StoriesNames = currentActs.Select(a => a.Name);
-        SelectedIndex = 0;
+        SelectedIndex = currentActs.Count > 0 ? 0 : -1;
+        HasResult = false;
+        LastNovelPath = "";
+        Chapters.Clear();
+        RefreshPlan();
     }
 
     [RelayCommand]
     private async Task LoadMd(CancellationToken ct)
     {
+        if (SelectedIndex < 0 || SelectedIndex >= currentActs.Count)
+        {
+            ConfigurationStatus = "请先选择活动。";
+            return;
+        }
         if (Chapters.Count == 0)
         {
-            await LoadChapters();
+            ConfigurationStatus = "请先点击“选择章节”，确认本次生成范围。";
+            return;
         }
         var selectedChapters = Chapters
             .Where(c => c.IsSelected)
@@ -358,8 +387,19 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        PrepareLoading();
+        CheckConfiguration();
+        if (!ConfigurationReady) return;
+        ResultSummary = "";
+        HasResult = false;
+        CanRetry = false;
+        NovelOutcome = "未完成";
+        EpubOutcome = "未生成";
+        LastNovelPath = "";
+        _runWarnings.Clear();
+        _scriptReady = false;
+        _novelReady = false;
         activeTitle = CurrentAct.Name;
+        PrepareLoading();
         var selectedChapterNames = Chapters
             .Where(c => c.IsSelected)
             .Select(c => c.ChapterName)
@@ -368,23 +408,22 @@ public partial class MainWindowViewModel : ViewModelBase
         // 向日志面板注入清除缓存所需的上下文（按勾选章节粒度）
         WorkflowLog.StoryOutputDir = outputPathOfCurrentStory;
         WorkflowLog.CurrentChapterNames = selectedChapterNames;
-        WorkflowLog.CurrentChapterEntries = await CollectChapterEntriesForClearCache(CurrentAct, selectedChapterNames);
-
-        var chapters = storySync.GetChaptersByActId(CurrentAct.Id);
-
-        var content = new AkpStoryLoader(CurrentAct, chapters,
-            onLog: msg =>
-            {
-                Console.WriteLine($"[LOG] {msg}");
-                noticeBlock.RaiseCommonEvent(msg);
-            });
-
         // 创建联动 CTS：命令的 CT 或 StopGeneration/OnGitHubConnectionFailed 都能触发取消
         _loadMdCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var effectiveCt = _loadMdCts.Token;
 
         try
         {
+            var chapters = storySync.GetChaptersByActId(CurrentAct.Id);
+
+            var content = new AkpStoryLoader(CurrentAct, chapters,
+                onLog: msg =>
+                {
+                    Console.WriteLine($"[LOG] {msg}");
+                    noticeBlock.RaiseCommonEvent(msg);
+                });
+
+            WorkflowLog.CurrentChapterEntries = await CollectChapterEntriesForClearCache(CurrentAct, selectedChapterNames);
             WorkflowLog.EnterStage(1); // 下载章节
             // GetAllChapters 内部自动处理缓存：
             // - Status=2 章节从 DB 加载
@@ -402,21 +441,27 @@ public partial class MainWindowViewModel : ViewModelBase
             WorkflowLog.EnterStage(4); // 导出文档（含图片描述）
             await ExportDocuments(content, effectiveCt);
 
-            WorkflowLog.EnterStage(5); // 小说化
-            await RunNovelizerIfEnabled(effectiveCt);
-
-            WorkflowLog.EnterStage(6); // 完成
-            await CompleteLoading();
+            if (IsNovelizerEnabled)
+            {
+                WorkflowLog.EnterStage(5);
+                await RunNovelizerIfEnabled(effectiveCt);
+                _novelReady = true;
+            }
+            effectiveCt.ThrowIfCancellationRequested();
             WorkflowLog.CompletePipeline();
+            FinishRun(_runWarnings.Count > 0 ? "部分成功" : "全部成功");
         }
         catch (OperationCanceledException)
         {
-            WorkflowLog.FailStage("生成已被取消");
+            WorkflowLog.CancelPipeline("生成已被取消，已完成文件和缓存保留。");
+            FinishRun("已取消");
             noticeBlock.RaiseCommonEvent("⚠️ 生成已被取消。");
         }
         catch (Exception ex)
         {
             WorkflowLog.FailStage($"生成失败：{ex.Message}");
+            _runWarnings.Add(ex.Message);
+            FinishRun(_scriptReady ? "部分成功" : "失败");
             noticeBlock.RaiseCommonEvent($"❌ 生成失败：{ex.Message}");
         }
         finally
@@ -432,11 +477,10 @@ public partial class MainWindowViewModel : ViewModelBase
         IsInitialized = false;
         _connectionFailedHandled = 0;
         HasNetworkError = false;
-        WorkflowLog.BeginPipeline(new[]
-        {
-            "初始化加载", "下载章节", "预加载资源", "解析文档", "导出文档",
-            "小说化", "完成",
-        });
+        var stages = new List<string> { "检查章节", "读取剧情", "准备图片", "解析剧情",
+            IsPicDescEnabled ? "图片描述与导出" : "导出剧本" };
+        if (IsNovelizerEnabled) stages.Add("生成小说");
+        WorkflowLog.BeginPipeline(stages);
         WorkflowLog.EnterStage(0);
         noticeBlock.RaiseCommonEvent("初始化加载...");
     }
@@ -520,9 +564,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
                 else
                 {
-                    var apiKey = vision.GetApiKeyForProvider(providerName);
-                    if (string.IsNullOrEmpty(apiKey))
-                        apiKey = settings.GetApiKey(providerName);
+                    var apiKey = settings.GetVisionApiKey(providerName);
                     var baseUrl = vision.GetBaseUrlForProvider(providerName);
 
                     if (string.IsNullOrEmpty(apiKey))
@@ -530,11 +572,12 @@ public partial class MainWindowViewModel : ViewModelBase
                         noticeBlock.RaiseCommonEvent(
                             $"⚠️ 图片描述已开启但未配置 {providerName} API Key，跳过。"
                         );
-                        goto skipVision;
+                        throw new InvalidOperationException($"图片描述缺少 {providerName} API Key");
                     }
 
                     var visionConfig = new BailianVisionConfig
                     {
+                        ProviderName = providerName,
                         ApiKey = apiKey,
                         BaseUrl = baseUrl,
                         Model = model,
@@ -627,15 +670,16 @@ colors: [银色, 黑色, 深蓝]
                 }
 
                 picDescService = new PicDescService(describeByUrl, extractFacts, skipCache: vision.UseMockVision);
+                picDescService.OnFailure = error => _runWarnings.Add($"图片描述失败：{error}");
                 picDescService.InitializeCleanup();
                 WorkflowLog.AddSection("图片描述进行中");
                 noticeBlock.RaiseCommonEvent($"✅ 图片描述已启用（{providerName} {model}）");
 
-                skipVision:
-                ;
+
             }
             catch (Exception ex)
             {
+                _runWarnings.Add($"图片描述未启用：{ex.Message}");
                 noticeBlock.RaiseCommonEvent($"⚠️ 图片描述初始化失败：{ex.Message}");
             }
         }
@@ -654,6 +698,7 @@ colors: [银色, 黑色, 深蓝]
             );
             var rawMdWithTitle = "# " + (activeTitle ?? "") + "\n\n" + rawMd;
             ExportMdAndHtmlFiles(rawMdWithTitle);
+            _scriptReady = true;
             if (IsLocalResChecked)
             {
                 AkpProcessor.WriteTyp(outputPathOfCurrentStory, contentLoader);
@@ -752,7 +797,7 @@ colors: [银色, 黑色, 深蓝]
                 $"❌ 未配置 {selectedProviderName} API Key，跳过小说生成。"
             );
             LogDiag("[RunNovelizer] apiKey 为空，返回");
-            return;
+            throw new InvalidOperationException($"未配置 {selectedProviderName} API Key，小说未生成。");
         }
 
         var model = novelizer.SelectedModel;
@@ -805,15 +850,25 @@ colors: [银色, 黑色, 深蓝]
             LogDiag("[RunNovelizer] 对象创建完成，即将调用 BatchProcessAsync");
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            await pipeline.BatchProcessAsync(
+            var batch = await pipeline.BatchProcessAsync(
                 outputPathOfCurrentStory,
                 [model],
-                force: false,
+                force: ForceNovelGeneration,
                 ct: ct,
                 // 只处理本次导出的 {活动名}.md。不能扫全目录：目录里的历史快照（如 *_original.md）
                 // 会被一并小说化，把用户没选的章节全部生成出来。
                 onlyFile: Path.Combine(outputPathOfCurrentStory, $"{activeTitle}.md")
             );
+            NovelOutcome = $"已就绪 {batch.NovelFiles.Count} 个文件，其中缓存复用 {batch.CachedCount} 个";
+            EpubOutcome = batch.EpubFiles.Count > 0 ? $"已生成 {batch.EpubFiles.Count} 个" : "未生成";
+            if (batch.Errors.Count > 0)
+            {
+                NovelOutcome = "未完整生成（可能保留部分内容）";
+                throw new InvalidOperationException(string.Join("；", batch.Errors));
+            }
+            if (batch.NovelFiles.Count == 0) throw new InvalidOperationException("未生成小说文件。");
+            _runWarnings.AddRange(batch.Warnings);
+            LastNovelPath = batch.NovelFiles[0];
             sw.Stop();
             LogDiag("[RunNovelizer] BatchProcessAsync 返回，耗时 {0}s", sw.Elapsed.TotalSeconds);
 
@@ -822,7 +877,7 @@ colors: [银色, 黑色, 深蓝]
             // 将小说 MD 也转换为 HTML（epub 已在 NovelizerPipeline 内部生成）
             try
             {
-                var novelMdFiles = Directory.GetFiles(outputPathOfCurrentStory, "*_novel_*.md");
+                var novelMdFiles = batch.NovelFiles.ToArray();
                 LogDiag("[RunNovelizer] 找到 {0} 个小说 MD，开始转 HTML", novelMdFiles.Length);
                 foreach (var mdPath in novelMdFiles)
                 {
@@ -842,6 +897,7 @@ colors: [银色, 黑色, 深蓝]
             catch (Exception ex)
             {
                 LogDiag("[RunNovelizer] HTML 生成过程异常: {0}", ex.Message);
+                _runWarnings.Add($"小说 HTML 未生成：{ex.Message}");
                 noticeBlock.RaiseCommonEvent($"⚠️ 小说HTML生成失败: {ex.Message}");
             }
         }
@@ -855,11 +911,13 @@ colors: [银色, 黑色, 深蓝]
         {
             LogDiag("[RunNovelizer] 捕获 BailianException: {0}", ex.Message);
             noticeBlock.RaiseCommonEvent($"❌ 小说生成失败: {ex.Message}");
+            throw;
         }
         catch (Exception ex)
         {
             LogDiag("[RunNovelizer] 捕获 Exception({1}): {0}", ex.Message, ex.GetType().Name);
             noticeBlock.RaiseCommonEvent($"❌ 小说生成出错: {ex.Message}");
+            throw;
         }
 
         LogDiag("[RunNovelizer] 执行完毕，即将返回到 LoadMd");
@@ -870,25 +928,6 @@ colors: [银色, 黑色, 深蓝]
     {
         var msg = "[DIAG] " + string.Format(format, args);
         noticeBlock.RaiseCommonEvent(msg);
-    }
-
-    private async Task CompleteLoading()
-    {
-        var messageBox = MessageBoxManager.GetMessageBoxStandard(
-            title: "提示",
-            text: "生成完成。是否打开文件夹？",
-            @enum: ButtonEnum.OkCancel,
-            icon: Icon.Info
-        );
-
-        // 2. 以 Popup 形式展示，并等待用户点击结果
-        var result = await messageBox.ShowAsync();
-
-        // 3. 根据返回值执行后续逻辑
-        if (result == ButtonResult.Ok)
-        {
-            OpenOutputFolder();
-        }
     }
 
     /// <summary>
@@ -910,7 +949,8 @@ colors: [银色, 黑色, 深蓝]
                 Directory.CreateDirectory(OutputPath);
 
             string command = string.Empty;
-            string arguments = OutputPath;
+            string arguments = SelectedIndex >= 0 && SelectedIndex < currentActs.Count ? Path.Combine(OutputPath, CurrentAct.Name) : OutputPath;
+            Directory.CreateDirectory(arguments);
 
             // 检查当前操作系统并选择适当的命令
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -931,7 +971,8 @@ colors: [银色, 黑色, 深蓝]
             }
 
             // 执行打开文件夹命令
-            ProcessStartInfo startInfo = new() { FileName = command, Arguments = arguments };
+            ProcessStartInfo startInfo = new() { FileName = command };
+            startInfo.ArgumentList.Add(arguments);
 
             Process.Start(startInfo);
         }
@@ -1034,7 +1075,7 @@ colors: [银色, 黑色, 深蓝]
     private void OpenSettings()
     {
         var messenger = WeakReferenceMessenger.Default;
-        messenger.Send(new OpenWindowMessage("SettingsWindow", JsonPath));
+        messenger.Send(new OpenWindowMessage("SettingsWindow", JsonPath, selectedTabIndex: 1));
     }
 
     /// <summary>
@@ -1082,7 +1123,7 @@ colors: [银色, 黑色, 深蓝]
     private void OpenTts()
     {
         // 优先用当前选中的活动名，回退到上次 LoadMd 设置的 activeTitle
-        var actName = CurrentAct?.Name ?? activeTitle;
+        var actName = SelectedIndex >= 0 && SelectedIndex < currentActs.Count ? CurrentAct.Name : activeTitle;
 
         if (string.IsNullOrEmpty(actName))
         {
@@ -1097,7 +1138,7 @@ colors: [银色, 黑色, 深蓝]
             return;
         }
 
-        var storyOutputDir = OutputPaths.ActRootAbsolute(actName);
+        var storyOutputDir = Path.Combine(OutputPath, actName);
 
         // 检测输出目录是否有小说化缓存
         var hasNovelCache =
@@ -1118,14 +1159,16 @@ colors: [银色, 黑色, 深蓝]
         }
 
         var messenger = WeakReferenceMessenger.Default;
-        messenger.Send(new OpenWindowMessage("TtsWindow", currentActName: actName));
+        messenger.Send(new OpenWindowMessage("TtsWindow", currentActName: actName, storyOutputDir: storyOutputDir,
+            chapterNames: Chapters.Where(c => c.IsSelected).Select(c => c.ChapterName).ToArray(),
+            novelPath: File.Exists(LastNovelPath) && Path.GetDirectoryName(LastNovelPath) == storyOutputDir ? LastNovelPath : null));
     }
 
     /// <summary>打开小说化复盘窗口。turnKey 非空时定位到对应轮次（从日志点击进入）。</summary>
     [RelayCommand]
     private void OpenTraceReview(string? turnKey = null)
     {
-        var actName = CurrentAct?.Name ?? activeTitle;
+        var actName = SelectedIndex >= 0 && SelectedIndex < currentActs.Count ? CurrentAct.Name : activeTitle;
         // trace 落盘目录就是 outputPathOfCurrentStory，随消息传给复盘面板，避免接收方再拼路径
         var storyOutputDir = actName is null ? null : Path.Combine(OutputPath, actName);
         WeakReferenceMessenger.Default.Send(new OpenWindowMessage("TraceReviewWindow", currentActName: actName, turnKey: turnKey, storyOutputDir: storyOutputDir));

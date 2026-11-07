@@ -16,6 +16,8 @@ public enum LogLevel
 /// <summary>阶段内的一条日志记录。</summary>
 public partial class LogEntry : ObservableObject
 {
+    private static long _nextSequence;
+    public long Sequence { get; } = System.Threading.Interlocked.Increment(ref _nextSequence);
     /// <summary>记录时间（HH:mm:ss）。</summary>
     public string Time { get; }
 
@@ -73,6 +75,13 @@ public partial class LogEntry : ObservableObject
 
     /// <summary>是否为错误级别（错误行带红色底纹）。</summary>
     public bool IsError => Level == LogLevel.Error;
+    public Material.Icons.MaterialIconKind LevelIcon => Level switch
+    {
+        LogLevel.Success => Material.Icons.MaterialIconKind.Check,
+        LogLevel.Error or LogLevel.Warn => Material.Icons.MaterialIconKind.AlertCircleOutline,
+        LogLevel.Progress => Material.Icons.MaterialIconKind.Refresh,
+        _ => Material.Icons.MaterialIconKind.InformationOutline
+    };
 
     /// <summary>级别显示文本。</summary>
     public string LevelText => Level switch

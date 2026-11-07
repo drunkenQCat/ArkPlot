@@ -10,6 +10,7 @@ public enum StageStatus
     Active,  // 进行中
     Done,    // 成功
     Failed,  // 失败
+    Cancelled, // 已取消
 }
 
 /// <summary>工作流中的一个阶段（里程碑节点）。</summary>
@@ -44,6 +45,8 @@ public partial class WorkflowStage : ObservableObject
 
     /// <summary>该阶段内的错误条数。</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusText))]
+    [NotifyPropertyChangedFor(nameof(CircleGlyph))]
     private int _errorCount;
 
     /// <summary>阶段内进度（0-100），用于阶段进度条与总进度推算。</summary>
@@ -73,7 +76,8 @@ public partial class WorkflowStage : ObservableObject
     /// <summary>状态徽章文本。</summary>
     public string StatusText => Status switch
     {
-        StageStatus.Done => "完成",
+        StageStatus.Cancelled => "已取消",
+        StageStatus.Done => ErrorCount > 0 ? "有错误" : "完成",
         StageStatus.Active => "进行中",
         StageStatus.Failed => "失败",
         _ => "等待",
@@ -82,7 +86,8 @@ public partial class WorkflowStage : ObservableObject
     /// <summary>节点圆形图标内容。</summary>
     public string CircleGlyph => Status switch
     {
-        StageStatus.Done => "\u2713",   // ✓
+        StageStatus.Cancelled => "—",
+        StageStatus.Done => ErrorCount > 0 ? "!" : "\u2713",
         StageStatus.Failed => "\u2717", // ✗
         StageStatus.Active => "\u25CF", // ●
         _ => Number.ToString(),

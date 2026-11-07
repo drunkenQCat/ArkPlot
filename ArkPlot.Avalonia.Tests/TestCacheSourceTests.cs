@@ -79,6 +79,58 @@ public class TestCacheSourceTests : IDisposable
         Assert.Contains("第一章", character.Source);
     }
 
+    [Fact]
+    public void Lists_DoNotRescanTheTextTableForEveryChapterInUnindexedCaches()
+    {
+        _db.Ado.ExecuteCommand("""
+            INSERT INTO Plot VALUES (3,1,'无文本的已解析章节',11,2),(4,2,'未解析但有文本',11,1);
+            INSERT INTO FormattedTextEntry (Id,PlotId) VALUES (4,4);
+            """);
+        var queries = new List<string>();
+        _db.Aop.OnLogExecuting = (sql, _) => queries.Add(sql);
+        Assert.Equal(1, Assert.Single(_source.GetActivities(false)).Id);
+        Assert.Equal(1, Assert.Single(_source.GetChapters(1)).Id);
+        _db.Aop.OnLogExecuting = null;
+        foreach (var query in queries.Where(q => q.Contains("SELECT p.Id") || q.Contains("SELECT DISTINCT a.Id")))
+        {
+            var plan = _db.Ado.SqlQuery<QueryPlan>("EXPLAIN QUERY PLAN " + query, new SugarParameter("@act", 1));
+            Assert.DoesNotContain(plan, row => row.Detail.Contains("CORRELATED", StringComparison.OrdinalIgnoreCase));
+        }
+        Assert.Equal(2, queries.Count(q => q.Contains("SELECT p.Id") || q.Contains("SELECT DISTINCT a.Id")));
+    }
+
+    [Fact]
+    public async Task FileCache_UsesIndependentReadOnlyConnectionsForConcurrentTabs()
+    {
+        Directory.CreateDirectory(_root);
+        var path = Path.Combine(_root, "cache.db");
+        _db.Ado.ExecuteCommand("VACUUM INTO @path", new SugarParameter("@path", path));
+        var before = File.ReadAllBytes(path);
+        var source = new TestCacheSource(path, _root);
+        await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
+        {
+            Assert.Single(source.GetActivities(false));
+            Assert.Single(source.GetChapters(1));
+            Assert.Contains("你好", source.GetText(1));
+            Assert.Equal(3, source.GetImages(1).Count);
+            Assert.Single(source.GetCharacters());
+        })));
+        Assert.Equal(before, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void MissingCache_DoesNotCreateDatabase()
+    {
+        var path = Path.Combine(_root, "missing.db");
+        var source = new TestCacheSource(path, _root);
+        Assert.Empty(source.GetActivities(false));
+        Assert.Empty(source.GetActivities(true));
+        Assert.Empty(source.GetCharacters());
+        Assert.False(File.Exists(path));
+    }
+
+    public class QueryPlan { public string Detail { get; set; } = ""; }
+
     public void Dispose()
     {
         _db.Dispose();

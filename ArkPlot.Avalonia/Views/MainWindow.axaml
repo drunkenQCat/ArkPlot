@@ -1,269 +1,208 @@
-<sukiUi:SukiWindow xmlns="https://github.com/avaloniaui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:vm="using:ArkPlot.Avalonia.ViewModels"
-    xmlns:b="using:Avalonia.Xaml.Behaviors"
-    xmlns:i="using:Avalonia.Xaml.Interactivity"
-    xmlns:ia="using:Avalonia.Xaml.Interactions.Core"
-    xmlns:c="using:CalcBinding"
-    xmlns:sukiUi="using:SukiUI.Controls"
-    xmlns:ba="using:ArkPlot.Avalonia.Styles"
-    xmlns:controls="using:ArkPlot.Avalonia.Views.Controls"
-    mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
-    x:Class="ArkPlot.Avalonia.Views.MainWindow"
-    x:DataType="vm:MainWindowViewModel"
-    Title="ArkPlot"
-    Height="710"
-    Width="780">
+<sukiUi:SukiWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:models="using:ArkPlot.Avalonia.Models" xmlns:vm="using:ArkPlot.Avalonia.ViewModels" xmlns:b="using:Avalonia.Xaml.Behaviors" xmlns:i="using:Avalonia.Xaml.Interactivity" xmlns:ia="using:Avalonia.Xaml.Interactions.Core" xmlns:c="using:CalcBinding" xmlns:sukiUi="using:SukiUI.Controls" xmlns:ba="using:ArkPlot.Avalonia.Styles" xmlns:icons="using:Material.Icons.Avalonia" xmlns:controls="using:ArkPlot.Avalonia.Views.Controls" mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450" x:Class="ArkPlot.Avalonia.Views.MainWindow" x:DataType="vm:MainWindowViewModel" Title="ArkPlot" Height="850" MinHeight="680" Width="1040" MinWidth="860">
     <Window.DataContext>
-        <vm:MainWindowViewModel />
+        <vm:MainWindowViewModel/>
     </Window.DataContext>
     <Window.Styles>
-        <Style Selector="RadioButton.Chips:disabled">
-            <Setter Property="Foreground" Value="Red" />
-            <Setter Property="Background" Value="#CCC" />
-            <Setter Property="TextBlock.TextDecorations" Value="Strikethrough" />
-            <Setter Property="Opacity" Value="0.3" />
+        <Style Selector="Button.target">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SukiBorderBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource SukiLowText}"/>
         </Style>
-        <Style Selector="RadioButton.Chips:disabled:checked">
-            <Setter Property="Opacity" Value="0.2" />
-            <Setter Property="TextBlock.TextDecorations" Value="Strikethrough" />
+        <Style Selector="Button.target.selected">
+            <Setter Property="Background" Value="{DynamicResource SukiPrimaryColor10}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SukiPrimaryColor}"/>
+            <Setter Property="Foreground" Value="{DynamicResource SukiPrimaryColor120}"/>
         </Style>
-
+        <Style Selector="Border.chapter">
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="Margin" Value="0,2"/>
+        </Style>
+        <Style Selector="Border.chapter.selected">
+            <Setter Property="Background" Value="{DynamicResource SukiPrimaryColor10}"/>
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="{DynamicResource SukiLowText}"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
     </Window.Styles>
-
     <sukiUi:SukiWindow.Hosts>
-        <sukiUi:SukiToastHost Manager="{Binding ToastManager}" />
+        <sukiUi:SukiToastHost Manager="{Binding ToastManager}"/>
     </sukiUi:SukiWindow.Hosts>
     <i:Interaction.Behaviors>
         <ia:EventTriggerBehavior EventName="Opened">
-            <ia:InvokeCommandAction Command="{Binding LoadInitResourceCommand}" />
+            <ia:InvokeCommandAction Command="{Binding LoadInitResourceCommand}"/>
         </ia:EventTriggerBehavior>
     </i:Interaction.Behaviors>
-
-    <Grid RowDefinitions="*">
-        <Grid ColumnDefinitions="400,*">
-        <!-- ============ Column A：banner + 主操作区 ============ -->
-        <StackPanel Grid.Column="0">
-            <!-- <Column A> -->
-            <Grid Height="100">
-            <Border
-                x:Name="BannerImage"
-                HorizontalAlignment="Stretch"
-                VerticalAlignment="Stretch"
-                Tapped="BannerImage_Tapped">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto" Margin="22,12,22,0" RowSpacing="18">
+            <Border x:Name="BannerImage" Height="180" CornerRadius="12" ClipToBounds="True" Tapped="BannerImage_Tapped">
                 <Border.Background>
-                    <ImageBrush Source="avares://ArkPlot.Avalonia/Assets/slogan.jpg"
-                                Stretch="UniformToFill"
-                                AlignmentY="Top"
-                    />
+                    <ImageBrush Source="avares://ArkPlot.Avalonia/Assets/slogan.jpg" Stretch="UniformToFill" AlignmentY="Top"/>
                 </Border.Background>
             </Border>
-        </Grid>
-        <Grid
-            Margin="10 10 10 0"
-            RowDefinitions="*,*,*,*"
-        >
-            <StackPanel
-                Spacing="6"
-                Orientation="Horizontal"
-                HorizontalAlignment="Center"
-                Margin="6"
-                Grid.Row="0">
-                <RadioButton
-                    Content="插曲"
-                    IsChecked="True"
-                    Classes="Chips"
-                    IsEnabled="{c:Binding !LoadLangTableCommand.IsRunning and IsInitialized}"
-                    Command="{Binding LoadActsCommand}"
-                    CommandParameter="ACTIVITY_STORY" />
-                <RadioButton
-                    Content="故事集"
-                    Classes="Chips"
-                    IsEnabled="{c:Binding !LoadLangTableCommand.IsRunning and IsInitialized}"
-                    Command="{Binding LoadActsCommand}"
-                    CommandParameter="MINI_STORY" />
-                <RadioButton
-                    Classes="Chips"
-                    Content="主题曲"
-                    IsEnabled="{c:Binding !LoadLangTableCommand.IsRunning and IsInitialized}"
-                    Command="{Binding LoadActsCommand}"
-                    CommandParameter="MAIN_STORY" />
-            </StackPanel>
-            <StackPanel
-                Spacing="5"
-                HorizontalAlignment="Center"
-                Orientation="Horizontal"
-                Grid.Row="1">
-                <RadioButton
-                    Content="简中"
-                    Classes="Chips"
-                    IsChecked="True"
-                    Command="{Binding LoadLangTableCommand}"
-                    IsEnabled="{c:Binding !LoadLangTableCommand.IsRunning and IsInitialized}"
-                    CommandParameter="zh_CN" />
-                <RadioButton
-                    Content="日本語"
-                    Classes="Chips"
-                    Command="{Binding LoadLangTableCommand}"
-                    IsEnabled="{c:Binding !LoadLangTableCommand.IsRunning and IsInitialized}"
-                    CommandParameter="ja_JP" />
-                <RadioButton
-                    Content="Eng"
-                    Classes="Chips"
-                    Command="{Binding LoadLangTableCommand}"
-                    IsEnabled="{c:Binding !LoadLangTableCommand.IsRunning and IsInitialized}"
-                    CommandParameter="en_US" />
-                <RadioButton
-                    Content="한국어"
-                    Classes="Chips"
-                    Command="{Binding LoadLangTableCommand}"
-                    IsEnabled="{c:Binding !LoadLangTableCommand.IsRunning and IsInitialized}"
-                    CommandParameter="ko_KR" />
-
-            </StackPanel>
-            <Grid Grid.Row="2"
-                Margin="0 10 0 10">
-                <Grid Margin="0 4 0 0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <controls:ChapterSelectionFlyout
-                        Grid.Row="0"
-                        Grid.Column="0"
-                        DataContext="{Binding}" />
-                    <Button Grid.Row="1" Grid.Column="0"
-                        Content="Tags文件"
-                        Command="{Binding PickTagFileCommand}"
-                        VerticalAlignment="Center"
-                        HorizontalAlignment="Right"
-                        Foreground="#FF326CF3"
-                        BorderBrush="#FF326CF3" />
-                    <Button Grid.Row="2" Grid.Column="0"
-                        Content="生成位置"
-                        Command="{Binding OpenOutputFolderCommand}"
-                        VerticalAlignment="Center"
-                        HorizontalAlignment="Right"
-                        Foreground="#FF326CF3"
-                        BorderBrush="#FF326CF3"
-                        ToolTip.Tip="点击打开输出文件夹" />
-
-                    <ComboBox
-                        x:Name="StoryNameCombo"
-                        Grid.Row="0"
-                        Grid.Column="1"
-                        ItemsSource="{Binding StoriesNames}"
-                        MaxDropDownHeight="800"
-                        SelectedIndex="{Binding SelectedIndex}"
-                        VerticalAlignment="Center"
-                        HorizontalAlignment="Stretch" />
-                    <TextBox Grid.Row="1" Grid.Column="1"
-                        Text="{Binding JsonPath}"
-                        VerticalAlignment="Center"
-                        HorizontalAlignment="Stretch" />
-                    <!-- AllowDrop="True" -->
-                    <!-- Drop="JsonPathBox_Drop" -->
-                    <!-- PreviewDragOver="TextBox_PreviewDragOver" -->
-                    <TextBox Grid.Row="2" Grid.Column="1"
-                        Text="{Binding OutputPath}" 
-                        VerticalAlignment="Center"
-                        HorizontalAlignment="Stretch"
-                        IsEnabled="False" />
-                </Grid>
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{c:Binding IsInitialized and !LoadMdCommand.IsRunning and !LoadLangTableCommand.IsRunning}">
+                    <RadioButton Content="插曲" GroupName="StoryKind" IsChecked="True" Classes="Chips" Command="{Binding LoadActsCommand}" CommandParameter="ACTIVITY_STORY"/>
+                    <RadioButton Content="故事集" GroupName="StoryKind" Classes="Chips" Command="{Binding LoadActsCommand}" CommandParameter="MINI_STORY"/>
+                    <RadioButton Content="主题曲" GroupName="StoryKind" Classes="Chips" Command="{Binding LoadActsCommand}" CommandParameter="MAIN_STORY"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Button Classes="Basic Small" Content="{Binding CurrentLanguageName}" ToolTip.Tip="资源语言" IsEnabled="{c:Binding IsInitialized and !LoadLangTableCommand.IsRunning}">
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuItem Header="简体中文" Command="{Binding LoadLangTableCommand}" CommandParameter="zh_CN"/>
+                                <MenuItem Header="日本語" Command="{Binding LoadLangTableCommand}" CommandParameter="ja_JP"/>
+                                <MenuItem Header="English" Command="{Binding LoadLangTableCommand}" CommandParameter="en_US"/>
+                                <MenuItem Header="한국어" Command="{Binding LoadLangTableCommand}" CommandParameter="ko_KR"/>
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+                    <Button Classes="Basic Icon" Click="Theme_Click" ToolTip.Tip="切换深浅主题" AutomationProperties.Name="切换深浅主题">
+                        <icons:MaterialIcon Kind="ThemeLightDark" Width="19" Height="19"/>
+                    </Button>
+                    <Button Classes="Basic Icon" Command="{Binding OpenSettingsCommand}" ToolTip.Tip="设置" AutomationProperties.Name="设置">
+                        <icons:MaterialIcon Kind="CogOutline" Width="19" Height="19"/>
+                    </Button>
+                </StackPanel>
             </Grid>
-            <StackPanel
-                Margin="0 0 0 0"
-                Grid.Row="3"
-                VerticalAlignment="Center">
-                <!-- 开始/停止 合并按钮：同位置、互斥显示 -->
-                <Panel Margin="0 10 0 10" HorizontalAlignment="Center">
-                    <Button
-                        IsVisible="{c:Binding !LoadMdCommand.IsRunning and !IsLogStressRunning}"
-                        IsEnabled="{c:Binding !LoadInitResourceCommand.IsRunning and IsInitialized}"
-                        VerticalAlignment="Center" Command="{Binding LoadMdCommand}" Width="100">
-                        开始
-                    </Button>
-                    <Button
-                        IsVisible="{c:Binding LoadMdCommand.IsRunning or IsLogStressRunning}"
-                        VerticalAlignment="Center"
-                        Command="{Binding StopGenerationCommand}"
-                        Width="100"
-                        Background="#FFD32F2F"
-                        Foreground="White">
-                        停止
-                    </Button>
-                </Panel>
-                <Button
-                    Margin="0 0 0 10"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center" Command="{Binding OpenSettingsCommand}" Width="100">
-                    设置
+            <Grid Grid.Row="2" ColumnDefinitions="1.08*,*" ColumnSpacing="18">
+                <sukiUi:GlassCard Padding="20" IsAnimated="False">
+                    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="12" MinHeight="400">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="选择剧情" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Classes="Basic Small" Command="{Binding LoadChaptersCommand}" IsEnabled="{Binding IsInitialized}" ToolTip.Tip="加载章节">
+                                <icons:MaterialIcon Kind="Refresh" Width="18" Height="18"/>
+                            </Button>
+                        </Grid>
+                        <ComboBox Grid.Row="1" x:Name="StoryNameCombo" ItemsSource="{Binding StoriesNames}" SelectedIndex="{Binding SelectedIndex}" SelectionChanged="StorySelectionChanged" IsEnabled="{Binding IsInitialized}" HorizontalAlignment="Stretch" FontSize="17" FontWeight="SemiBold" MaxDropDownHeight="400" AutomationProperties.Name="活动"/>
+                        <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+                            <TextBlock Text="{Binding ChapterSelectionSummary}" Classes="muted" VerticalAlignment="Center"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" IsEnabled="{Binding IsInitialized}">
+                                <Button Classes="Basic Small" Content="全选" Command="{Binding SelectAllChaptersCommand}"/>
+                                <Button Classes="Basic Small" Content="清空" Command="{Binding DeselectAllChaptersCommand}"/>
+                            </StackPanel>
+                        </Grid>
+                        <Grid Grid.Row="3">
+                            <ScrollViewer Height="232" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding Chapters}" IsEnabled="{Binding IsInitialized}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ChapterSelectionViewModel">
+                                            <Border Classes="chapter" Classes.selected="{Binding IsSelected}">
+                                                <CheckBox IsChecked="{Binding IsSelected}" HorizontalAlignment="Stretch">
+                                                    <TextBlock Text="{Binding ChapterName}" TextWrapping="Wrap" FontSize="13"/>
+                                                </CheckBox>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                            <StackPanel IsVisible="{Binding !HasChapters}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                                <TextBlock Text="{Binding Status}" Classes="muted" MaxWidth="300" TextWrapping="Wrap"/>
+                                <Button Content="加载章节" Classes="Outlined Rounded" Command="{Binding LoadChaptersCommand}" IsEnabled="{Binding IsInitialized}"/>
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Grid.Row="4" Text="仅处理勾选的章节，按剧情顺序输出。" Classes="muted" FontSize="11" TextWrapping="Wrap"/>
+                    </Grid>
+                </sukiUi:GlassCard>
+                <sukiUi:GlassCard Grid.Column="1" Padding="20" IsAnimated="False">
+                    <StackPanel Spacing="15">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="输出内容" FontSize="17" FontWeight="SemiBold"/>
+                            <TextBlock Grid.Column="1" Text="保留原始剧本" Classes="muted" FontSize="11" VerticalAlignment="Center"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8" IsEnabled="{Binding IsInitialized}">
+                            <Button Classes="Outlined target" Classes.selected="{Binding IsScriptGoal}" Command="{Binding SelectGenerationTargetCommand}" CommandParameter="0">
+                                <StackPanel Spacing="5">
+                                    <icons:MaterialIcon Kind="FileDocumentOutline" Width="23" Height="23"/>
+                                    <TextBlock Text="剧本" HorizontalAlignment="Center" FontSize="13"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Grid.Column="1" Classes="Outlined target" Classes.selected="{Binding IsNovelGoal}" Command="{Binding SelectGenerationTargetCommand}" CommandParameter="1">
+                                <StackPanel Spacing="5">
+                                    <icons:MaterialIcon Kind="BookOpenPageVariantOutline" Width="23" Height="23"/>
+                                    <TextBlock Text="小说" HorizontalAlignment="Center" FontSize="13"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Grid.Column="2" Classes="Outlined target" Classes.selected="{Binding IsAudiobookGoal}" Command="{Binding SelectGenerationTargetCommand}" CommandParameter="2">
+                                <StackPanel Spacing="5">
+                                    <icons:MaterialIcon Kind="Headphones" Width="23" Height="23"/>
+                                    <TextBlock Text="有声书" HorizontalAlignment="Center" FontSize="13"/>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <StackPanel Spacing="12" IsVisible="{c:Binding !WorkflowLog.IsRunning and !HasResult}">
+                            <TextBlock Text="{Binding TargetDescription}" TextWrapping="Wrap" FontSize="14" FontWeight="SemiBold"/>
+                            <Button Classes="Basic" Command="{Binding OpenSettingsCommand}" IsVisible="{Binding IsNovelizerEnabled}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Foreground="{DynamicResource SukiText}" Padding="12" Background="{DynamicResource SukiPrimaryColor10}" CornerRadius="12">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                    <icons:MaterialIcon Kind="CogOutline" Width="20" Height="20" Foreground="{DynamicResource SukiPrimaryColor120}"/>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="{Binding ModelDisplayName}" FontWeight="SemiBold" FontSize="13"/>
+                                        <TextBlock Text="{Binding ModelDetail}" Classes="muted" FontSize="11"/>
+                                    </StackPanel>
+                                    <icons:MaterialIcon Grid.Column="2" Kind="ChevronRight" Width="18" Height="18"/>
+                                </Grid>
+                            </Button>
+                            <Expander Header="输出选项" HorizontalAlignment="Stretch">
+                                <StackPanel Spacing="10">
+                                    <ToggleSwitch Content="补充画面描述" IsChecked="{Binding IsPicDescEnabled}"/>
+                                    <ToggleSwitch Content="下载图片供离线阅读" IsChecked="{Binding IsLocalResChecked}"/>
+                                    <ToggleSwitch Content="重新生成小说（忽略缓存）" IsChecked="{Binding ForceNovelGeneration}" IsEnabled="{Binding IsNovelizerEnabled}"/>
+                                    <Expander Header="高级选项：标签规则" HorizontalAlignment="Stretch">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Text="用于解析原始剧情，通常无需修改。" Classes="muted" TextWrapping="Wrap"/>
+                                            <TextBox Text="{Binding JsonPath}" Watermark="标签规则文件"/>
+                                            <Button Content="选择文件" Classes="Basic" Command="{Binding PickTagFileCommand}"/>
+                                        </StackPanel>
+                                    </Expander>
+                                </StackPanel>
+                            </Expander>
+                            <TextBlock Text="{Binding CompactFlow}" Classes="muted" TextWrapping="Wrap" HorizontalAlignment="Center" FontSize="11"/>
+                            <TextBlock Text="{Binding CostNotice}" Classes="muted" TextWrapping="Wrap" FontSize="11"/>
+                            <TextBlock Text="{Binding ConfigurationStatus}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource SukiLowText}"/>
+                            <Button x:Name="StartGenerationButton" Classes="Flat Rounded" Content="{Binding StartButtonText}" Command="{Binding LoadMdCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsEnabled="{c:Binding IsInitialized and HasSelectedChapters}"/>
+                        </StackPanel>
+                        <StackPanel Spacing="10" IsVisible="{c:Binding WorkflowLog.IsRunning or HasResult}">
+                            <TextBlock Text="{Binding WorkflowLog.CurrentActivity}" TextWrapping="Wrap" FontSize="13" MaxHeight="60" TextTrimming="CharacterEllipsis"/>
+                            <ItemsControl ItemsSource="{Binding WorkflowLog.Stages}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:WorkflowStage">
+                                        <Grid ColumnDefinitions="26,*,Auto" Margin="0,5" ColumnSpacing="10">
+                                            <Border Width="24" Height="24" CornerRadius="12" Background="{DynamicResource SukiPrimaryColor10}">
+                                                <TextBlock Text="{Binding CircleGlyph}" Foreground="{DynamicResource SukiPrimaryColor120}" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="12"/>
+                                            </Border>
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" FontSize="12"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding StatusText}" Classes="muted" VerticalAlignment="Center" FontSize="11"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Expander Header="本次结果" IsExpanded="True" IsVisible="{Binding HasResult}" HorizontalAlignment="Stretch">
+                                <TextBlock Text="{Binding ResultSummary}" TextWrapping="Wrap" FontSize="12"/>
+                            </Expander>
+                            <Button Content="查看运行日志" Classes="Basic" Click="OpenLogs_Click" HorizontalAlignment="Left"/>
+                            <Button Content="停止生成" Classes="Outlined" Command="{Binding StopGenerationCommand}" IsVisible="{Binding WorkflowLog.IsRunning}" HorizontalAlignment="Stretch"/>
+                            <Button Content="再次生成（复用已有缓存）" Classes="Flat Rounded" Command="{Binding LoadMdCommand}" IsVisible="{Binding CanRetry}" IsEnabled="{Binding IsInitialized}" HorizontalAlignment="Stretch"/>
+                            <Button Content="打开本次小说" Classes="Basic" Command="{Binding OpenNovelCommand}" IsVisible="{Binding CanOpenNovel}"/>
+                            <Button x:Name="TTSButton" Content="确认声音，继续制作有声书" Classes="Flat Rounded" Command="{Binding OpenTtsCommand}" IsVisible="{Binding IsAudiobookGoal}" IsEnabled="{c:Binding IsTtsReady and IsInitialized}" HorizontalAlignment="Stretch"/>
+                            <Button Content="返回选择" Classes="Basic" Command="{Binding ReturnToPlanCommand}" IsVisible="{Binding HasResult}" IsEnabled="{Binding IsInitialized}"/>
+                        </StackPanel>
+                        <Button IsVisible="{Binding HasNetworkError}" Content="检查连接设置" Classes="Outlined" Command="{Binding NetworkErrorActionCommand}"/>
+                    </StackPanel>
+                </sukiUi:GlassCard>
+            </Grid>
+            <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+                <Button Classes="Basic Small" Command="{Binding OpenOutputFolderCommand}" HorizontalAlignment="Left" MaxWidth="650">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <icons:MaterialIcon Kind="FolderOutline" Width="18" Height="18"/>
+                        <TextBlock Text="{Binding PlanOutputDirectory}" TextTrimming="CharacterEllipsis" MaxWidth="550" FontSize="11"/>
+                    </StackPanel>
                 </Button>
-                <Button
-                    x:Name="TTSButton"
-                    Margin="0 0 0 10"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center" Command="{Binding OpenTtsCommand}" Width="140">
-                    TTS语音生成
-                </Button>
-                <CheckBox
-                    Content="生成时使用本地资源"
-                    IsChecked="{Binding IsLocalResChecked}"
-                    Margin="0 -6 16 6"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center" />
-                <CheckBox
-                    Content="启用小说化生成"
-                    IsChecked="{Binding IsNovelizerEnabled}"
-                    Margin="0 0 16 11"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center" />
-                <CheckBox
-                    Content="启用图片描述"
-                    IsChecked="{Binding IsPicDescEnabled}"
-                    Margin="0 0 16 11"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center" />
-            </StackPanel>
-            <!-- </Column A> -->
+                <Button Grid.Column="1" Content="运行日志" Classes="Basic Small" Click="OpenLogs_Click"/>
+            </Grid>
         </Grid>
-        </StackPanel>
-        <!-- ============ Column B：日志面板 ============ -->
-        <Grid
-            Grid.Column="1" Margin="7" VerticalAlignment="Stretch"
-            RowDefinitions="*,Auto">
-            <controls:WorkflowLogPanel
-                Grid.Row="0"
-                DataContext="{Binding WorkflowLog}"/>
-                <Button
-                    Grid.Row="1"
-                    IsVisible="{Binding HasNetworkError}"
-                    Content="停止生成并前往设置 →"
-                    Command="{Binding NetworkErrorActionCommand}"
-                    Margin="0 4 0 0"
-                    HorizontalAlignment="Left"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    Foreground="#FF326CF3"
-                    Cursor="Hand"
-                    FontSize="13">
-                    <Button.Styles>
-                        <Style Selector="Button:pointerover">
-                            <Setter Property="Foreground" Value="#FF5588FF" />
-                            <Setter Property="TextBlock.TextDecorations" Value="Underline" />
-                        </Style>
-                    </Button.Styles>
-                </Button>
-        </Grid>
-        <!-- </Column B> -->
-        </Grid>
-    </Grid>
+    </ScrollViewer>
 </sukiUi:SukiWindow>

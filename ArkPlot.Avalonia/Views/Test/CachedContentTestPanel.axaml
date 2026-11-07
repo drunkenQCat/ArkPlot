@@ -24,7 +24,7 @@
         <ComboBox Grid.Column="1" ItemsSource="{Binding Models}" SelectedItem="{Binding SelectedModel}" HorizontalAlignment="Stretch">
           <ComboBox.ItemTemplate><DataTemplate x:DataType="services:ModelChoice"><TextBlock Text="{Binding DisplayName}"/></DataTemplate></ComboBox.ItemTemplate>
         </ComboBox>
-        <Button Grid.Column="2" Content="刷新百炼模型" Command="{Binding RefreshModelsCommand}" IsEnabled="{Binding !IsRefreshingModels}"/>
+        <Button Grid.Column="2" Content="刷新模型列表" Command="{Binding RefreshModelsCommand}" IsEnabled="{Binding !IsRefreshingModels}"/>
       </Grid>
     </StackPanel>
     <TextBlock Grid.Row="1" Text="选取缓存内容后点击运行，将实际调用所选模型；使用设置中的 API Key。"

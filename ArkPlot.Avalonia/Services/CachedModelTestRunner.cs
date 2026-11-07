@@ -54,11 +54,11 @@ public class CachedModelTestRunner : ICachedModelTestRunner
             ct.ThrowIfCancellationRequested();
             return new(result);
         }
-        var apiKey = vision.GetApiKeyForProvider(request.Provider);
-        if (string.IsNullOrEmpty(apiKey)) apiKey = settings.Novelizer.GetApiKeyForProvider(request.Provider);
+        var apiKey = settings.GetVisionApiKey(request.Provider);
         if (string.IsNullOrWhiteSpace(apiKey)) throw new InvalidOperationException("请先在设置中填写所选平台的 API Key。");
         using var clientVision = new BailianVisionClient(http, new BailianVisionConfig
         {
+            ProviderName = request.Provider,
             BaseUrl = baseUrl, ApiKey = apiKey, Model = request.Model, SystemPrompt = request.Prompt,
             MaxTokens = request.MaxTokens, MaxRetries = 1
         });

@@ -1,4 +1,4 @@
-﻿using ArkPlot.Arknights;
+using ArkPlot.Arknights;
 using ArkPlot.Arknights.Data;
 
 using System;
@@ -10,6 +10,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading.Tasks;
 using ArkPlot.Avalonia.Models;
+using ArkPlot.Avalonia.Services;
 using ArkPlot.Core.Infrastructure;
 using ArkPlot.Core.Model;
 using ArkPlot.Core.Services;
@@ -33,7 +34,20 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private int _selectedIndex;
 
     // --- Tab 2: 小说化设置 ---
-    [ObservableProperty] private int _selectedTabIndex;
+    [ObservableProperty] private int _selectedTabIndex = 1;
+    public bool IsNovelSection => SelectedTabIndex == 1;
+    public bool IsVisionSection => SelectedTabIndex == 2;
+    public bool IsVoiceSection => SelectedTabIndex == 3;
+    public bool IsNetworkSection => SelectedTabIndex == 4;
+    public bool IsTagsSection => SelectedTabIndex == 0;
+    partial void OnSelectedTabIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsNovelSection));
+        OnPropertyChanged(nameof(IsVisionSection));
+        OnPropertyChanged(nameof(IsVoiceSection));
+        OnPropertyChanged(nameof(IsNetworkSection));
+        OnPropertyChanged(nameof(IsTagsSection));
+    }
     [ObservableProperty] private string _systemPromptText = "";
     [ObservableProperty] private string _deepSeekApiKeyText = "";
     [ObservableProperty] private string _bailianApiKeyText = "";
@@ -107,9 +121,15 @@ public partial class SettingsViewModel : ObservableObject
     // Model ComboBox 预填选项（来自 MiniMax SDK 文档）
     public string[] MiniMaxModelOptions => ["speech-2.8-hd", "speech-2.8-turbo"];
 
-    public SettingsViewModel(string tagsJsonPath)
+    public SettingsViewModel(string tagsJsonPath) : this(tagsJsonPath, null, AppContext.BaseDirectory) { }
+
+    internal SettingsViewModel(string tagsJsonPath, Func<string, string, Task<CatalogModel[]>>? fetchModels, string cacheDirectory)
     {
         _tagsJsonPath = tagsJsonPath;
+        _modelCacheDirectory = cacheDirectory;
+        _fetchModelCatalog = fetchModels ?? FetchModelCatalogAsync;
+        _catalogModels = ReadModelCache(Path.Combine(cacheDirectory, "bailian-model-catalog.json"));
+        _deepSeekCatalogModels = ReadModelCache(Path.Combine(cacheDirectory, "deepseek-model-catalog.json"));
     }
 
     public SettingsViewModel() : this("tags.json")
@@ -124,7 +144,8 @@ public partial class SettingsViewModel : ObservableObject
         LoadVisionSettings();
         LoadTtsSettings();
         _settingsLoaded = true;
-        await RefreshBailianModels();
+        await RefreshModelCatalog(SelectedProvider);
+        if (VisionSelectedProvider != SelectedProvider) await RefreshModelCatalog(VisionSelectedProvider);
     }
 
     // ==================== Tab 1: 标签替换 ====================
@@ -212,15 +233,22 @@ public partial class SettingsViewModel : ObservableObject
 
     // ==================== Tab 2: 小说化设置 ====================
 
+    public bool IsBailianSelected => SelectedProvider == "百炼";
+    public bool IsDeepSeekSelected => SelectedProvider == "DeepSeek";
+    public bool IsVisionBailianSelected => VisionSelectedProvider == "百炼";
+    public bool IsVisionDeepSeekSelected => VisionSelectedProvider == "DeepSeek";
     partial void OnSelectedProviderChanged(string value)
     {
+        OnPropertyChanged(nameof(IsBailianSelected));
+        OnPropertyChanged(nameof(IsDeepSeekSelected));
+        OnPropertyChanged(nameof(HasNovelRemoteCatalog));
+        OnPropertyChanged(nameof(NovelModelCatalogStatus));
         var settings = AppSettings.Load();
         var novelizer = settings.Novelizer with { CustomProviders = CustomProviderList.ToArray() };
         ModelOptions = GetNovelizerModels(novelizer, value);
         if (!ModelOptions.Contains(SelectedModel))
             SelectedModel = NovelModelChoices.FirstOrDefault()?.Id ?? "";
-        if (_settingsLoaded && value == "百炼" && _catalogModels.Length == 0)
-            _ = RefreshBailianModels();
+        if (_settingsLoaded && NeedsModelCatalog(value)) _ = RefreshModelCatalog(value);
     }
 
     private void LoadNovelizerSettings()
@@ -248,7 +276,8 @@ public partial class SettingsViewModel : ObservableObject
 
         SelectedProvider = novelizer.SelectedProvider;
         ModelOptions = GetNovelizerModels(novelizer, SelectedProvider);
-        SelectedModel = ModelOptions.Length == 0 || ModelOptions.Contains(novelizer.SelectedModel) ? novelizer.SelectedModel : NovelModelChoices.FirstOrDefault()?.Id ?? "";
+        var preferredModel = SelectedProvider == "DeepSeek" ? DeepSeekModelCatalog.NormalizeModelId(novelizer.SelectedModel, ModelOptions) : novelizer.SelectedModel;
+        SelectedModel = ModelOptions.Length == 0 || ModelOptions.Contains(preferredModel) ? preferredModel : NovelModelChoices.FirstOrDefault()?.Id ?? "";
 
         DeepSeekApiKeyText = settings.GetApiKey("DeepSeek");
         BailianApiKeyText = settings.GetApiKey("百炼");
@@ -632,13 +661,16 @@ public partial class SettingsViewModel : ObservableObject
 
     partial void OnVisionSelectedProviderChanged(string value)
     {
+        OnPropertyChanged(nameof(IsVisionBailianSelected));
+        OnPropertyChanged(nameof(IsVisionDeepSeekSelected));
+        OnPropertyChanged(nameof(HasVisionRemoteCatalog));
+        OnPropertyChanged(nameof(VisionModelCatalogStatus));
         var vision = GetCurrentVisionSettings();
         VisionModelOptions = GetVisionModels(vision, value);
         if (!VisionModelOptions.Contains(VisionSelectedModel))
             VisionSelectedModel = VisionModelOptions.FirstOrDefault() ?? "";
         IsOllamaProvider = value == "Ollama";
-        if (_settingsLoaded && value == "百炼" && _catalogModels.Length == 0)
-            _ = RefreshBailianModels();
+        if (_settingsLoaded && NeedsModelCatalog(value)) _ = RefreshModelCatalog(value);
     }
 
     private VisionSettings GetCurrentVisionSettings()
@@ -667,7 +699,8 @@ public partial class SettingsViewModel : ObservableObject
 
         VisionSelectedProvider = vision.SelectedProvider;
         VisionModelOptions = GetVisionModels(vision, VisionSelectedProvider);
-        VisionSelectedModel = VisionModelOptions.Length == 0 || VisionModelOptions.Contains(vision.SelectedModel) ? vision.SelectedModel : VisionModelOptions[0];
+        var preferredModel = VisionSelectedProvider == "DeepSeek" ? DeepSeekModelCatalog.NormalizeModelId(vision.SelectedModel, VisionModelOptions) : vision.SelectedModel;
+        VisionSelectedModel = VisionModelOptions.Length == 0 || VisionModelOptions.Contains(preferredModel) ? preferredModel : VisionModelOptions[0];
         IsOllamaProvider = VisionSelectedProvider == "Ollama";
     }
 
@@ -694,7 +727,10 @@ public partial class SettingsViewModel : ObservableObject
             OllamaBaseUrl: VisionOllamaBaseUrl,
             CustomProviders: VisionCustomProviderList.ToArray()
         );
-        settings = settings with { Vision = vision };
+        var apiKeys = new Dictionary<string, string>(settings.Novelizer.ApiKeys);
+        if (VisionSelectedProvider == "百炼") apiKeys["百炼"] = BailianApiKeyText;
+        if (VisionSelectedProvider == "DeepSeek") apiKeys["DeepSeek"] = DeepSeekApiKeyText;
+        settings = settings with { Vision = vision, Novelizer = settings.Novelizer with { ApiKeys = apiKeys } };
         settings.Save();
 
         VisionSaveFeedbackText = "✅ 已保存";

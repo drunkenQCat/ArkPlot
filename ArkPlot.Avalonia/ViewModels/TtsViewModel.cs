@@ -530,11 +530,18 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private bool _isDownloadingFfmpeg;
 
-    public TtsViewModel(string actName)
+    private readonly string[] _requestedChapters;
+    private readonly string? _preferredNovelPath;
+    [ObservableProperty] private string audiobookStatus = "1. 读取小说 → 2. 确认音色 → 3. 生成音频 → 4. 导出完整 MP3";
+    [ObservableProperty] private string lastExportDirectory = "";
+
+    public TtsViewModel(string actName, string[]? requestedChapters = null, string? preferredNovelPath = null, string? storyOutputDir = null)
     {
         _actName = actName;
-        _outputBaseDir = OutputPaths.ActRootAbsolute(actName);
-        TtsOutputDir = OutputPaths.TtsDir(actName);
+        _requestedChapters = requestedChapters ?? [];
+        _preferredNovelPath = preferredNovelPath;
+        _outputBaseDir = storyOutputDir ?? OutputPaths.ActRootAbsolute(actName);
+        TtsOutputDir = Path.Combine(_outputBaseDir, "tts");
 
         // 从 TtsSettings 构建统一音色池
         var ttsSettings = AppSettings.Load().Tts ?? TtsSettings.CreateDefaults();
@@ -642,7 +649,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
 
         // 默认只选第一个
         if (items.Count > 0)
-            items[0].IsSelected = true;
+            (items.FirstOrDefault(i => i.FilePath == _preferredNovelPath) ?? items[0]).IsSelected = true;
 
         NovelFiles = new ObservableCollection<NovelFileItem>(items);
 
@@ -729,6 +736,8 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                         Log($"[debug-edit] 计算缓存文件路径失败: {ex.Message}");
                     }
 
+                    if (_requestedChapters.Length > 0)
+                        fileEntries = fileEntries.Where(e => _requestedChapters.Contains(e.ChapterTitle)).ToList();
                     entries.AddRange(fileEntries);
 
                     var chapterTitles = fileEntries
@@ -773,10 +782,13 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             Chapters = new ObservableCollection<ChapterItem>(allChapters);
             if (Chapters.Count > 0)
             {
-                SelectedChapter = Chapters[0];
+                SelectedChapter = Chapters.FirstOrDefault(c => _requestedChapters.Contains(c.Title)) ?? Chapters[0];
                 await LoadSegmentsForChapterAsync();
             }
             VoiceConfigPanel.UpdateEntries(_alignmentEntries);
+            AudiobookStatus = Chapters.Count == 0
+                ? "未找到所选章节。请返回主界面生成这些章节的小说，或选择包含这些章节的小说文件。"
+                : $"1. 小说已就绪 · {Chapters.Count} 章。下一步：确认角色音色，再生成当前章节音频。";
 
             totalSw.Stop();
             Log(
@@ -786,6 +798,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
+            AudiobookStatus = $"小说读取或角色对齐失败：{ex.Message}。请检查所选小说文件。";
             Log($"❌ 对齐失败: {ex.GetType().Name}: {ex.Message}");
             if (ex.InnerException != null)
                 Log($"  Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
@@ -1065,7 +1078,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void PrevChapter()
     {
-        if (SelectedChapter == null || Chapters.Count == 0)
+        if (IsGenerating || SelectedChapter == null || Chapters.Count == 0)
             return;
         var idx = SelectedChapter.Index;
         if (idx > 0)
@@ -1075,7 +1088,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void NextChapter()
     {
-        if (SelectedChapter == null || Chapters.Count == 0)
+        if (IsGenerating || SelectedChapter == null || Chapters.Count == 0)
             return;
         var idx = SelectedChapter.Index;
         if (idx < Chapters.Count - 1)
@@ -1089,13 +1102,20 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task StartGenerateAsync()
     {
-        if (FilteredSegments.Count == 0)
+        if (IsGenerating) return;
+        SearchText = "";
+        ShowUnknownCharactersOnly = false;
+        ShowNoAudioOnly = false;
+        await LoadSegmentsForChapterAsync();
+        var generationRows = FilteredSegments.Where(r => !r.IsScenePlaceholder && !string.IsNullOrWhiteSpace(TextSanitizer.Sanitize(r.NovelText))).ToList();
+        if (generationRows.Count == 0)
         {
             Log("⚠️ 当前没有可生成的片段");
             return;
         }
 
         IsGenerating = true;
+        AudiobookStatus = "3. 正在生成音频：相同文本和音色使用缓存，其余片段调用语音服务。";
         _generateCts = new CancellationTokenSource();
         var ct = _generateCts.Token;
 
@@ -1116,7 +1136,7 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             var segments = new List<TtsSegment>();
             var segmentIndices = new List<int>();
 
-            foreach (var row in FilteredSegments)
+            foreach (var row in generationRows)
             {
                 if (row.IsScenePlaceholder)
                     continue;
@@ -1151,9 +1171,9 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
                 ProgressValue = (double)completed / total * 100;
                 ProgressText = $"进度: {completed}/{total}";
 
-                if (tuple.Index >= 0 && tuple.Index < FilteredSegments.Count)
+                if (tuple.Index >= 0 && tuple.Index < generationRows.Count)
                 {
-                    var row = FilteredSegments[tuple.Index];
+                    var row = generationRows[tuple.Index];
                     row.HasAudio = true;
                     row.AudioFilePath = tuple.FilePath;
                     row.AudioOpacity = 1.0;
@@ -1174,15 +1194,19 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
             );
 
             Log($"✅ 完成: {result.Count} 个片段已生成");
-            ProgressValue = 100;
-            TotalProgressText = $"已生成 {result.Count} 个片段";
+            ProgressValue = total == 0 ? 0 : 100.0 * result.Count / total;
+            TotalProgressText = $"音频就绪 {result.Count}/{total} 段（含缓存复用）";
+            AudiobookStatus = result.Count == total ? "3. 音频已就绪，尚未导出。下一步：导出当前章节 MP3。" :
+                $"部分成功：缺少 {total - result.Count} 段音频。再次生成会复用成功缓存、补齐缺失片段。";
         }
         catch (OperationCanceledException)
         {
+            AudiobookStatus = "生成已取消，已完成片段保留。再次生成可复用缓存。";
             Log("⚠️ 生成已取消");
         }
         catch (Exception ex)
         {
+            AudiobookStatus = $"生成失败：{ex.Message}。已完成片段保留，可重试。";
             Log($"❌ 生成失败: {ex.Message}");
         }
         finally
@@ -1890,60 +1914,64 @@ public partial class TtsViewModel : ViewModelBase, IDisposable
     // ════════════════════════════════════════════
 
     [RelayCommand]
-    private async Task ExportCurrentChapter()
+    private Task ExportCurrentChapter() => ExportChaptersAsync(SelectedChapter == null ? [] : [SelectedChapter.Title]);
+
+    [RelayCommand]
+    private Task ExportAllChapters() => ExportChaptersAsync(Chapters.Select(c => c.Title).ToArray());
+
+    private async Task ExportChaptersAsync(string[] titles)
     {
-        if (SelectedChapter == null)
-            return;
-
-        var pattern = sanitized(SelectedChapter.Title);
-        var files = Directory.Exists(TtsOutputDir)
-            ? Directory
-                .GetFiles(TtsOutputDir, "*.mp3")
-                .Where(f =>
-                    Path.GetFileName(f).Contains(pattern, StringComparison.OrdinalIgnoreCase)
-                )
-                .ToArray()
-            : [];
-
-        if (files.Length == 0)
+        if (IsGenerating) return;
+        IsGenerating = true;
+        var exported = 0;
+        var issues = new List<string>();
+        var exportDir = Path.Combine(_outputBaseDir, "tts_export");
+        try
         {
-            Log("⚠️ 当前章节尚无已生成的 MP3");
-            return;
+            foreach (var title in titles)
+            {
+                var files = new List<string>();
+                var missing = 0;
+                foreach (var entry in _alignmentEntries.Where(e => e.ChapterTitle == title))
+                {
+                    var text = TextSanitizer.Sanitize(entry.NovelText);
+                    if (string.IsNullOrWhiteSpace(text)) continue;
+                    var voice = VoiceConfigPanel.ResolveVoiceSelection(entry.IsDialog ? entry.CharacterName ?? "?" : "(旁白)", entry.Gender, entry.IsDialog);
+                    var key = TtsCacheService.GetCacheKey(text, voice);
+                    var file = Path.Combine(TtsOutputDir, "_tts_cache", key + ".mp3");
+                    if (File.Exists(file) && new FileInfo(file).Length > 0) files.Add(file);
+                    else missing++;
+                }
+                if (missing > 0 || files.Count == 0)
+                {
+                    issues.Add($"{title}：缺少 {missing} 段音频或没有正文，请先生成整章");
+                    continue;
+                }
+                Directory.CreateDirectory(exportDir);
+                var destination = Path.Combine(exportDir, sanitized(title) + ".mp3");
+                var temporary = destination + ".tmp";
+                try
+                {
+                    await Task.Run(() => AudioMerger.MergeFiles(files, temporary));
+                    File.Move(temporary, destination, overwrite: true);
+                    exported++;
+                }
+                finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            }
+            LastExportDirectory = exported > 0 ? exportDir : "";
+            AudiobookStatus = $"4. 已导出 {exported}/{titles.Length} 章完整 MP3" +
+                (exported > 0 ? $" → {exportDir}" : "") + "\n" + string.Join("\n", issues);
+            Log(AudiobookStatus);
         }
-
-        var exportDir = Path.Combine(
-            _outputBaseDir,
-            "tts_export",
-            sanitized(SelectedChapter.Title)
-        );
-        Directory.CreateDirectory(exportDir);
-
-        foreach (var f in files)
-            File.Copy(f, Path.Combine(exportDir, Path.GetFileName(f)), overwrite: true);
-
-        Log($"📥 导出 {files.Length} 个 MP3 → {exportDir}");
-        await Task.CompletedTask;
+        catch (Exception ex) { AudiobookStatus = $"导出失败：{ex.Message}；已导出 {exported} 章。音频缓存仍保留。"; }
+        finally { IsGenerating = false; }
     }
 
     [RelayCommand]
-    private async Task ExportAllChapters()
+    private void OpenAudioExportFolder()
     {
-        var files = Directory.Exists(TtsOutputDir) ? Directory.GetFiles(TtsOutputDir, "*.mp3") : [];
-
-        if (files.Length == 0)
-        {
-            Log("⚠️ 尚无已生成的 MP3");
-            return;
-        }
-
-        var exportDir = Path.Combine(_outputBaseDir, "tts_export");
-        Directory.CreateDirectory(exportDir);
-
-        foreach (var f in files)
-            File.Copy(f, Path.Combine(exportDir, Path.GetFileName(f)), overwrite: true);
-
-        Log($"📥 导出 {files.Length} 个 MP3 → {exportDir}");
-        await Task.CompletedTask;
+        if (Directory.Exists(LastExportDirectory))
+            Process.Start(new ProcessStartInfo(LastExportDirectory) { UseShellExecute = true });
     }
 
     // ════════════════════════════════════════════

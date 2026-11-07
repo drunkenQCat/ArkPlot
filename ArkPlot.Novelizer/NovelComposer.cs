@@ -20,12 +20,14 @@ public static class NovelComposer
         IReadOnlyList<ChapterResult> results,
         string sourceMdPath,
         string model,
-        Action<string> log)
+        Action<string> log,
+        string? documentTitle = null)
     {
         var novelPath = GetNovelPath(sourceMdPath, model);
         var allParts = results.Select(r => r.Content).ToList();
 
         var content = string.Join("\n\n", allParts);
+        if (!string.IsNullOrWhiteSpace(documentTitle)) content = $"# {documentTitle}\n\n{content}";
         File.WriteAllText(novelPath, content);
         log($"[DIAG] 写入完成: {novelPath}");
 

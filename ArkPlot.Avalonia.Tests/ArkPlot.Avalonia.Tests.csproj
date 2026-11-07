@@ -11,6 +11,7 @@
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
+  <ItemGroup><None Update="Fixtures/tone.mp3" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ArkPlot.Avalonia\ArkPlot.Avalonia.csproj" />
   </ItemGroup>

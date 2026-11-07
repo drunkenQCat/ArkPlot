@@ -9,6 +9,32 @@ namespace ArkPlot.Avalonia.Tests;
 public class OmniVisionTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DeepSeekVision_SendsUserImageAndDisablesThinking(bool useBase64)
+    {
+        using var http = new HttpClient(new FakeHandler(async request =>
+        {
+            Assert.Equal("https://api.deepseek.com/chat/completions", request.RequestUri!.AbsoluteUri);
+            Assert.Equal("test-key", request.Headers.Authorization!.Parameter);
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            var root = body.RootElement;
+            Assert.Equal("deepseek-flash", root.GetProperty("model").GetString());
+            Assert.Equal("disabled", root.GetProperty("thinking").GetProperty("type").GetString());
+            Assert.False(root.TryGetProperty("modalities", out _));
+            Assert.False(root.TryGetProperty("extra_body", out _));
+            var message = root.GetProperty("messages")[1];
+            Assert.Equal("user", message.GetProperty("role").GetString());
+            var url = message.GetProperty("content")[0].GetProperty("image_url").GetProperty("url").GetString();
+            Assert.Equal(useBase64 ? "data:image/jpeg;base64,image-data" : "https://example.invalid/image.png", url);
+            return """{"choices":[{"message":{"content":"银灰色的高塔。"},"finish_reason":"stop"}]}""";
+        })) { BaseAddress = new Uri("https://api.deepseek.com/") };
+        using var client = new BailianVisionClient(http, new BailianVisionConfig { ProviderName = "DeepSeek", Model = "deepseek-flash", ApiKey = "test-key" });
+        var result = useBase64 ? await client.DescribeImageBase64Async("image-data") : await client.DescribeImageUrlAsync("https://example.invalid/image.png");
+        Assert.Equal("银灰色的高塔。", result);
+    }
+
+    [Theory]
     [InlineData("qwen3.8-omni-flash", false)]
     [InlineData("qwen3.5-omni-flash", true)]
     public async Task Omni_RequestsTextOnlyAndCombinesStreamChunks(string model, bool useBase64)

@@ -7,6 +7,18 @@ namespace ArkPlot.Avalonia.Tests;
 public class CachedContentTestTests
 {
     [Fact]
+    public void ImageTest_OffersDeepSeekAndRefreshesOnlyRemoteCatalogProviders()
+    {
+        using var vm = new CachedContentTestViewModel(true, new FakeCache(), new FakeRunner());
+        Assert.Contains("DeepSeek", vm.Providers);
+        vm.SelectedProvider = "DeepSeek";
+        Assert.Contains(vm.Models, model => model.Id == "deepseek-flash");
+        Assert.True(vm.RefreshModelsCommand.CanExecute(null));
+        vm.SelectedProvider = "Ollama";
+        Assert.False(vm.RefreshModelsCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task TextTest_LoadsCachedChapterAndOnlyRunsOnCommand()
     {
         var cache = new FakeCache();

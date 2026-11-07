@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 namespace ArkPlot.Vision;
 
 /// <summary>
-/// 百炼平台（DashScope）视觉模型客户端，支持通过 HTTP URL 或 Base64 描述图片。
+/// OpenAI 兼容视觉模型客户端（百炼、DeepSeek、自定义平台），支持 URL 或 Base64 图片。
 /// 参照 ArkPlot.Novelizer.BailianClient 的调用模式，使用 OpenAI 兼容接口。
 /// </summary>
 public class BailianVisionClient : IDisposable
@@ -94,7 +94,8 @@ public class BailianVisionClient : IDisposable
             max_tokens = _config.MaxTokens,
             modalities = IsOmni ? new[] { "text" } : null,
             stream = IsOmni ? true : (bool?)null,
-            reasoning_effort = IsQwen38Omni ? "none" : null
+            reasoning_effort = IsQwen38Omni ? "none" : null,
+            thinking = _config.ProviderName == "DeepSeek" ? new { type = "disabled" } : null
         };
 
         return await SendRequestAsync(requestBody, $"imageUrl={imageUrl.Truncate(80)}");
@@ -134,7 +135,8 @@ public class BailianVisionClient : IDisposable
             max_tokens = _config.MaxTokens,
             modalities = IsOmni ? new[] { "text" } : null,
             stream = IsOmni ? true : (bool?)null,
-            reasoning_effort = IsQwen38Omni ? "none" : null
+            reasoning_effort = IsQwen38Omni ? "none" : null,
+            thinking = _config.ProviderName == "DeepSeek" ? new { type = "disabled" } : null
         };
 
         return await SendRequestAsync(requestBody, "base64 image");
@@ -161,7 +163,7 @@ public class BailianVisionClient : IDisposable
         var json = JsonSerializer.Serialize(requestBody, JsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        Log($"[BailianVision] 开始调用，model={_config.Model}, {logLabel}");
+        Log($"[{_config.ProviderName}Vision] 开始调用，model={_config.Model}, {logLabel}");
 
         HttpResponseMessage response;
         int attempt = 0;
@@ -169,27 +171,27 @@ public class BailianVisionClient : IDisposable
         while (true)
         {
             attempt++;
-            Log($"[BailianVision] 第 {attempt} 次请求尝试...");
+            Log($"[{_config.ProviderName}Vision] 第 {attempt} 次请求尝试...");
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 response = await _http.PostAsync("chat/completions", content);
                 sw.Stop();
-                Log($"[BailianVision] 收到响应 status={response.StatusCode}，耗时 {sw.Elapsed.TotalSeconds:F1}s");
+                Log($"[{_config.ProviderName}Vision] 收到响应 status={response.StatusCode}，耗时 {sw.Elapsed.TotalSeconds:F1}s");
             }
             catch (TaskCanceledException)
             {
                 sw.Stop();
-                var msg = $"[BailianVision] 请求超时！耗时 {sw.Elapsed.TotalSeconds:F1}s（Timeout={_config.TimeoutSeconds}s）";
+                var msg = $"[{_config.ProviderName}Vision] 请求超时！耗时 {sw.Elapsed.TotalSeconds:F1}s（Timeout={_config.TimeoutSeconds}s）";
                 LogError(msg);
-                throw new VisionException($"百炼 API 请求超时（{sw.Elapsed.TotalSeconds:F0}s）", new TimeoutException());
+                throw new VisionException($"{_config.ProviderName} API 请求超时（{sw.Elapsed.TotalSeconds:F0}s）", new TimeoutException());
             }
             catch (Exception ex)
             {
                 sw.Stop();
-                LogError($"[BailianVision] 网络异常({ex.GetType().Name}): {ex.Message}");
-                throw new VisionException($"百炼网络异常: {ex.Message}", ex);
+                LogError($"[{_config.ProviderName}Vision] 网络异常({ex.GetType().Name}): {ex.Message}");
+                throw new VisionException($"{_config.ProviderName} 网络异常: {ex.Message}", ex);
             }
 
             if (response.IsSuccessStatusCode)
@@ -198,25 +200,25 @@ public class BailianVisionClient : IDisposable
             if (attempt >= _config.MaxRetries)
             {
                 var errorBody = await response.Content.ReadAsStringAsync();
-                LogError($"[BailianVision] 重试耗尽。status={response.StatusCode}, body={errorBody.Truncate(200)}");
-                throw new VisionException($"百炼调用失败（{response.StatusCode}），已重试 {attempt} 次: {errorBody.Truncate(500)}");
+                LogError($"[{_config.ProviderName}Vision] 重试耗尽。status={response.StatusCode}, body={errorBody.Truncate(200)}");
+                throw new VisionException($"{_config.ProviderName} 调用失败（{response.StatusCode}），已重试 {attempt} 次: {errorBody.Truncate(500)}");
             }
 
             if ((int)response.StatusCode == 429 || (int)response.StatusCode >= 500)
             {
                 var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
-                LogError($"[BailianVision] {response.StatusCode}，{delay.TotalSeconds}s 后重试 ({attempt}/{_config.MaxRetries})...");
+                LogError($"[{_config.ProviderName}Vision] {response.StatusCode}，{delay.TotalSeconds}s 后重试 ({attempt}/{_config.MaxRetries})...");
                 await Task.Delay(delay);
                 continue;
             }
 
             var errBody = await response.Content.ReadAsStringAsync();
-            LogError($"[BailianVision] 不可重试错误。status={response.StatusCode}, body={errBody.Truncate(200)}");
-            throw new VisionException($"百炼调用失败（{response.StatusCode}）: {errBody.Truncate(500)}");
+            LogError($"[{_config.ProviderName}Vision] 不可重试错误。status={response.StatusCode}, body={errBody.Truncate(200)}");
+            throw new VisionException($"{_config.ProviderName} 调用失败（{response.StatusCode}）: {errBody.Truncate(500)}");
         }
 
         var responseJson = await response.Content.ReadAsStringAsync();
-        Log($"[BailianVision] 响应 {responseJson.Length} 字节，开始解析");
+        Log($"[{_config.ProviderName}Vision] 响应 {responseJson.Length} 字节，开始解析");
 
         string description;
         if (IsOmni)
@@ -227,14 +229,16 @@ public class BailianVisionClient : IDisposable
         {
             using var doc = JsonDocument.Parse(responseJson);
             var choice = doc.RootElement.GetProperty("choices")[0];
+            if (choice.TryGetProperty("finish_reason", out var finish) && finish.ValueKind == JsonValueKind.String && finish.GetString() != "stop")
+                throw new VisionException($"{_config.ProviderName} 图片描述未正常完成（finish_reason={finish.GetString()}），未保存截断内容。");
             var message = choice.GetProperty("message");
             description = message.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
         }
 
         if (string.IsNullOrWhiteSpace(description))
-            throw new VisionException("百炼返回了空响应");
+            throw new VisionException($"{_config.ProviderName} 返回了空响应");
 
-        Log($"[BailianVision] 描述完成，{description.Length} 字符");
+        Log($"[{_config.ProviderName}Vision] 描述完成，{description.Length} 字符");
         return description.Trim();
     }
 
@@ -288,6 +292,8 @@ public class BailianVisionClient : IDisposable
 /// </summary>
 public record BailianVisionConfig
 {
+    public string ProviderName { get; init; } = "百炼";
+
     /// <summary>
     /// 百炼 API 基地址，默认 OpenAI 兼容接口
     /// </summary>
